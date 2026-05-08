@@ -1,0 +1,16 @@
+[project]
+name = "rippopotamus"
+version = "0.1.0"
+description = "Local media ingest workstation for editors and designers"
+requires-python = ">=3.11"
+dependencies = []
+
+[project.scripts]
+rippo = "rippopotamus.cli:main"
+
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]

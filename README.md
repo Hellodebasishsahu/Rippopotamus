@@ -52,3 +52,27 @@ Project Name/
 ## Development Principle
 
 Build the ingest engine first. Keep the desktop app thin until the core media workflow is reliable.
+
+## Prototype CLI
+
+Run from the repo:
+
+```bash
+python -m venv .venv
+. .venv/bin/activate
+pip install -e .
+rippo init "Client Project" --path .prototype/client-project
+cd .prototype/client-project
+rippo add https://example.com/video
+rippo fetch
+rippo download --preset mp4-best
+rippo manifest
+rippo zip
+```
+
+Available presets:
+
+- `mp4-best`
+- `audio-mp3`
+- `thumbnail`
+- `proxy`

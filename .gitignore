@@ -4,8 +4,11 @@
 node_modules/
 .venv/
 .build-venv/
+.prototype/
 dist/
 build/
 downloads/
 *.pyc
 __pycache__/
+
+*.egg-info/
