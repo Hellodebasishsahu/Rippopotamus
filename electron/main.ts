@@ -3,6 +3,7 @@ import path from "node:path";
 import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import fs from "node:fs";
+import { validateCookiesBrowserId, type BrowserInfo } from "./cookies";
 
 let mainWindow: BrowserWindow | null = null;
 
@@ -27,6 +28,178 @@ function appManagedYtDlpPath(): string {
   return path.join(app.getPath("userData"), "bin", process.platform === "win32" ? "yt-dlp.exe" : "yt-dlp");
 }
 
+type Settings = {
+  cookiesBrowser?: string;
+};
+
+function settingsPath(): string {
+  return path.join(app.getPath("userData"), "settings.json");
+}
+
+function readSettings(): Settings {
+  try {
+    return JSON.parse(fs.readFileSync(settingsPath(), "utf8")) as Settings;
+  } catch {
+    return {};
+  }
+}
+
+function writeSettings(next: Settings): void {
+  fs.mkdirSync(path.dirname(settingsPath()), { recursive: true });
+  fs.writeFileSync(settingsPath(), JSON.stringify(next, null, 2));
+}
+
+type YtDlpReleaseAsset = {
+  name: string;
+  browser_download_url: string;
+};
+
+type YtDlpRelease = {
+  tag_name: string;
+  assets: YtDlpReleaseAsset[];
+};
+
+type YtDlpUpdateInfo = {
+  currentVersion: string | null;
+  latestVersion: string | null;
+  updateAvailable: boolean;
+  binaryPath: string;
+  managedBinaryExists: boolean;
+  downloadUrl?: string;
+  error?: string;
+};
+
+function detectBrowsers(): BrowserInfo[] {
+  if (process.platform !== "darwin") return [];
+  const candidates: { id: string; label: string; bundles: string[] }[] = [
+    { id: "safari", label: "Safari", bundles: ["Safari.app"] },
+    { id: "chrome", label: "Chrome", bundles: ["Google Chrome.app", "Google Chrome Canary.app"] },
+    { id: "firefox", label: "Firefox", bundles: ["Firefox.app", "Firefox Developer Edition.app"] },
+    { id: "brave", label: "Brave", bundles: ["Brave Browser.app"] },
+    { id: "edge", label: "Edge", bundles: ["Microsoft Edge.app"] },
+    { id: "vivaldi", label: "Vivaldi", bundles: ["Vivaldi.app"] },
+    { id: "opera", label: "Opera", bundles: ["Opera.app"] },
+    { id: "chromium", label: "Chromium", bundles: ["Chromium.app"] },
+  ];
+  const roots = ["/Applications", path.join(app.getPath("home"), "Applications")];
+  const found: BrowserInfo[] = [];
+  for (const c of candidates) {
+    for (const bundle of c.bundles) {
+      for (const root of roots) {
+        const p = path.join(root, bundle);
+        if (fs.existsSync(p)) {
+          found.push({ id: c.id, label: c.label, appPath: p });
+          break;
+        }
+      }
+      if (found.find((b) => b.id === c.id)) break;
+    }
+  }
+  return found;
+}
+
+function cookiesSupported(): boolean {
+  return process.platform === "darwin";
+}
+
+function selectedCookiesBrowser(): string | null {
+  const selected = readSettings().cookiesBrowser;
+  if (!selected) return null;
+  try {
+    return validateCookiesBrowserId(selected, detectBrowsers());
+  } catch {
+    return null;
+  }
+}
+
+function normalizeVersion(value: string | null | undefined): string | null {
+  if (!value) return null;
+  return value.trim().replace(/^v/i, "") || null;
+}
+
+function compareVersions(left: string, right: string): number {
+  const leftParts = normalizeVersion(left)?.split(/[.-]/).map((part) => Number(part)) || [];
+  const rightParts = normalizeVersion(right)?.split(/[.-]/).map((part) => Number(part)) || [];
+  const length = Math.max(leftParts.length, rightParts.length);
+  for (let index = 0; index < length; index += 1) {
+    const a = Number.isFinite(leftParts[index]) ? leftParts[index] : 0;
+    const b = Number.isFinite(rightParts[index]) ? rightParts[index] : 0;
+    if (a !== b) return a > b ? 1 : -1;
+  }
+  return 0;
+}
+
+function ytDlpAssetName(): string {
+  if (process.platform === "darwin") return "yt-dlp_macos";
+  if (process.platform === "win32") return "yt-dlp.exe";
+  if (process.platform === "linux" && process.arch === "arm64") return "yt-dlp_linux_aarch64";
+  return "yt-dlp_linux";
+}
+
+async function fetchLatestYtDlpRelease(): Promise<YtDlpRelease> {
+  const response = await fetch("https://api.github.com/repos/yt-dlp/yt-dlp/releases/latest", {
+    headers: {
+      "Accept": "application/vnd.github+json",
+      "User-Agent": "Rippopotamus",
+    },
+  });
+  if (!response.ok) throw new Error(`GitHub release check failed: ${response.status}`);
+  return await response.json() as YtDlpRelease;
+}
+
+function selectYtDlpAsset(release: YtDlpRelease): YtDlpReleaseAsset {
+  const expected = ytDlpAssetName();
+  const asset = release.assets.find((candidate) => candidate.name === expected);
+  if (!asset) throw new Error(`No yt-dlp release asset found for ${process.platform}/${process.arch}.`);
+  return asset;
+}
+
+async function currentYtDlpVersion(): Promise<string | null> {
+  try {
+    const health = await runEngine(["health"]) as { ytDlp?: string };
+    return normalizeVersion(health.ytDlp);
+  } catch {
+    return null;
+  }
+}
+
+async function checkYtDlpUpdate(): Promise<YtDlpUpdateInfo> {
+  const binaryPath = appManagedYtDlpPath();
+  const [release, currentVersion] = await Promise.all([
+    fetchLatestYtDlpRelease(),
+    currentYtDlpVersion(),
+  ]);
+  const latestVersion = normalizeVersion(release.tag_name);
+  const asset = selectYtDlpAsset(release);
+  return {
+    currentVersion,
+    latestVersion,
+    updateAvailable: Boolean(latestVersion && (!currentVersion || compareVersions(latestVersion, currentVersion) > 0)),
+    binaryPath,
+    managedBinaryExists: fs.existsSync(binaryPath),
+    downloadUrl: asset.browser_download_url,
+  };
+}
+
+async function installYtDlpUpdate(downloadUrl: string): Promise<void> {
+  const binaryPath = appManagedYtDlpPath();
+  const binDir = path.dirname(binaryPath);
+  const tmpPath = path.join(binDir, `${path.basename(binaryPath)}.${process.pid}.tmp`);
+  fs.mkdirSync(binDir, { recursive: true });
+
+  const response = await fetch(downloadUrl, {
+    headers: {
+      "User-Agent": "Rippopotamus",
+    },
+  });
+  if (!response.ok) throw new Error(`yt-dlp download failed: ${response.status}`);
+
+  const bytes = Buffer.from(await response.arrayBuffer());
+  fs.writeFileSync(tmpPath, bytes, { mode: 0o755 });
+  if (process.platform !== "win32") fs.chmodSync(tmpPath, 0o755);
+  fs.renameSync(tmpPath, binaryPath);
+}
+
 function candidatePythons(): string[] {
   const configured = process.env.RIPPO_PYTHON;
   return [
@@ -44,11 +217,13 @@ function engineEnv(): NodeJS.ProcessEnv {
   const pythonPath = app.isPackaged ? resourcesEngine : devEngine;
   const bundledFfmpeg = ffmpegPath();
   fs.mkdirSync(path.dirname(appManagedYtDlpPath()), { recursive: true });
+  const selectedBrowser = selectedCookiesBrowser();
   return {
     ...process.env,
     PYTHONPATH: [pythonPath, process.env.PYTHONPATH].filter(Boolean).join(path.delimiter),
     RIPPO_FFMPEG_PATH: bundledFfmpeg || process.env.RIPPO_FFMPEG_PATH || "",
     RIPPO_YTDLP_PATH: process.env.RIPPO_YTDLP_PATH || appManagedYtDlpPath(),
+    RIPPO_COOKIES_FROM_BROWSER: selectedBrowser || process.env.RIPPO_COOKIES_FROM_BROWSER || "",
   };
 }
 
@@ -167,6 +342,9 @@ function createWindow() {
 app.whenReady().then(() => {
   ipcMain.handle("engine:health", async () => ({
     ...((await runEngine(["health"])) as Record<string, unknown>),
+    cookiesSupported: cookiesSupported(),
+    cookiesBrowsers: detectBrowsers(),
+    cookiesBrowser: selectedCookiesBrowser(),
     outputRoot: defaultOutputRoot(),
     packaged: app.isPackaged,
   }));
@@ -200,6 +378,39 @@ app.whenReady().then(() => {
 
   ipcMain.handle("shell:open-folder", async (_event, folder: string) => {
     await shell.openPath(folder || defaultOutputRoot());
+  });
+
+  ipcMain.handle("cookies:list-browsers", async () => {
+    return { browsers: detectBrowsers(), selected: selectedCookiesBrowser(), supported: cookiesSupported() };
+  });
+
+  ipcMain.handle("cookies:set-browser", async (_event, browserId: string | null) => {
+    const browsers = detectBrowsers();
+    const selected = validateCookiesBrowserId(browserId, browsers);
+    const settings = readSettings();
+    if (selected) settings.cookiesBrowser = selected;
+    else delete settings.cookiesBrowser;
+    writeSettings(settings);
+    return { selected: selectedCookiesBrowser(), supported: cookiesSupported(), browsers };
+  });
+
+  ipcMain.handle("ytdlp:check-update", async () => {
+    return checkYtDlpUpdate();
+  });
+
+  ipcMain.handle("ytdlp:update", async () => {
+    const update = await checkYtDlpUpdate();
+    if (!update.downloadUrl) throw new Error("No yt-dlp download URL is available.");
+    await installYtDlpUpdate(update.downloadUrl);
+    const health = {
+      ...((await runEngine(["health"])) as Record<string, unknown>),
+      outputRoot: defaultOutputRoot(),
+      packaged: app.isPackaged,
+    };
+    return {
+      ...(await checkYtDlpUpdate()),
+      health,
+    };
   });
 
   ipcMain.handle("shell:open-external", async (_event, url: string) => {

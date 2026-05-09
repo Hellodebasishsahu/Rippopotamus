@@ -8,6 +8,10 @@ declare global {
       download: (payload: DownloadRequest) => Promise<DownloadResponse>;
       openFolder: (folder: string) => Promise<void>;
       openExternal: (url: string) => Promise<void>;
+      listBrowsers: () => Promise<CookiesBrowserResponse>;
+      setCookiesBrowser: (browserId: string | null) => Promise<CookiesBrowserResponse>;
+      checkYtDlpUpdate: () => Promise<YtDlpUpdateInfo>;
+      updateYtDlp: () => Promise<YtDlpUpdateResult>;
       onDownloadEvent: (callback: (event: DownloadEvent) => void) => () => void;
     };
   }
@@ -21,9 +25,42 @@ export type EngineHealth = {
   ffmpeg?: string | null;
   ffmpegOk?: boolean;
   ffmpegVersion?: string | null;
+  cookiesBrowser?: string | null;
+  cookiesSupported?: boolean;
+  cookiesBrowsers?: BrowserInfo[];
+  cookies?: CookiesHealth;
   outputRoot: string;
   packaged: boolean;
   error?: string;
+};
+
+export type BrowserInfo = { id: string; label: string; appPath: string };
+
+export type CookiesHealth = {
+  status: "off" | "ok" | "error";
+  browser: string | null;
+  ok: boolean | null;
+  message: string | null;
+};
+
+export type CookiesBrowserResponse = {
+  browsers: BrowserInfo[];
+  selected: string | null;
+  supported: boolean;
+};
+
+export type YtDlpUpdateInfo = {
+  currentVersion: string | null;
+  latestVersion: string | null;
+  updateAvailable: boolean;
+  binaryPath: string;
+  managedBinaryExists: boolean;
+  downloadUrl?: string;
+  error?: string;
+};
+
+export type YtDlpUpdateResult = YtDlpUpdateInfo & {
+  health: EngineHealth;
 };
 
 export type FetchResponse = {
@@ -57,7 +94,9 @@ export type DownloadResponse = {
 
 export type DownloadEvent = {
   jobId: string;
-  type: "started" | "progress" | "stage" | "phase" | "success" | "error";
+  type: "started" | "progress" | "stage" | "phase" | "success" | "error" | "notice";
+  level?: "warning" | "error";
+  warnings?: string[];
   percent?: number;
   eta?: string | null;
   speed?: string | null;

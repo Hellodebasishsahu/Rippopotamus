@@ -7,6 +7,10 @@ contextBridge.exposeInMainWorld("rippo", {
     ipcRenderer.invoke("engine:download", payload),
   openFolder: (folder: string) => ipcRenderer.invoke("shell:open-folder", folder),
   openExternal: (url: string) => ipcRenderer.invoke("shell:open-external", url),
+  listBrowsers: () => ipcRenderer.invoke("cookies:list-browsers"),
+  setCookiesBrowser: (browserId: string | null) => ipcRenderer.invoke("cookies:set-browser", browserId),
+  checkYtDlpUpdate: () => ipcRenderer.invoke("ytdlp:check-update"),
+  updateYtDlp: () => ipcRenderer.invoke("ytdlp:update"),
   onDownloadEvent: (callback: (event: unknown) => void) => {
     const listener = (_event: Electron.IpcRendererEvent, payload: unknown) => callback(payload);
     ipcRenderer.on("engine:download-event", listener);

@@ -4,12 +4,12 @@
   "description": "Feed it links. It spits out assets.",
   "main": "dist-electron/main.js",
   "scripts": {
-    "dev": "concurrently -k \"vite --host 127.0.0.1\" \"wait-on http://127.0.0.1:5173 && VITE_DEV_SERVER_URL=http://127.0.0.1:5173 electron .\"",
+    "dev": "npm run build:electron && concurrently -k \"vite --host 127.0.0.1 --strictPort\" \"wait-on http://127.0.0.1:5173 && VITE_DEV_SERVER_URL=http://127.0.0.1:5173 electron .\"",
     "build": "npm run build:ui && npm run build:electron",
     "build:ui": "vite build",
     "build:electron": "tsc -p tsconfig.electron.json",
     "package:mac": "npm run build && electron-builder --mac dir",
-    "test": "PYTHONPATH=src python -m unittest discover -s tests && npm run build"
+    "test": "PYTHONPATH=src python -m unittest discover -s tests && npm run build && node --test tests/electron_cookie_validation.test.cjs"
   },
   "keywords": [],
   "author": "",
@@ -24,7 +24,7 @@
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^6.0.1",
     "concurrently": "^9.2.1",
-    "electron": "^42.0.0",
+    "electron": "^41.5.1",
     "electron-builder": "^26.8.1",
     "lucide-react": "^1.14.0",
     "react": "^19.2.6",

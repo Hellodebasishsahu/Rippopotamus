@@ -1,6 +1,6 @@
-import { Download, ExternalLink, FolderOpen, Link2, Loader2, RefreshCcw, Trash2 } from "lucide-react";
+import { Cookie, Download, ExternalLink, FolderOpen, Link2, Loader2, RefreshCcw, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { DownloadEvent, EngineHealth, FetchResponse } from "../../electron/types";
+import type { BrowserInfo, DownloadEvent, EngineHealth, FetchResponse, YtDlpUpdateInfo } from "../../electron/types";
 
 const presets = [
   { id: "mp4-best", label: "MP4", detail: "Best source" },
@@ -25,6 +25,7 @@ type QueueItem = {
   finalizing?: boolean;
   files?: string[];
   jobId?: string;
+  notices?: { level: "warning" | "error"; message: string }[];
 };
 
 function splitUrls(value: string): string[] {
@@ -69,6 +70,14 @@ function metaLine(item: QueueItem): string {
   return parts.join(" · ");
 }
 
+function updaterErrorMessage(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error);
+  if (message.includes("No handler registered") || message.includes("checkYtDlpUpdate is not a function")) {
+    return "Restart Rippopotamus to load the yt-dlp updater.";
+  }
+  return message;
+}
+
 export function App() {
   const rippo = window.rippo;
   const [health, setHealth] = useState<EngineHealth | null>(null);
@@ -77,7 +86,70 @@ export function App() {
   const [items, setItems] = useState<QueueItem[]>([]);
   const [outputRoot, setOutputRoot] = useState("");
   const [busy, setBusy] = useState(false);
+  const [browsers, setBrowsers] = useState<BrowserInfo[]>([]);
+  const [cookiesBrowser, setCookiesBrowser] = useState<string | null>(null);
+  const [ytDlpUpdate, setYtDlpUpdate] = useState<YtDlpUpdateInfo | null>(null);
+  const [ytDlpStatus, setYtDlpStatus] = useState<"idle" | "checking" | "updating">("idle");
+  const [ytDlpError, setYtDlpError] = useState<string | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+
+  useEffect(() => {
+    if (!rippo) return;
+    rippo.listBrowsers().then((result) => {
+      setBrowsers(result.browsers);
+      setCookiesBrowser(result.selected);
+    }).catch(() => undefined);
+  }, [rippo]);
+
+  async function changeCookiesBrowser(value: string) {
+    if (!rippo) return;
+    const next = value === "none" ? null : value;
+    const result = await rippo.setCookiesBrowser(next);
+    setCookiesBrowser(result.selected);
+    try {
+      const nextHealth = await rippo.health();
+      setHealth(nextHealth);
+    } catch {
+      undefined;
+    }
+  }
+
+  async function checkYtDlpUpdate() {
+    if (!rippo || ytDlpStatus !== "idle") return;
+    if (typeof rippo.checkYtDlpUpdate !== "function") {
+      setYtDlpError("Restart Rippopotamus to load the yt-dlp updater.");
+      return;
+    }
+    setYtDlpStatus("checking");
+    setYtDlpError(null);
+    try {
+      const result = await rippo.checkYtDlpUpdate();
+      setYtDlpUpdate(result);
+    } catch (error) {
+      setYtDlpError(updaterErrorMessage(error));
+    } finally {
+      setYtDlpStatus("idle");
+    }
+  }
+
+  async function updateYtDlp() {
+    if (!rippo || ytDlpStatus !== "idle") return;
+    if (typeof rippo.updateYtDlp !== "function") {
+      setYtDlpError("Restart Rippopotamus to load the yt-dlp updater.");
+      return;
+    }
+    setYtDlpStatus("updating");
+    setYtDlpError(null);
+    try {
+      const result = await rippo.updateYtDlp();
+      setYtDlpUpdate(result);
+      setHealth(result.health);
+    } catch (error) {
+      setYtDlpError(updaterErrorMessage(error));
+    } finally {
+      setYtDlpStatus("idle");
+    }
+  }
 
   useEffect(() => {
     const el = textareaRef.current;
@@ -106,6 +178,10 @@ export function App() {
     return rippo.onDownloadEvent((event: DownloadEvent) => {
       setItems((current) => current.map((item) => {
         if (item.jobId !== event.jobId) return item;
+        if (event.type === "notice") {
+          const notice = { level: event.level || "warning", message: event.message || "" };
+          return { ...item, notices: [...(item.notices || []), notice] };
+        }
         if (event.type === "phase") {
           return { ...item, phase: event.kind, phaseIndex: (item.phaseIndex || 0) + 1, progress: 0, finalizing: false };
         }
@@ -158,7 +234,7 @@ export function App() {
     setBusy(true);
     for (const item of ready) {
       const jobId = item.localId;
-      setItems((current) => current.map((candidate) => candidate.localId === item.localId ? { ...candidate, status: "downloading", progress: 0, error: undefined, jobId, phase: undefined, phaseIndex: 0, finalizing: false, stage: undefined } : candidate));
+      setItems((current) => current.map((candidate) => candidate.localId === item.localId ? { ...candidate, status: "downloading", progress: 0, error: undefined, jobId, phase: undefined, phaseIndex: 0, finalizing: false, stage: undefined, notices: [] } : candidate));
       try {
         const response = await rippo.download({
           url: item.url,
@@ -182,7 +258,7 @@ export function App() {
 
   async function refetch(item: QueueItem) {
     if (!rippo) return;
-    setItems((current) => current.map((candidate) => candidate.localId === item.localId ? { ...candidate, status: "fetching", error: undefined } : candidate));
+    setItems((current) => current.map((candidate) => candidate.localId === item.localId ? { ...candidate, status: "fetching", error: undefined, notices: [] } : candidate));
     try {
       const result = await rippo.fetch(item.url);
       setItems((current) => current.map((candidate) => candidate.localId === item.localId ? { ...candidate, status: "ready", metadata: result.metadata } : candidate));
@@ -273,6 +349,9 @@ export function App() {
                       <h3 className="item-title">{item.metadata?.title || shortUrl(item.url)}</h3>
                       <p className="item-meta">{metaLine(item)}</p>
                       {item.error ? <p className="item-error">{item.error}</p> : null}
+                      {item.notices?.map((notice, i) => (
+                        <p key={i} className={notice.level === "error" ? "item-error" : "item-warning"}>{notice.message}</p>
+                      ))}
                       {item.files?.length && !item.error ? <p className="item-files">{item.files.join(" · ")}</p> : null}
                     </div>
                     <div className="item-foot">
@@ -310,7 +389,44 @@ export function App() {
         </section>
 
         <footer className="app-footer">
-          <p className="footer-path" title={outputRoot || undefined}>{outputRoot || "Set output when engine connects."}</p>
+          <div className="footer-row footer-meta">
+            <label className="cookie-chip" title="Use local browser cookies through yt-dlp. Cookies stay on this Mac and are not uploaded.">
+              <Cookie size={13} strokeWidth={2} aria-hidden />
+              <span className="cookie-label">Cookies</span>
+              <select
+                value={cookiesBrowser || "none"}
+                onChange={(event) => changeCookiesBrowser(event.target.value)}
+                disabled={!rippo || browsers.length === 0}
+                aria-label="Cookies source browser"
+              >
+                <option value="none">Off</option>
+                {browsers.map((browser) => (
+                  <option key={browser.id} value={browser.id}>{browser.label}</option>
+                ))}
+              </select>
+            </label>
+            {health?.cookies?.status === "error" ? <span className="cookie-warning" title={health.cookies.message || undefined}>Cookie access failed</span> : null}
+            <div className="tool-chip" title={ytDlpUpdate?.binaryPath || health?.ytDlpPath || undefined}>
+              <span className="cookie-label">yt-dlp</span>
+              <span className="tool-version">{health?.ytDlp || "unknown"}</span>
+              {ytDlpUpdate?.updateAvailable ? (
+                <button type="button" className="chip-action" onClick={updateYtDlp} disabled={!rippo || ytDlpStatus !== "idle"}>
+                  {ytDlpStatus === "updating" ? <Loader2 className="spin" size={12} strokeWidth={2} aria-hidden /> : null}
+                  {ytDlpUpdate.currentVersion ? "Update" : "Install"}
+                </button>
+              ) : (
+                <button type="button" className="chip-action" onClick={checkYtDlpUpdate} disabled={!rippo || ytDlpStatus !== "idle"}>
+                  {ytDlpStatus === "checking" ? <Loader2 className="spin" size={12} strokeWidth={2} aria-hidden /> : <RefreshCcw size={12} strokeWidth={2} aria-hidden />}
+                  Check
+                </button>
+              )}
+            </div>
+            <p className="footer-path" title={outputRoot || undefined}>{outputRoot || "Set output when engine connects."}</p>
+          </div>
+          {ytDlpError ? <p className="error-text tool-error">{ytDlpError}</p> : null}
+          {ytDlpUpdate && !ytDlpUpdate.updateAvailable && !ytDlpError ? (
+            <p className="tool-note">yt-dlp is current{ytDlpUpdate.latestVersion ? ` (${ytDlpUpdate.latestVersion})` : ""}.</p>
+          ) : null}
           <div className="footer-actions">
             <button type="button" className="btn btn-ghost btn-footer" onClick={() => rippo?.openFolder(outputRoot)} disabled={!rippo}>
               <FolderOpen size={16} strokeWidth={2} aria-hidden /> Open folder

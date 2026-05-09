@@ -31,6 +31,60 @@ def configured_yt_dlp_path() -> str | None:
     return str(path)
 
 
+def cookies_browser_args() -> list[str]:
+    value = os.environ.get("RIPPO_COOKIES_FROM_BROWSER", "").strip()
+    if not value:
+        return []
+    return ["--cookies-from-browser", value]
+
+
+def cookie_error_message(message: str) -> str:
+    lower = message.lower()
+    if "cookies" not in lower and "cookie" not in lower:
+        return friendly_error(message)
+    if "locked" in lower or "database is locked" in lower:
+        return "Browser cookies are locked. Close the browser and retry."
+    if "permission" in lower or "operation not permitted" in lower or "access is denied" in lower:
+        return "Browser cookies are not readable. Grant access or choose another browser."
+    if "could not find" in lower or "not found" in lower or "no such file" in lower:
+        return "Browser cookies are unavailable. Open the browser once, then retry."
+    if "decrypt" in lower or "keychain" in lower:
+        return "Browser cookies could not be decrypted. Unlock the browser profile or keychain and retry."
+    return "Browser cookies are unavailable. Choose another browser or turn cookies off."
+
+
+def verify_cookies_browser(base: list[str]) -> dict[str, Any]:
+    browser = os.environ.get("RIPPO_COOKIES_FROM_BROWSER", "").strip()
+    if not browser:
+        return {"status": "off", "browser": None, "ok": None, "message": None}
+
+    command = [
+        *base,
+        "--cookies-from-browser",
+        browser,
+        "--simulate",
+        "--skip-download",
+        "--no-playlist",
+        "--ignore-no-formats-error",
+        "https://example.com/",
+    ]
+    try:
+        result = subprocess.run(command, capture_output=True, text=True, timeout=20)
+    except subprocess.TimeoutExpired:
+        return {"status": "error", "browser": browser, "ok": False, "message": "Browser cookie check timed out."}
+    except Exception as exc:
+        return {"status": "error", "browser": browser, "ok": False, "message": cookie_error_message(str(exc))}
+
+    output = "\n".join(part for part in [result.stdout, result.stderr] if part)
+    if re.search(r"Extracted\s+\d+\s+cookies?\s+from", output, flags=re.IGNORECASE):
+        return {"status": "ok", "browser": browser, "ok": True, "message": "Browser cookies are readable."}
+    if "Extracting cookies from" in output and result.returncode == 0:
+        return {"status": "ok", "browser": browser, "ok": True, "message": "Browser cookies are readable."}
+
+    detail = next((line for line in output.splitlines() if "cookie" in line.lower()), output)
+    return {"status": "error", "browser": browser, "ok": False, "message": cookie_error_message(detail)}
+
+
 def yt_dlp_base() -> list[str]:
     configured = configured_yt_dlp_path()
     if configured:
@@ -47,6 +101,10 @@ def yt_dlp_base() -> list[str]:
         raise SystemExit("Missing yt-dlp. Install the Python package or place yt-dlp on PATH.")
 
 
+def yt_dlp_run() -> list[str]:
+    return [*yt_dlp_base(), *cookies_browser_args()]
+
+
 def ffmpeg_path() -> str | None:
     configured = os.environ.get("RIPPO_FFMPEG_PATH") or os.environ.get("RIPPO_FFMPEG_LOCATION")
     if configured:
@@ -61,7 +119,7 @@ def run_json(args: list[str]) -> dict[str, Any]:
         raise SystemExit(f"Missing required command: {args[0]}") from exc
     except subprocess.CalledProcessError as exc:
         message = (exc.stderr or exc.stdout or str(exc)).strip()
-        raise SystemExit(friendly_error(message)) from exc
+        raise SystemExit(cookie_error_message(message)) from exc
     return json.loads(result.stdout)
 
 
@@ -108,12 +166,14 @@ def command_health(_args: argparse.Namespace) -> int:
         "ffmpeg": ffmpeg,
         "ffmpegOk": ffmpeg_ok,
         "ffmpegVersion": ffmpeg_version,
+        "cookiesBrowser": os.environ.get("RIPPO_COOKIES_FROM_BROWSER", "") or None,
+        "cookies": verify_cookies_browser(base),
     })
     return 0
 
 
 def command_fetch(args: argparse.Namespace) -> int:
-    raw = run_json([*yt_dlp_base(), "--dump-single-json", "--skip-download", "--no-playlist", args.url])
+    raw = run_json([*yt_dlp_run(), "--dump-single-json", "--skip-download", "--no-playlist", args.url])
     emit({"ok": True, "url": args.url, "metadata": metadata_from_raw(raw)})
     return 0
 
@@ -148,7 +208,7 @@ def command_download(args: argparse.Namespace) -> int:
     title = slugify(args.title or item_id)
     output_template = str(root / spec["folder"] / f"{title}--{item_id}.%(ext)s")
 
-    cmd = [*yt_dlp_base(), "--newline", "--no-playlist", "-o", output_template]
+    cmd = [*yt_dlp_run(), "--newline", "--no-playlist", "-o", output_template]
     ffmpeg = ffmpeg_path()
     if ffmpeg:
         cmd += ["--ffmpeg-location", str(Path(ffmpeg).parent)]
@@ -169,12 +229,18 @@ def command_download(args: argparse.Namespace) -> int:
     )
 
     last_line = ""
+    notices: list[str] = []
     assert process.stdout is not None
     for line in process.stdout:
         line = line.strip()
         if not line:
             continue
         last_line = line
+        if line.startswith("WARNING:") or line.startswith("ERROR:"):
+            notices.append(line)
+            level = "error" if line.startswith("ERROR:") else "warning"
+            emit({"type": "notice", "level": level, "message": line})
+            continue
         dest_match = re.match(r"\[download\]\s+Destination:\s+(.+)$", line)
         if dest_match:
             dest_path = Path(dest_match.group(1))
@@ -196,12 +262,13 @@ def command_download(args: argparse.Namespace) -> int:
 
     code = process.wait()
     if code != 0:
-        emit({"type": "error", "error": friendly_error(last_line)})
+        detail = next((n for n in notices if n.startswith("ERROR:")), last_line)
+        emit({"type": "error", "error": cookie_error_message(detail)})
         return code
 
     after = snapshot_files(root)
     files = sorted(str(path.relative_to(root)) for path in after - before)
-    emit({"type": "success", "files": files, "outputRoot": str(root)})
+    emit({"type": "success", "files": files, "outputRoot": str(root), "warnings": [n for n in notices if n.startswith("WARNING:")]})
     return 0
 
 
