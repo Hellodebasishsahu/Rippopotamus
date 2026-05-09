@@ -175,11 +175,24 @@ def command_download(args: argparse.Namespace) -> int:
         if not line:
             continue
         last_line = line
+        dest_match = re.match(r"\[download\]\s+Destination:\s+(.+)$", line)
+        if dest_match:
+            dest_path = Path(dest_match.group(1))
+            stem = dest_path.stem.lower()
+            if ".f" in stem:
+                fmt = stem.rsplit(".f", 1)[-1]
+                kind = "audio" if any(c.isalpha() for c in fmt[:2]) else "video"
+            else:
+                kind = dest_path.suffix.lstrip(".") or "file"
+            emit({"type": "phase", "kind": kind, "destination": str(dest_path)})
+            continue
         progress = parse_progress(line)
         if progress:
             emit({"type": "progress", **progress})
-        elif line.startswith("[ExtractAudio]") or line.startswith("[Merger]") or line.startswith("[ThumbnailsConvertor]"):
-            emit({"type": "stage", "message": line})
+        elif line.startswith("[ExtractAudio]") or line.startswith("[Merger]") or line.startswith("[ThumbnailsConvertor]") or line.startswith("[VideoConvertor]"):
+            tag = line.split("]", 1)[0].lstrip("[")
+            label = {"Merger": "Merging", "ExtractAudio": "Extracting audio", "ThumbnailsConvertor": "Converting thumbnail", "VideoConvertor": "Converting video"}.get(tag, tag)
+            emit({"type": "stage", "message": label, "finalizing": True})
 
     code = process.wait()
     if code != 0:

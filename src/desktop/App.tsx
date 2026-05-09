@@ -20,6 +20,9 @@ type QueueItem = {
   error?: string;
   progress?: number;
   stage?: string;
+  phase?: string;
+  phaseIndex?: number;
+  finalizing?: boolean;
   files?: string[];
   jobId?: string;
 };
@@ -46,6 +49,24 @@ function shortUrl(url: string) {
 
 function sourceUrl(item: QueueItem) {
   return item.metadata?.webpage_url || item.url;
+}
+
+const statusLabels: Record<QueueItem["status"], string> = {
+  queued: "Queued",
+  fetching: "Fetching…",
+  ready: "Ready",
+  downloading: "Downloading",
+  done: "Saved",
+  failed: "Failed",
+};
+
+function metaLine(item: QueueItem): string {
+  const parts: string[] = [];
+  if (item.metadata?.extractor) parts.push(item.metadata.extractor);
+  else parts.push(shortUrl(sourceUrl(item)));
+  if (item.metadata?.uploader) parts.push(item.metadata.uploader);
+  if (item.metadata?.duration) parts.push(formatDuration(item.metadata.duration));
+  return parts.join(" · ");
 }
 
 export function App() {
@@ -85,12 +106,18 @@ export function App() {
     return rippo.onDownloadEvent((event: DownloadEvent) => {
       setItems((current) => current.map((item) => {
         if (item.jobId !== event.jobId) return item;
+        if (event.type === "phase") {
+          return { ...item, phase: event.kind, phaseIndex: (item.phaseIndex || 0) + 1, progress: 0, finalizing: false };
+        }
         if (event.type === "progress") {
+          if (item.finalizing) return item;
           return { ...item, progress: event.percent ?? item.progress, stage: event.speed ? `${event.speed}${event.eta ? `, ${event.eta} left` : ""}` : item.stage };
         }
-        if (event.type === "stage") return { ...item, stage: event.message };
-        if (event.type === "success") return { ...item, status: "done", progress: 100, files: event.files, stage: "Saved" };
-        if (event.type === "error") return { ...item, status: "failed", error: event.error || "Download failed" };
+        if (event.type === "stage") {
+          return { ...item, stage: event.message, finalizing: event.finalizing ? true : item.finalizing, progress: event.finalizing ? 100 : item.progress };
+        }
+        if (event.type === "success") return { ...item, status: "done", progress: 100, files: event.files, stage: "Saved", finalizing: false };
+        if (event.type === "error") return { ...item, status: "failed", error: event.error || "Download failed", finalizing: false };
         return item;
       }));
     });
@@ -131,7 +158,7 @@ export function App() {
     setBusy(true);
     for (const item of ready) {
       const jobId = item.localId;
-      setItems((current) => current.map((candidate) => candidate.localId === item.localId ? { ...candidate, status: "downloading", progress: 0, error: undefined, jobId } : candidate));
+      setItems((current) => current.map((candidate) => candidate.localId === item.localId ? { ...candidate, status: "downloading", progress: 0, error: undefined, jobId, phase: undefined, phaseIndex: 0, finalizing: false, stage: undefined } : candidate));
       try {
         const response = await rippo.download({
           url: item.url,
@@ -225,55 +252,60 @@ export function App() {
           {items.length === 0 ? (
             <div className="empty">No URLs yet.</div>
           ) : (
-            items.map((item) => (
-              <article key={item.localId} className={`queue-item ${item.status}`}>
-                <div className="thumb">
-                  {item.metadata?.thumbnail ? <img src={item.metadata.thumbnail} alt="" /> : <Link2 size={18} strokeWidth={2} aria-hidden />}
-                </div>
-                <div className="item-main">
-                  <div className="item-title">
-                    <strong>{item.metadata?.title || shortUrl(item.url)}</strong>
-                    <button type="button" className="icon-link" onClick={() => openSource(item)} aria-label="Open source page" title="Open source page">
-                      <ExternalLink size={13} strokeWidth={2} aria-hidden />
-                    </button>
+            items.map((item) => {
+              const progress = item.status === "downloading" ? Math.max(2, Math.round(item.progress || 0)) : null;
+              let statusText: string;
+              if (item.status === "downloading") {
+                if (item.finalizing) statusText = item.stage || "Finalizing…";
+                else if (item.phase) statusText = `${item.phase} · ${progress}%`;
+                else statusText = `${progress}%`;
+              } else {
+                statusText = statusLabels[item.status];
+              }
+              return (
+                <article key={item.localId} className={`queue-item ${item.status}`}>
+                  <button type="button" className="thumb" onClick={() => openSource(item)} aria-label="Open source page" title="Open source page">
+                    {item.metadata?.thumbnail ? <img src={item.metadata.thumbnail} alt="" /> : <Link2 size={28} strokeWidth={1.5} aria-hidden />}
+                    <span className="thumb-overlay"><ExternalLink size={20} strokeWidth={2} aria-hidden /></span>
+                  </button>
+                  <div className="item-body">
+                    <div className="item-head">
+                      <h3 className="item-title">{item.metadata?.title || shortUrl(item.url)}</h3>
+                      <p className="item-meta">{metaLine(item)}</p>
+                      {item.error ? <p className="item-error">{item.error}</p> : null}
+                      {item.files?.length && !item.error ? <p className="item-files">{item.files.join(" · ")}</p> : null}
+                    </div>
+                    <div className="item-foot">
+                      <span className={`status-badge status-${item.status}`} data-status={item.status}>
+                        <span className="status-glyph" />
+                        {statusText}
+                      </span>
+                      <div className="preset-chip">
+                        <select
+                          value={item.preset}
+                          onChange={(event) => setItemPreset(item.localId, event.target.value)}
+                          disabled={item.status === "downloading" || item.status === "done"}
+                          aria-label="Output format"
+                          title={presets.find((p) => p.id === item.preset)?.detail}
+                        >
+                          {presets.map((option) => (
+                            <option key={option.id} value={option.id}>{option.label}</option>
+                          ))}
+                        </select>
+                      </div>
+                      <span className="foot-spacer" />
+                      <button type="button" className="icon-btn" onClick={() => refetch(item)} disabled={item.status === "fetching" || item.status === "downloading"} title="Refetch" aria-label="Refetch">
+                        <RefreshCcw size={16} strokeWidth={2} aria-hidden />
+                      </button>
+                      <button type="button" className="icon-btn icon-btn-danger" onClick={() => removeItem(item.localId)} disabled={item.status === "downloading"} title="Remove" aria-label="Remove">
+                        <Trash2 size={16} strokeWidth={2} aria-hidden />
+                      </button>
+                    </div>
                   </div>
-                  <p>{item.metadata?.uploader || item.url}</p>
-                  {(item.metadata?.extractor || item.metadata?.duration) ? (
-                    <p className="item-detail">
-                      {[item.metadata?.extractor, item.metadata?.duration ? formatDuration(item.metadata.duration) : null].filter(Boolean).join(" · ")}
-                    </p>
-                  ) : null}
-                  {item.status === "downloading" && <div className="bar"><span style={{ width: `${item.progress || 4}%` }} /></div>}
-                  {item.files?.length ? <small className="files">{item.files.join(", ")}</small> : null}
-                  {item.error ? <small className="error-text">{item.error}</small> : null}
-                </div>
-                <div className="item-status">
-                  <span className="meta-status">{item.status}</span>
-                  {item.stage ? <small>{item.stage}</small> : null}
-                  <div className="preset-chip">
-                    <select
-                      value={item.preset}
-                      onChange={(event) => setItemPreset(item.localId, event.target.value)}
-                      disabled={item.status === "downloading" || item.status === "done"}
-                      aria-label="Output format"
-                      title={presets.find((p) => p.id === item.preset)?.detail}
-                    >
-                      {presets.map((option) => (
-                        <option key={option.id} value={option.id}>{option.label}</option>
-                      ))}
-                    </select>
-                  </div>
-                  <div className="item-actions">
-                    <button type="button" onClick={() => refetch(item)} disabled={item.status === "fetching" || item.status === "downloading"} title="Refetch" aria-label="Refetch">
-                      <RefreshCcw size={12} strokeWidth={2} aria-hidden />
-                    </button>
-                    <button type="button" onClick={() => removeItem(item.localId)} disabled={item.status === "downloading"} title="Remove" aria-label="Remove">
-                      <Trash2 size={12} strokeWidth={2} aria-hidden />
-                    </button>
-                  </div>
-                </div>
-              </article>
-            ))
+                  {progress !== null ? <div className={`card-progress ${item.finalizing ? "finalizing" : ""}`} style={{ width: `${progress}%` }} /> : null}
+                </article>
+              );
+            })
           )}
         </section>
 

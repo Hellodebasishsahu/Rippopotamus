@@ -57,11 +57,14 @@ export type DownloadResponse = {
 
 export type DownloadEvent = {
   jobId: string;
-  type: "started" | "progress" | "stage" | "success" | "error";
+  type: "started" | "progress" | "stage" | "phase" | "success" | "error";
   percent?: number;
   eta?: string | null;
   speed?: string | null;
   message?: string;
+  finalizing?: boolean;
+  kind?: string;
+  destination?: string;
   files?: string[];
   outputRoot?: string;
   error?: string;
