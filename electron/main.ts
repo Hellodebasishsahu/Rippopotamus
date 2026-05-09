@@ -1,9 +1,10 @@
-import { app, BrowserWindow, ipcMain, shell } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, shell } from "electron";
 import path from "node:path";
 import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import fs from "node:fs";
 import { validateCookiesBrowserId, type BrowserInfo } from "./cookies";
+import { loadThumbnail } from "./thumbnails";
 
 let mainWindow: BrowserWindow | null = null;
 
@@ -30,6 +31,7 @@ function appManagedYtDlpPath(): string {
 
 type Settings = {
   cookiesBrowser?: string;
+  outputRoot?: string;
 };
 
 function settingsPath(): string {
@@ -311,7 +313,13 @@ function runEngine(args: string[], onJson?: (payload: unknown) => void): Promise
 }
 
 function defaultOutputRoot(): string {
-  return path.join(app.getPath("videos"), "Rippopotamus Downloads");
+  return path.join(app.getPath("downloads"), "Rippo");
+}
+
+function currentOutputRoot(): string {
+  const saved = readSettings().outputRoot;
+  if (saved && typeof saved === "string" && saved.trim()) return saved;
+  return defaultOutputRoot();
 }
 
 function createWindow() {
@@ -345,7 +353,7 @@ app.whenReady().then(() => {
     cookiesSupported: cookiesSupported(),
     cookiesBrowsers: detectBrowsers(),
     cookiesBrowser: selectedCookiesBrowser(),
-    outputRoot: defaultOutputRoot(),
+    outputRoot: currentOutputRoot(),
     packaged: app.isPackaged,
   }));
 
@@ -355,7 +363,7 @@ app.whenReady().then(() => {
 
   ipcMain.handle("engine:download", async (event, payload: { url: string; preset: string; outputRoot?: string; itemId?: string; title?: string }) => {
     const jobId = payload.itemId || randomUUID();
-    const outputRoot = payload.outputRoot || defaultOutputRoot();
+    const outputRoot = payload.outputRoot || currentOutputRoot();
     fs.mkdirSync(outputRoot, { recursive: true });
     const args = [
       "download",
@@ -377,7 +385,32 @@ app.whenReady().then(() => {
   });
 
   ipcMain.handle("shell:open-folder", async (_event, folder: string) => {
-    await shell.openPath(folder || defaultOutputRoot());
+    const target = folder || currentOutputRoot();
+    fs.mkdirSync(target, { recursive: true });
+    await shell.openPath(target);
+  });
+
+  ipcMain.handle("output:choose", async () => {
+    const result = await dialog.showOpenDialog(mainWindow ?? undefined as unknown as BrowserWindow, {
+      title: "Choose download location",
+      defaultPath: currentOutputRoot(),
+      properties: ["openDirectory", "createDirectory"],
+    });
+    if (result.canceled || !result.filePaths[0]) {
+      return { outputRoot: currentOutputRoot(), canceled: true };
+    }
+    const next = result.filePaths[0];
+    const settings = readSettings();
+    settings.outputRoot = next;
+    writeSettings(settings);
+    return { outputRoot: next, canceled: false };
+  });
+
+  ipcMain.handle("output:reset", async () => {
+    const settings = readSettings();
+    delete settings.outputRoot;
+    writeSettings(settings);
+    return { outputRoot: defaultOutputRoot() };
   });
 
   ipcMain.handle("cookies:list-browsers", async () => {
@@ -394,6 +427,21 @@ app.whenReady().then(() => {
     return { selected: selectedCookiesBrowser(), supported: cookiesSupported(), browsers };
   });
 
+  ipcMain.handle("thumbnail:load", async (_event, urls: unknown, pageUrl?: unknown) => {
+    const direct = await loadThumbnail(urls);
+    if (direct.src || typeof pageUrl !== "string") return direct;
+
+    try {
+      const parsed = new URL(pageUrl);
+      if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return direct;
+      const extracted = await runEngine(["thumbnail", "--url", parsed.toString()]) as { ok?: boolean; src?: string };
+      if (extracted.ok && extracted.src) return { src: extracted.src, url: parsed.toString() };
+    } catch {
+      return direct;
+    }
+    return direct;
+  });
+
   ipcMain.handle("ytdlp:check-update", async () => {
     return checkYtDlpUpdate();
   });
@@ -404,7 +452,7 @@ app.whenReady().then(() => {
     await installYtDlpUpdate(update.downloadUrl);
     const health = {
       ...((await runEngine(["health"])) as Record<string, unknown>),
-      outputRoot: defaultOutputRoot(),
+      outputRoot: currentOutputRoot(),
       packaged: app.isPackaged,
     };
     return {

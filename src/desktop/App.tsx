@@ -1,4 +1,4 @@
-import { Cookie, Download, ExternalLink, FolderOpen, Link2, Loader2, RefreshCcw, Trash2 } from "lucide-react";
+import { Cookie, Download, ExternalLink, FolderOpen, FolderSearch, ImageOff, Link2, Loader2, RefreshCcw, RotateCcw, Settings, Trash2, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { BrowserInfo, DownloadEvent, EngineHealth, FetchResponse, YtDlpUpdateInfo } from "../../electron/types";
 
@@ -78,6 +78,75 @@ function updaterErrorMessage(error: unknown): string {
   return message;
 }
 
+function thumbnailUrls(item: QueueItem): string[] {
+  const candidates = [
+    item.metadata?.thumbnail,
+    ...(item.metadata?.thumbnails || []),
+  ].filter((value): value is string => Boolean(value));
+  return Array.from(new Set(candidates));
+}
+
+function ThumbnailImage({ urls, pageUrl }: { urls: string[]; pageUrl: string }) {
+  const [src, setSrc] = useState<string | null>(null);
+  const [failed, setFailed] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [orientation, setOrientation] = useState<"landscape" | "portrait">("landscape");
+
+  useEffect(() => {
+    let cancelled = false;
+    setSrc(null);
+    setFailed(false);
+    setLoading(true);
+    setOrientation("landscape");
+
+    if (typeof window.rippo.loadThumbnail !== "function") {
+      setLoading(false);
+      setFailed(true);
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    window.rippo.loadThumbnail(urls, pageUrl).then((result) => {
+      if (cancelled) return;
+      if (result.src) setSrc(result.src);
+      else setFailed(true);
+    }).catch(() => {
+      if (!cancelled) setFailed(true);
+    }).finally(() => {
+      if (!cancelled) setLoading(false);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [pageUrl, urls.join("\n")]);
+
+  if (loading) {
+    return <Loader2 className="thumb-spinner" size={26} strokeWidth={1.8} aria-hidden />;
+  }
+
+  if (failed || !src) {
+    return <ImageOff size={28} strokeWidth={1.5} aria-hidden />;
+  }
+
+  return (
+    <img
+      className={`thumb-image ${orientation}`}
+      src={src}
+      alt=""
+      onLoad={(event) => {
+        const image = event.currentTarget;
+        setOrientation(image.naturalHeight > image.naturalWidth ? "portrait" : "landscape");
+      }}
+      onError={() => {
+        setSrc(null);
+        setFailed(true);
+      }}
+    />
+  );
+}
+
 export function App() {
   const rippo = window.rippo;
   const [health, setHealth] = useState<EngineHealth | null>(null);
@@ -91,7 +160,15 @@ export function App() {
   const [ytDlpUpdate, setYtDlpUpdate] = useState<YtDlpUpdateInfo | null>(null);
   const [ytDlpStatus, setYtDlpStatus] = useState<"idle" | "checking" | "updating">("idle");
   const [ytDlpError, setYtDlpError] = useState<string | null>(null);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+
+  useEffect(() => {
+    if (!settingsOpen) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setSettingsOpen(false); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [settingsOpen]);
 
   useEffect(() => {
     if (!rippo) return;
@@ -109,6 +186,26 @@ export function App() {
     try {
       const nextHealth = await rippo.health();
       setHealth(nextHealth);
+    } catch {
+      undefined;
+    }
+  }
+
+  async function chooseOutputRoot() {
+    if (!rippo || typeof rippo.chooseOutputRoot !== "function") return;
+    try {
+      const result = await rippo.chooseOutputRoot();
+      if (!result.canceled) setOutputRoot(result.outputRoot);
+    } catch {
+      undefined;
+    }
+  }
+
+  async function resetOutputRoot() {
+    if (!rippo || typeof rippo.resetOutputRoot !== "function") return;
+    try {
+      const result = await rippo.resetOutputRoot();
+      setOutputRoot(result.outputRoot);
     } catch {
       undefined;
     }
@@ -286,6 +383,15 @@ export function App() {
         <header className="hero">
           <div className="hero-content">
             <div className="masthead">
+              <button
+                type="button"
+                className="settings-btn"
+                onClick={() => setSettingsOpen(true)}
+                aria-label="Settings"
+                title="Settings"
+              >
+                <Settings size={18} strokeWidth={2} aria-hidden />
+              </button>
               <div className="brand-lockup">
                 <img className="brand-logo" src={`${import.meta.env.BASE_URL}brand-logo.png`} alt="" width={120} height={120} decoding="async" />
                 <h1 className="brand-name">RIPPO</h1>
@@ -341,7 +447,7 @@ export function App() {
               return (
                 <article key={item.localId} className={`queue-item ${item.status}`}>
                   <button type="button" className="thumb" onClick={() => openSource(item)} aria-label="Open source page" title="Open source page">
-                    {item.metadata?.thumbnail ? <img src={item.metadata.thumbnail} alt="" /> : <Link2 size={28} strokeWidth={1.5} aria-hidden />}
+                    {item.metadata ? <ThumbnailImage urls={thumbnailUrls(item)} pageUrl={sourceUrl(item)} /> : <Link2 size={28} strokeWidth={1.5} aria-hidden />}
                     <span className="thumb-overlay"><ExternalLink size={20} strokeWidth={2} aria-hidden /></span>
                   </button>
                   <div className="item-body">
@@ -390,43 +496,8 @@ export function App() {
 
         <footer className="app-footer">
           <div className="footer-row footer-meta">
-            <label className="cookie-chip" title="Use local browser cookies through yt-dlp. Cookies stay on this Mac and are not uploaded.">
-              <Cookie size={13} strokeWidth={2} aria-hidden />
-              <span className="cookie-label">Cookies</span>
-              <select
-                value={cookiesBrowser || "none"}
-                onChange={(event) => changeCookiesBrowser(event.target.value)}
-                disabled={!rippo || browsers.length === 0}
-                aria-label="Cookies source browser"
-              >
-                <option value="none">Off</option>
-                {browsers.map((browser) => (
-                  <option key={browser.id} value={browser.id}>{browser.label}</option>
-                ))}
-              </select>
-            </label>
-            {health?.cookies?.status === "error" ? <span className="cookie-warning" title={health.cookies.message || undefined}>Cookie access failed</span> : null}
-            <div className="tool-chip" title={ytDlpUpdate?.binaryPath || health?.ytDlpPath || undefined}>
-              <span className="cookie-label">yt-dlp</span>
-              <span className="tool-version">{health?.ytDlp || "unknown"}</span>
-              {ytDlpUpdate?.updateAvailable ? (
-                <button type="button" className="chip-action" onClick={updateYtDlp} disabled={!rippo || ytDlpStatus !== "idle"}>
-                  {ytDlpStatus === "updating" ? <Loader2 className="spin" size={12} strokeWidth={2} aria-hidden /> : null}
-                  {ytDlpUpdate.currentVersion ? "Update" : "Install"}
-                </button>
-              ) : (
-                <button type="button" className="chip-action" onClick={checkYtDlpUpdate} disabled={!rippo || ytDlpStatus !== "idle"}>
-                  {ytDlpStatus === "checking" ? <Loader2 className="spin" size={12} strokeWidth={2} aria-hidden /> : <RefreshCcw size={12} strokeWidth={2} aria-hidden />}
-                  Check
-                </button>
-              )}
-            </div>
             <p className="footer-path" title={outputRoot || undefined}>{outputRoot || "Set output when engine connects."}</p>
           </div>
-          {ytDlpError ? <p className="error-text tool-error">{ytDlpError}</p> : null}
-          {ytDlpUpdate && !ytDlpUpdate.updateAvailable && !ytDlpError ? (
-            <p className="tool-note">yt-dlp is current{ytDlpUpdate.latestVersion ? ` (${ytDlpUpdate.latestVersion})` : ""}.</p>
-          ) : null}
           <div className="footer-actions">
             <button type="button" className="btn btn-ghost btn-footer" onClick={() => rippo?.openFolder(outputRoot)} disabled={!rippo}>
               <FolderOpen size={16} strokeWidth={2} aria-hidden /> Open folder
@@ -438,6 +509,86 @@ export function App() {
         </footer>
       </div>
       {health && !health.ok && health.error ? <p className="error-text health-banner">{health.error}</p> : null}
+      {settingsOpen ? (
+        <div className="settings-overlay" onClick={() => setSettingsOpen(false)}>
+          <div className="settings-panel" role="dialog" aria-label="Settings" onClick={(e) => e.stopPropagation()}>
+            <div className="settings-head">
+              <h2 className="settings-title">Settings</h2>
+              <button type="button" className="icon-btn" onClick={() => setSettingsOpen(false)} aria-label="Close settings" title="Close">
+                <X size={16} strokeWidth={2} aria-hidden />
+              </button>
+            </div>
+
+            <section className="settings-section">
+              <div className="settings-row-head">
+                <FolderOpen size={14} strokeWidth={2} aria-hidden />
+                <h3 className="settings-row-title">Download location</h3>
+              </div>
+              <p className="settings-hint settings-path-display" title={outputRoot || undefined}>
+                {outputRoot || "Will use ~/Downloads/Rippo"}
+              </p>
+              <div className="settings-actions">
+                <button type="button" className="btn btn-primary btn-footer" onClick={chooseOutputRoot} disabled={!rippo}>
+                  <FolderSearch size={14} strokeWidth={2} aria-hidden /> Choose…
+                </button>
+                <button type="button" className="btn btn-ghost btn-footer" onClick={resetOutputRoot} disabled={!rippo} title="Reset to ~/Downloads/Rippo">
+                  <RotateCcw size={14} strokeWidth={2} aria-hidden /> Default
+                </button>
+              </div>
+            </section>
+
+            <section className="settings-section">
+              <div className="settings-row-head">
+                <Cookie size={14} strokeWidth={2} aria-hidden />
+                <h3 className="settings-row-title">Cookies</h3>
+              </div>
+              <p className="settings-hint">Use local browser cookies through yt-dlp. Cookies stay on this Mac and are not uploaded.</p>
+              <select
+                className="settings-select"
+                value={cookiesBrowser || "none"}
+                onChange={(event) => changeCookiesBrowser(event.target.value)}
+                disabled={!rippo || browsers.length === 0}
+                aria-label="Cookies source browser"
+              >
+                <option value="none">Off</option>
+                {browsers.map((browser) => (
+                  <option key={browser.id} value={browser.id}>{browser.label}</option>
+                ))}
+              </select>
+              {health?.cookies?.status === "error" ? (
+                <p className="settings-warning" title={health.cookies.message || undefined}>Cookie access failed{health.cookies.message ? ` — ${health.cookies.message}` : ""}</p>
+              ) : null}
+            </section>
+
+            <section className="settings-section">
+              <div className="settings-row-head">
+                <h3 className="settings-row-title">yt-dlp</h3>
+                <span className="settings-version">{health?.ytDlp || "unknown"}</span>
+              </div>
+              <p className="settings-hint" title={ytDlpUpdate?.binaryPath || health?.ytDlpPath || undefined}>
+                {ytDlpUpdate?.binaryPath || health?.ytDlpPath || "Managed by Rippopotamus."}
+              </p>
+              <div className="settings-actions">
+                {ytDlpUpdate?.updateAvailable ? (
+                  <button type="button" className="btn btn-primary btn-footer" onClick={updateYtDlp} disabled={!rippo || ytDlpStatus !== "idle"}>
+                    {ytDlpStatus === "updating" ? <Loader2 className="spin" size={14} strokeWidth={2} aria-hidden /> : null}
+                    {ytDlpUpdate.currentVersion ? "Update" : "Install"}
+                  </button>
+                ) : (
+                  <button type="button" className="btn btn-ghost btn-footer" onClick={checkYtDlpUpdate} disabled={!rippo || ytDlpStatus !== "idle"}>
+                    {ytDlpStatus === "checking" ? <Loader2 className="spin" size={14} strokeWidth={2} aria-hidden /> : <RefreshCcw size={14} strokeWidth={2} aria-hidden />}
+                    Check for updates
+                  </button>
+                )}
+              </div>
+              {ytDlpError ? <p className="settings-warning">{ytDlpError}</p> : null}
+              {ytDlpUpdate && !ytDlpUpdate.updateAvailable && !ytDlpError ? (
+                <p className="settings-hint">yt-dlp is current{ytDlpUpdate.latestVersion ? ` (${ytDlpUpdate.latestVersion})` : ""}.</p>
+              ) : null}
+            </section>
+          </div>
+        </div>
+      ) : null}
     </main>
   );
 }

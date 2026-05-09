@@ -8,10 +8,13 @@ declare global {
       download: (payload: DownloadRequest) => Promise<DownloadResponse>;
       openFolder: (folder: string) => Promise<void>;
       openExternal: (url: string) => Promise<void>;
+      loadThumbnail: (urls: string[], pageUrl?: string) => Promise<ThumbnailLoadResult>;
       listBrowsers: () => Promise<CookiesBrowserResponse>;
       setCookiesBrowser: (browserId: string | null) => Promise<CookiesBrowserResponse>;
       checkYtDlpUpdate: () => Promise<YtDlpUpdateInfo>;
       updateYtDlp: () => Promise<YtDlpUpdateResult>;
+      chooseOutputRoot: () => Promise<{ outputRoot: string; canceled: boolean }>;
+      resetOutputRoot: () => Promise<{ outputRoot: string }>;
       onDownloadEvent: (callback: (event: DownloadEvent) => void) => () => void;
     };
   }
@@ -35,6 +38,11 @@ export type EngineHealth = {
 };
 
 export type BrowserInfo = { id: string; label: string; appPath: string };
+
+export type ThumbnailLoadResult = {
+  src: string | null;
+  url: string | null;
+};
 
 export type CookiesHealth = {
   status: "off" | "ok" | "error";
@@ -75,6 +83,7 @@ export type FetchResponse = {
     uploader?: string;
     upload_date?: string;
     thumbnail?: string;
+    thumbnails?: string[];
     description?: string;
   };
 };
