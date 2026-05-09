@@ -139,101 +139,98 @@ export function App() {
 
   return (
     <main className="app">
-      <header className="controls">
-        <div className="brand-band">
-          <div className="brand">
-            <img className="brand-logo" src={`${import.meta.env.BASE_URL}brand-logo.png`} alt="" width={52} height={52} decoding="async" />
-            <div className="brand-text">
-              <span className="brand-name">Rippopotamus</span>
-              <span className="brand-tagline">Links in → assets out</span>
+      <div className="layout">
+        <header className="hero">
+          <div className="hero-content">
+            <div className="masthead">
+              <div className="brand-lockup">
+                <img className="brand-logo" src={`${import.meta.env.BASE_URL}brand-logo.png`} alt="" width={120} height={120} decoding="async" />
+                <h1 className="brand-name">RIPPO</h1>
+              </div>
+            </div>
+
+            <div className="composer">
+              <textarea
+                id="url-input"
+                className="input-multiline"
+                value={input}
+                onChange={(event) => setInput(event.target.value)}
+                placeholder="Paste URLs here to start…"
+                rows={2}
+                aria-label="URLs to fetch"
+              />
+              <div className="composer-toolbar">
+                <div className="segmented" role="group" aria-label="Output format">
+                  {presets.map((item) => (
+                    <button key={item.id} type="button" className={preset === item.id ? "segment active" : "segment"} onClick={() => setPreset(item.id)} title={item.detail}>
+                      {item.label}
+                    </button>
+                  ))}
+                </div>
+                <button type="button" className="btn btn-primary btn-fetch" onClick={addAndFetch} disabled={!splitUrls(input).length}>
+                  Fetch
+                </button>
+              </div>
             </div>
           </div>
-          <div className={`status-chip ${health?.ok ? "ok" : healthError ? "bad" : "pending"}`}>
-            <span className={`engine-dot ${health?.ok ? "ok" : healthError ? "bad" : "pending"}`} aria-hidden />
-            <span className="status-chip-label">{health?.ok ? "Engine ready" : healthError || "Starting…"}</span>
-          </div>
-        </div>
-        <div className="input-row">
-          <label className="url-field" htmlFor="url-input">
-            <Link2 size={18} strokeWidth={2} aria-hidden />
-            <textarea
-              id="url-input"
-              value={input}
-              onChange={(event) => setInput(event.target.value)}
-              placeholder="Paste URLs"
-              rows={3}
-            />
-          </label>
-          <button type="button" className="btn btn-primary btn-fetch" onClick={addAndFetch} disabled={!splitUrls(input).length}>
-            Fetch
-          </button>
-        </div>
-        <div className="preset-row" role="group" aria-label="Output format">
-          {presets.map((item) => (
-            <button key={item.id} type="button" className={preset === item.id ? "preset active" : "preset"} onClick={() => setPreset(item.id)} title={item.detail}>
-              {item.label}
-            </button>
-          ))}
-        </div>
-      </header>
+          <div className="hero-gradient" />
+        </header>
 
-      <section className="queue">
-        {items.length > 0 && (
-          <p className="queue-summary">{items.length} · {totals.ready} ready · {totals.done} saved</p>
-        )}
-        {items.length === 0 ? (
-          <div className="empty">Paste URLs above.</div>
-        ) : (
-          items.map((item) => (
-            <article key={item.localId} className={`queue-item ${item.status}`}>
-              <div className="thumb">
-                {item.metadata?.thumbnail ? <img src={item.metadata.thumbnail} alt="" /> : <Link2 size={22} strokeWidth={2} />}
-              </div>
-              <div className="item-main">
-                <div className="item-title">
-                  <strong>{item.metadata?.title || shortUrl(item.url)}</strong>
-                  <a href={item.metadata?.webpage_url || item.url} target="_blank" rel="noreferrer" aria-label="Open source page">
-                    <ExternalLink size={14} strokeWidth={2} aria-hidden />
-                  </a>
+        <section className="queue">
+          {items.length > 0 && (
+            <p className="queue-summary">{items.length} · {totals.ready} ready · {totals.done} saved</p>
+          )}
+          {items.length === 0 ? (
+            <div className="empty">No URLs yet.</div>
+          ) : (
+            items.map((item) => (
+              <article key={item.localId} className={`queue-item ${item.status}`}>
+                <div className="thumb">
+                  {item.metadata?.thumbnail ? <img src={item.metadata.thumbnail} alt="" /> : <Link2 size={18} strokeWidth={2} aria-hidden />}
                 </div>
-                <p>{item.metadata?.uploader || item.url}</p>
-                {(item.metadata?.extractor || item.metadata?.duration) ? (
-                  <p className="item-detail">
-                    {[item.metadata?.extractor, item.metadata?.duration ? formatDuration(item.metadata.duration) : null].filter(Boolean).join(" · ")}
-                  </p>
-                ) : null}
-                {item.status === "downloading" && <div className="bar"><span style={{ width: `${item.progress || 4}%` }} /></div>}
-                {item.files?.length ? <small className="files">{item.files.join(", ")}</small> : null}
-                {item.error ? <small className="error-text">{item.error}</small> : null}
-              </div>
-              <div className="item-status">
-                <span>{item.status}</span>
-                {item.stage ? <small>{item.stage}</small> : null}
-                {item.status === "failed" ? (
-                  <button type="button" onClick={() => retryFetch(item)}>
-                    <RefreshCcw size={14} strokeWidth={2} aria-hidden /> Retry
-                  </button>
-                ) : null}
-              </div>
-            </article>
-          ))
-        )}
-      </section>
+                <div className="item-main">
+                  <div className="item-title">
+                    <strong>{item.metadata?.title || shortUrl(item.url)}</strong>
+                    <a href={item.metadata?.webpage_url || item.url} target="_blank" rel="noreferrer" aria-label="Open source page">
+                      <ExternalLink size={13} strokeWidth={2} aria-hidden />
+                    </a>
+                  </div>
+                  <p>{item.metadata?.uploader || item.url}</p>
+                  {(item.metadata?.extractor || item.metadata?.duration) ? (
+                    <p className="item-detail">
+                      {[item.metadata?.extractor, item.metadata?.duration ? formatDuration(item.metadata.duration) : null].filter(Boolean).join(" · ")}
+                    </p>
+                  ) : null}
+                  {item.status === "downloading" && <div className="bar"><span style={{ width: `${item.progress || 4}%` }} /></div>}
+                  {item.files?.length ? <small className="files">{item.files.join(", ")}</small> : null}
+                  {item.error ? <small className="error-text">{item.error}</small> : null}
+                </div>
+                <div className="item-status">
+                  <span className="meta-status">{item.status}</span>
+                  {item.stage ? <small>{item.stage}</small> : null}
+                  {item.status === "failed" ? (
+                    <button type="button" onClick={() => retryFetch(item)}>
+                      <RefreshCcw size={12} strokeWidth={2} aria-hidden /> Retry
+                    </button>
+                  ) : null}
+                </div>
+              </article>
+            ))
+          )}
+        </section>
 
-      <footer className="app-footer">
-        <div className="footer-main">
-          <span className="footer-path-label">Save to</span>
-          <span className="footer-path" title={outputRoot || undefined}>{outputRoot || "—"}</span>
-        </div>
-        <div className="footer-actions">
-          <button type="button" className="btn btn-ghost btn-footer" onClick={() => window.rippo.openFolder(outputRoot)}>
-            <FolderOpen size={18} strokeWidth={2} /> Open folder
-          </button>
-          <button type="button" className="btn btn-primary btn-footer" onClick={downloadReady} disabled={!totals.ready || busy}>
-            {busy ? <Loader2 className="spin" size={18} strokeWidth={2} /> : <Download size={18} strokeWidth={2} />} Download{totals.ready ? ` ${totals.ready}` : ""}
-          </button>
-        </div>
-      </footer>
+        <footer className="app-footer">
+          <p className="footer-path" title={outputRoot || undefined}>{outputRoot || "Set output when engine connects."}</p>
+          <div className="footer-actions">
+            <button type="button" className="btn btn-ghost btn-footer" onClick={() => window.rippo.openFolder(outputRoot)}>
+              <FolderOpen size={16} strokeWidth={2} aria-hidden /> Open folder
+            </button>
+            <button type="button" className="btn btn-primary btn-footer" onClick={downloadReady} disabled={!totals.ready || busy}>
+              {busy ? <Loader2 className="spin" size={16} strokeWidth={2} aria-hidden /> : <Download size={16} strokeWidth={2} aria-hidden />} Download{totals.ready ? ` ${totals.ready}` : ""}
+            </button>
+          </div>
+        </footer>
+      </div>
     </main>
   );
 }

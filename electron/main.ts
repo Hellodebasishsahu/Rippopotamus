@@ -140,7 +140,7 @@ function createWindow() {
     minWidth: 980,
     minHeight: 680,
     title: "Rippopotamus",
-    backgroundColor: "#f5eee6",
+    backgroundColor: "#000000",
     show: false,
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
