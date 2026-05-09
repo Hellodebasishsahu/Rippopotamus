@@ -3,7 +3,9 @@ name = "rippopotamus"
 version = "0.1.0"
 description = "Local media ingest workstation for editors and designers"
 requires-python = ">=3.11"
-dependencies = []
+dependencies = [
+  "yt-dlp>=2025.10.14",
+]
 
 [project.scripts]
 rippo = "rippopotamus.cli:main"

@@ -6,6 +6,8 @@ node_modules/
 .build-venv/
 .prototype/
 dist/
+dist-electron/
+release/
 build/
 downloads/
 *.pyc

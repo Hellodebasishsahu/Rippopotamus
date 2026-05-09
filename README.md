@@ -76,3 +76,16 @@ Available presets:
 - `audio-mp3`
 - `thumbnail`
 - `proxy`
+
+## Desktop MVP
+
+The first native shell is Electron + Vite calling the Python media engine over local subprocess IPC. It is intentionally focused on link intake, metadata, presets, queue state, readable failures, local output, and opening the output folder.
+
+```bash
+npm install
+npm run dev
+npm run package:mac
+open release/mac-arm64/Rippopotamus.app
+```
+
+The macOS app package currently includes the renderer, Electron main process, Python engine source, and bundled `ffmpeg-static`. The remaining distribution step is freezing the Python engine/yt-dlp runtime into a standalone binary so friends do not need a local Python/yt-dlp install.

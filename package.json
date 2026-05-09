@@ -1,0 +1,65 @@
+{
+  "name": "rippopotamus",
+  "version": "0.1.0",
+  "description": "Feed it links. It spits out assets.",
+  "main": "dist-electron/main.js",
+  "scripts": {
+    "dev": "concurrently -k \"vite --host 127.0.0.1\" \"wait-on http://127.0.0.1:5173 && VITE_DEV_SERVER_URL=http://127.0.0.1:5173 electron .\"",
+    "build": "npm run build:ui && npm run build:electron",
+    "build:ui": "vite build",
+    "build:electron": "tsc -p tsconfig.electron.json",
+    "package:mac": "npm run build && electron-builder --mac dir",
+    "test": "PYTHONPATH=src python -m unittest discover -s tests && npm run build"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "UNLICENSED",
+  "type": "commonjs",
+  "dependencies": {
+    "ffmpeg-static": "^5.3.0"
+  },
+  "devDependencies": {
+    "@types/node": "^25.6.2",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^6.0.1",
+    "concurrently": "^9.2.1",
+    "electron": "^42.0.0",
+    "electron-builder": "^26.8.1",
+    "lucide-react": "^1.14.0",
+    "react": "^19.2.6",
+    "react-dom": "^19.2.6",
+    "typescript": "^6.0.3",
+    "vite": "^8.0.11",
+    "wait-on": "^9.0.5"
+  },
+  "build": {
+    "appId": "app.rippopotamus.desktop",
+    "productName": "Rippopotamus",
+    "asar": true,
+    "files": [
+      "dist/renderer/**/*",
+      "dist-electron/**/*",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "src/rippopotamus",
+        "to": "engine/rippopotamus"
+      },
+      {
+        "from": "pyproject.toml",
+        "to": "engine/pyproject.toml"
+      }
+    ],
+    "directories": {
+      "output": "release"
+    },
+    "mac": {
+      "category": "public.app-category.video",
+      "target": [
+        "dir"
+      ]
+    }
+  }
+}
