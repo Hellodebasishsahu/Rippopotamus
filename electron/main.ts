@@ -23,6 +23,10 @@ function ffmpegPath(): string | null {
   }
 }
 
+function appManagedYtDlpPath(): string {
+  return path.join(app.getPath("userData"), "bin", process.platform === "win32" ? "yt-dlp.exe" : "yt-dlp");
+}
+
 function candidatePythons(): string[] {
   const configured = process.env.RIPPO_PYTHON;
   return [
@@ -39,10 +43,12 @@ function engineEnv(): NodeJS.ProcessEnv {
   const devEngine = path.join(app.getAppPath(), "src");
   const pythonPath = app.isPackaged ? resourcesEngine : devEngine;
   const bundledFfmpeg = ffmpegPath();
+  fs.mkdirSync(path.dirname(appManagedYtDlpPath()), { recursive: true });
   return {
     ...process.env,
     PYTHONPATH: [pythonPath, process.env.PYTHONPATH].filter(Boolean).join(path.delimiter),
     RIPPO_FFMPEG_PATH: bundledFfmpeg || process.env.RIPPO_FFMPEG_PATH || "",
+    RIPPO_YTDLP_PATH: process.env.RIPPO_YTDLP_PATH || appManagedYtDlpPath(),
   };
 }
 
@@ -194,6 +200,14 @@ app.whenReady().then(() => {
 
   ipcMain.handle("shell:open-folder", async (_event, folder: string) => {
     await shell.openPath(folder || defaultOutputRoot());
+  });
+
+  ipcMain.handle("shell:open-external", async (_event, url: string) => {
+    const parsed = new URL(url);
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+      throw new Error("Only http and https URLs can be opened.");
+    }
+    await shell.openExternal(parsed.toString());
   });
 
   createWindow();

@@ -18,7 +18,24 @@ def emit(payload: dict[str, Any]) -> None:
     print(json.dumps(payload, sort_keys=True), flush=True)
 
 
+def configured_yt_dlp_path() -> str | None:
+    configured = os.environ.get("RIPPO_YTDLP_PATH")
+    if not configured:
+        return None
+
+    path = Path(configured).expanduser()
+    if not path.exists():
+        return None
+    if not path.is_file() or not os.access(path, os.X_OK):
+        raise SystemExit(f"Configured yt-dlp is not executable: {path}")
+    return str(path)
+
+
 def yt_dlp_base() -> list[str]:
+    configured = configured_yt_dlp_path()
+    if configured:
+        return [configured]
+
     try:
         import yt_dlp  # noqa: F401
 
@@ -87,6 +104,7 @@ def command_health(_args: argparse.Namespace) -> int:
         "ok": True,
         "python": sys.executable,
         "ytDlp": yt_dlp_version,
+        "ytDlpPath": base[0] if len(base) == 1 else None,
         "ffmpeg": ffmpeg,
         "ffmpegOk": ffmpeg_ok,
         "ffmpegVersion": ffmpeg_version,

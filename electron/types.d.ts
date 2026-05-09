@@ -7,6 +7,7 @@ declare global {
       fetch: (url: string) => Promise<FetchResponse>;
       download: (payload: DownloadRequest) => Promise<DownloadResponse>;
       openFolder: (folder: string) => Promise<void>;
+      openExternal: (url: string) => Promise<void>;
       onDownloadEvent: (callback: (event: DownloadEvent) => void) => () => void;
     };
   }
@@ -16,6 +17,7 @@ export type EngineHealth = {
   ok: boolean;
   python?: string;
   ytDlp?: string;
+  ytDlpPath?: string | null;
   ffmpeg?: string | null;
   ffmpegOk?: boolean;
   ffmpegVersion?: string | null;

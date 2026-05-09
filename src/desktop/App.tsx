@@ -1,5 +1,5 @@
-import { Download, ExternalLink, FolderOpen, Link2, Loader2, RefreshCcw } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { Download, ExternalLink, FolderOpen, Link2, Loader2, RefreshCcw, Trash2 } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { DownloadEvent, EngineHealth, FetchResponse } from "../../electron/types";
 
 const presets = [
@@ -9,10 +9,13 @@ const presets = [
   { id: "proxy", label: "Proxy", detail: "720p MP4" },
 ];
 
+const DEFAULT_PRESET = "mp4-best";
+
 type QueueItem = {
   localId: string;
   url: string;
   status: "queued" | "fetching" | "ready" | "downloading" | "done" | "failed";
+  preset: string;
   metadata?: FetchResponse["metadata"];
   error?: string;
   progress?: number;
@@ -41,26 +44,45 @@ function shortUrl(url: string) {
   }
 }
 
+function sourceUrl(item: QueueItem) {
+  return item.metadata?.webpage_url || item.url;
+}
+
 export function App() {
+  const rippo = window.rippo;
   const [health, setHealth] = useState<EngineHealth | null>(null);
   const [healthError, setHealthError] = useState<string | null>(null);
   const [input, setInput] = useState("");
   const [items, setItems] = useState<QueueItem[]>([]);
-  const [preset, setPreset] = useState("mp4-best");
   const [outputRoot, setOutputRoot] = useState("");
   const [busy, setBusy] = useState(false);
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
 
   useEffect(() => {
-    window.rippo.health()
+    const el = textareaRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${Math.min(el.scrollHeight, 192)}px`;
+  }, [input]);
+
+  const detectedCount = useMemo(() => splitUrls(input).length, [input]);
+
+  useEffect(() => {
+    if (!rippo) {
+      setHealthError("Desktop engine IPC is not available.");
+      return;
+    }
+    rippo.health()
       .then((result) => {
         setHealth(result);
         setOutputRoot(result.outputRoot);
       })
       .catch((error) => setHealthError(error.message || String(error)));
-  }, []);
+  }, [rippo]);
 
   useEffect(() => {
-    return window.rippo.onDownloadEvent((event: DownloadEvent) => {
+    if (!rippo) return undefined;
+    return rippo.onDownloadEvent((event: DownloadEvent) => {
       setItems((current) => current.map((item) => {
         if (item.jobId !== event.jobId) return item;
         if (event.type === "progress") {
@@ -72,7 +94,7 @@ export function App() {
         return item;
       }));
     });
-  }, []);
+  }, [rippo]);
 
   const totals = useMemo(() => ({
     ready: items.filter((item) => item.status === "ready").length,
@@ -82,12 +104,12 @@ export function App() {
 
   async function addAndFetch() {
     const urls = splitUrls(input);
-    if (!urls.length) return;
+    if (!urls.length || !rippo) return;
 
     const existing = new Set(items.map((item) => item.url));
     const fresh = urls
       .filter((url) => !existing.has(url))
-      .map((url) => ({ localId: crypto.randomUUID().slice(0, 10), url, status: "queued" as const }));
+      .map((url) => ({ localId: crypto.randomUUID().slice(0, 10), url, status: "queued" as const, preset: DEFAULT_PRESET }));
 
     setInput("");
     setItems((current) => [...fresh, ...current]);
@@ -95,7 +117,7 @@ export function App() {
     for (const item of fresh) {
       setItems((current) => current.map((candidate) => candidate.localId === item.localId ? { ...candidate, status: "fetching" } : candidate));
       try {
-        const result = await window.rippo.fetch(item.url);
+        const result = await rippo.fetch(item.url);
         setItems((current) => current.map((candidate) => candidate.localId === item.localId ? { ...candidate, status: "ready", metadata: result.metadata } : candidate));
       } catch (error) {
         setItems((current) => current.map((candidate) => candidate.localId === item.localId ? { ...candidate, status: "failed", error: error instanceof Error ? error.message : String(error) } : candidate));
@@ -104,17 +126,16 @@ export function App() {
   }
 
   async function downloadReady() {
-    const ready = items.filter((item) => item.status === "ready" || item.status === "failed");
-    if (!ready.length || busy) return;
+    const ready = items.filter((item) => item.status === "ready");
+    if (!ready.length || busy || !rippo) return;
     setBusy(true);
     for (const item of ready) {
-      if (item.status === "failed" && !item.metadata) continue;
       const jobId = item.localId;
       setItems((current) => current.map((candidate) => candidate.localId === item.localId ? { ...candidate, status: "downloading", progress: 0, error: undefined, jobId } : candidate));
       try {
-        const response = await window.rippo.download({
+        const response = await rippo.download({
           url: item.url,
-          preset,
+          preset: item.preset,
           outputRoot,
           itemId: item.localId,
           title: item.metadata?.title || item.localId,
@@ -132,9 +153,28 @@ export function App() {
     setBusy(false);
   }
 
-  function retryFetch(item: QueueItem) {
-    setInput(item.url);
-    setItems((current) => current.filter((candidate) => candidate.localId !== item.localId));
+  async function refetch(item: QueueItem) {
+    if (!rippo) return;
+    setItems((current) => current.map((candidate) => candidate.localId === item.localId ? { ...candidate, status: "fetching", error: undefined } : candidate));
+    try {
+      const result = await rippo.fetch(item.url);
+      setItems((current) => current.map((candidate) => candidate.localId === item.localId ? { ...candidate, status: "ready", metadata: result.metadata } : candidate));
+    } catch (error) {
+      setItems((current) => current.map((candidate) => candidate.localId === item.localId ? { ...candidate, status: "failed", error: error instanceof Error ? error.message : String(error) } : candidate));
+    }
+  }
+
+  function removeItem(id: string) {
+    setItems((current) => current.filter((item) => item.localId !== id));
+  }
+
+  function setItemPreset(id: string, preset: string) {
+    setItems((current) => current.map((item) => item.localId === id ? { ...item, preset } : item));
+  }
+
+  function openSource(item: QueueItem) {
+    if (rippo) rippo.openExternal(sourceUrl(item)).catch(() => undefined);
+    else window.open(sourceUrl(item), "_blank", "noopener,noreferrer");
   }
 
   return (
@@ -149,26 +189,27 @@ export function App() {
               </div>
             </div>
 
-            <div className="composer">
+            <div className={`composer ${input ? "has-content" : ""}`}>
               <textarea
                 id="url-input"
+                ref={textareaRef}
                 className="input-multiline"
                 value={input}
                 onChange={(event) => setInput(event.target.value)}
-                placeholder="Paste URLs here to start…"
-                rows={2}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
+                    event.preventDefault();
+                    addAndFetch();
+                  }
+                }}
+                placeholder="Paste link(s) to start…"
+                rows={1}
                 aria-label="URLs to fetch"
               />
-              <div className="composer-toolbar">
-                <div className="segmented" role="group" aria-label="Output format">
-                  {presets.map((item) => (
-                    <button key={item.id} type="button" className={preset === item.id ? "segment active" : "segment"} onClick={() => setPreset(item.id)} title={item.detail}>
-                      {item.label}
-                    </button>
-                  ))}
-                </div>
-                <button type="button" className="btn btn-primary btn-fetch" onClick={addAndFetch} disabled={!splitUrls(input).length}>
-                  Fetch
+              <div className="composer-foot">
+                {detectedCount > 1 ? <span className="link-count">{detectedCount} links</span> : <span className="composer-hint">⌘↵ to fetch</span>}
+                <button type="button" className="btn btn-primary btn-fetch" onClick={addAndFetch} disabled={!detectedCount || !rippo}>
+                  Fetch{detectedCount > 1 ? ` ${detectedCount}` : ""}
                 </button>
               </div>
             </div>
@@ -177,8 +218,9 @@ export function App() {
         </header>
 
         <section className="queue">
+          {healthError ? <p className="error-text">{healthError}</p> : null}
           {items.length > 0 && (
-            <p className="queue-summary">{items.length} · {totals.ready} ready · {totals.done} saved</p>
+            <p className="queue-summary">{items.length} · {totals.ready} ready · {totals.done} saved{totals.failed ? ` · ${totals.failed} failed` : ""}</p>
           )}
           {items.length === 0 ? (
             <div className="empty">No URLs yet.</div>
@@ -191,9 +233,9 @@ export function App() {
                 <div className="item-main">
                   <div className="item-title">
                     <strong>{item.metadata?.title || shortUrl(item.url)}</strong>
-                    <a href={item.metadata?.webpage_url || item.url} target="_blank" rel="noreferrer" aria-label="Open source page">
+                    <button type="button" className="icon-link" onClick={() => openSource(item)} aria-label="Open source page" title="Open source page">
                       <ExternalLink size={13} strokeWidth={2} aria-hidden />
-                    </a>
+                    </button>
                   </div>
                   <p>{item.metadata?.uploader || item.url}</p>
                   {(item.metadata?.extractor || item.metadata?.duration) ? (
@@ -208,11 +250,27 @@ export function App() {
                 <div className="item-status">
                   <span className="meta-status">{item.status}</span>
                   {item.stage ? <small>{item.stage}</small> : null}
-                  {item.status === "failed" ? (
-                    <button type="button" onClick={() => retryFetch(item)}>
-                      <RefreshCcw size={12} strokeWidth={2} aria-hidden /> Retry
+                  <div className="preset-chip">
+                    <select
+                      value={item.preset}
+                      onChange={(event) => setItemPreset(item.localId, event.target.value)}
+                      disabled={item.status === "downloading" || item.status === "done"}
+                      aria-label="Output format"
+                      title={presets.find((p) => p.id === item.preset)?.detail}
+                    >
+                      {presets.map((option) => (
+                        <option key={option.id} value={option.id}>{option.label}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="item-actions">
+                    <button type="button" onClick={() => refetch(item)} disabled={item.status === "fetching" || item.status === "downloading"} title="Refetch" aria-label="Refetch">
+                      <RefreshCcw size={12} strokeWidth={2} aria-hidden />
                     </button>
-                  ) : null}
+                    <button type="button" onClick={() => removeItem(item.localId)} disabled={item.status === "downloading"} title="Remove" aria-label="Remove">
+                      <Trash2 size={12} strokeWidth={2} aria-hidden />
+                    </button>
+                  </div>
                 </div>
               </article>
             ))
@@ -222,15 +280,16 @@ export function App() {
         <footer className="app-footer">
           <p className="footer-path" title={outputRoot || undefined}>{outputRoot || "Set output when engine connects."}</p>
           <div className="footer-actions">
-            <button type="button" className="btn btn-ghost btn-footer" onClick={() => window.rippo.openFolder(outputRoot)}>
+            <button type="button" className="btn btn-ghost btn-footer" onClick={() => rippo?.openFolder(outputRoot)} disabled={!rippo}>
               <FolderOpen size={16} strokeWidth={2} aria-hidden /> Open folder
             </button>
-            <button type="button" className="btn btn-primary btn-footer" onClick={downloadReady} disabled={!totals.ready || busy}>
+            <button type="button" className="btn btn-primary btn-footer" onClick={downloadReady} disabled={!totals.ready || busy || !rippo}>
               {busy ? <Loader2 className="spin" size={16} strokeWidth={2} aria-hidden /> : <Download size={16} strokeWidth={2} aria-hidden />} Download{totals.ready ? ` ${totals.ready}` : ""}
             </button>
           </div>
         </footer>
       </div>
+      {health && !health.ok && health.error ? <p className="error-text health-banner">{health.error}</p> : null}
     </main>
   );
 }
