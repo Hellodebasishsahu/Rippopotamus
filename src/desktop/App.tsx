@@ -1,6 +1,6 @@
-import { Cookie, Download, ExternalLink, FolderOpen, FolderSearch, ImageOff, Link2, Loader2, RefreshCcw, RotateCcw, Settings, Trash2, X } from "lucide-react";
+import { Cookie, Download, ExternalLink, FolderOpen, FolderSearch, ImageOff, Link2, Loader2, RefreshCcw, RotateCcw, Search, Settings, Trash2, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { BrowserInfo, CookieSource, DownloadEvent, EngineHealth, FetchResponse, GalleryDlUpdateInfo, PresetOption, ProviderId, ProviderOption, YtDlpUpdateInfo } from "../../electron/types";
+import type { BrowserInfo, CookieSource, DownloadEvent, EngineHealth, FetchResponse, GalleryDlUpdateInfo, OpenRouterModelCatalog, PresetOption, ProviderId, ProviderOption, SourceSearchPack, SourceSearchResponse, SourceSearchResult, YtDlpUpdateInfo } from "../../electron/types";
 import { extractUrls } from "./urlParser";
 
 type QueueItem = {
@@ -21,8 +21,33 @@ type QueueItem = {
   cookieSource: CookieSource;
 };
 
+type ComposerAction = {
+  id: "idle" | "search" | "fetch";
+  label: string;
+  busyLabel: string;
+  hint: string;
+  icon: "search" | "none";
+  disabled: boolean;
+  countSuffix?: string;
+};
+
 const AUTO_PROVIDER = "auto";
 const COOKIE_OFF: CookieSource = { mode: "off" };
+const DEFAULT_SOURCE_PACKS: SourceSearchPack[] = [
+  { id: "all", label: "All" },
+  { id: "movies", label: "Movies and shows" },
+  { id: "starter", label: "Best starting points" },
+  { id: "public", label: "Public archives" },
+  { id: "stock", label: "Free stock media" },
+  { id: "tools", label: "Media tools" },
+];
+const EMPTY_SOURCE_SEARCH: SourceSearchResponse = {
+  ok: false,
+  query: "",
+  pack: "all",
+  packs: DEFAULT_SOURCE_PACKS,
+  results: [],
+};
 
 function formatDuration(seconds?: number) {
   if (!seconds) return "Unknown length";
@@ -77,6 +102,48 @@ function metaLine(item: QueueItem): string {
   if (item.metadata?.uploader) parts.push(item.metadata.uploader);
   if (item.metadata?.duration) parts.push(formatDuration(item.metadata.duration));
   return parts.join(" · ");
+}
+
+function sourceOpenUrl(source: SourceSearchResult): string {
+  return source.openUrl || source.url;
+}
+
+function sourceActionLabel(source: SourceSearchResult): string {
+  return source.actionLabel || (sourceOpenUrl(source) !== source.url ? "Search" : "Open");
+}
+
+function sourceStatusLabel(search: SourceSearchResponse, busy: boolean): string {
+  if (busy) return "Searching live sources...";
+  const actual = search.actualResultCount ?? search.results.filter((result) => result.resultKind === "item").length;
+  const routes = search.routeResultCount ?? search.results.filter((result) => result.resultKind !== "item").length;
+  if (actual > 0 && routes > 0) return `${actual} results · ${routes} source routes`;
+  if (actual > 0) return `${actual} results`;
+  return `${routes || search.results.length} source routes`;
+}
+
+function sourceBadgeLabel(source: SourceSearchResult): string {
+  if (source.resultKind === "item") return `${source.sourceName || source.packLabel} result`;
+  return "source route";
+}
+
+function sourceContextLabel(search: SourceSearchResponse, input: string): string {
+  const intelligence = search.intelligence;
+  if (intelligence?.enabled && intelligence.pack !== "all") {
+    const evidence = intelligence.webEvidence;
+    const evidenceCount = evidence?.resultCount ?? evidence?.results?.length ?? 0;
+    if (evidence?.enabled && evidenceCount > 0) {
+      return `AI routed to ${intelligence.packLabel} from ${evidence.label || evidence.source || "web evidence"}`;
+    }
+    return `AI routed to ${intelligence.packLabel}`;
+  }
+  return search.query || input.trim() || "search";
+}
+
+function searchEvidenceText(health: EngineHealth | null): string {
+  const evidence = health?.searchEvidence;
+  if (evidence?.configured && evidence.available === false) return `${evidence.label || evidence.provider || "Web context"} unavailable`;
+  if (evidence?.configured) return evidence.label || evidence.provider || "Configured";
+  return "No web context";
 }
 
 function updaterErrorMessage(error: unknown, tool: "yt-dlp" | "gallery-dl"): string {
@@ -228,6 +295,62 @@ function aria2cPathText(health: EngineHealth | null): string {
   return "Install aria2c to save magnet links and torrent files.";
 }
 
+function openRouterModelText(catalog: OpenRouterModelCatalog | null, health: EngineHealth | null): string {
+  if (catalog?.selectedModel) return catalog.selectedModel;
+  return health?.openRouterModel || "openrouter/free";
+}
+
+function openRouterKeyText(catalog: OpenRouterModelCatalog | null, health: EngineHealth | null): string {
+  const present = catalog?.apiKeyPresent ?? health?.openRouterKeyPresent;
+  return present ? "Key connected" : "Set OPENROUTER_API_KEY";
+}
+
+function resolveComposerAction({
+  hasText,
+  urlCount,
+  canUseDesktop,
+  hasProvider,
+  searchBusy,
+}: {
+  hasText: boolean;
+  urlCount: number;
+  canUseDesktop: boolean;
+  hasProvider: boolean;
+  searchBusy: boolean;
+}): ComposerAction {
+  if (!hasText) {
+    return {
+      id: "idle",
+      label: "Go",
+      busyLabel: "Working",
+      hint: "Paste or type first",
+      icon: "none",
+      disabled: true,
+    };
+  }
+
+  if (urlCount > 0) {
+    return {
+      id: "fetch",
+      label: "Fetch",
+      busyLabel: "Fetching",
+      hint: "fetch",
+      icon: "none",
+      disabled: !canUseDesktop || !hasProvider,
+      countSuffix: urlCount > 1 ? ` ${urlCount}` : "",
+    };
+  }
+
+  return {
+    id: "search",
+    label: "Search",
+    busyLabel: "Searching",
+    hint: "search",
+    icon: "search",
+    disabled: !canUseDesktop || searchBusy,
+  };
+}
+
 function thumbnailUrls(item: QueueItem): string[] {
   const candidates = [
     item.metadata?.thumbnail,
@@ -294,6 +417,9 @@ export function App() {
   const [health, setHealth] = useState<EngineHealth | null>(null);
   const [healthError, setHealthError] = useState<string | null>(null);
   const [input, setInput] = useState("");
+  const [activeSourcePack, setActiveSourcePack] = useState("all");
+  const [sourceSearch, setSourceSearch] = useState<SourceSearchResponse>(EMPTY_SOURCE_SEARCH);
+  const [sourceSearchBusy, setSourceSearchBusy] = useState(false);
   const [fetchProvider, setFetchProvider] = useState<ProviderId | typeof AUTO_PROVIDER>(AUTO_PROVIDER);
   const [items, setItems] = useState<QueueItem[]>([]);
   const [outputRoot, setOutputRoot] = useState("");
@@ -306,6 +432,9 @@ export function App() {
   const [galleryDlUpdate, setGalleryDlUpdate] = useState<GalleryDlUpdateInfo | null>(null);
   const [galleryDlStatus, setGalleryDlStatus] = useState<"idle" | "checking" | "updating">("idle");
   const [galleryDlError, setGalleryDlError] = useState<string | null>(null);
+  const [aiCatalog, setAiCatalog] = useState<OpenRouterModelCatalog | null>(null);
+  const [aiStatus, setAiStatus] = useState<"idle" | "loading" | "saving">("idle");
+  const [aiError, setAiError] = useState<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
 
@@ -315,6 +444,11 @@ export function App() {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [settingsOpen]);
+
+  useEffect(() => {
+    if (!settingsOpen || !rippo || typeof rippo.listAiModels !== "function" || aiCatalog) return;
+    void loadAiModels(false);
+  }, [settingsOpen, rippo, aiCatalog]);
 
   useEffect(() => {
     if (!rippo) return;
@@ -356,6 +490,37 @@ export function App() {
       setOutputRoot(result.outputRoot);
     } catch {
       undefined;
+    }
+  }
+
+  async function loadAiModels(refresh: boolean) {
+    if (!rippo || typeof rippo.listAiModels !== "function" || aiStatus !== "idle") return;
+    setAiStatus("loading");
+    setAiError(null);
+    try {
+      const result = await rippo.listAiModels(refresh);
+      setAiCatalog(result);
+      if (result.error) setAiError(result.error);
+    } catch (error) {
+      setAiError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setAiStatus("idle");
+    }
+  }
+
+  async function changeAiModel(modelId: string) {
+    if (!rippo || typeof rippo.setAiModel !== "function") return;
+    setAiStatus("saving");
+    setAiError(null);
+    try {
+      const result = await rippo.setAiModel(modelId);
+      setHealth(result.health);
+      setAiCatalog(result.catalog);
+      if (result.catalog.error) setAiError(result.catalog.error);
+    } catch (error) {
+      setAiError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setAiStatus("idle");
     }
   }
 
@@ -440,10 +605,23 @@ export function App() {
     el.style.height = `${Math.min(el.scrollHeight, 192)}px`;
   }, [input]);
 
-  const detectedCount = useMemo(() => extractUrls(input).length, [input]);
+  const inputUrls = useMemo(() => extractUrls(input), [input]);
+  const detectedCount = inputUrls.length;
+  const hasComposerText = input.trim().length > 0;
+  const sourcePacks = useMemo(() => {
+    const packs = [...DEFAULT_SOURCE_PACKS, ...sourceSearch.packs];
+    return packs.filter((pack, index, list) => list.findIndex((candidate) => candidate.id === pack.id) === index);
+  }, [sourceSearch.packs]);
   const providerOptions = health?.providers || [];
   const presetOptions = health?.presets || [];
   const selectedFetchProvider = fetchProvider || AUTO_PROVIDER;
+  const composerAction = useMemo(() => resolveComposerAction({
+    hasText: hasComposerText,
+    urlCount: detectedCount,
+    canUseDesktop: Boolean(rippo),
+    hasProvider: Boolean(selectedFetchProvider),
+    searchBusy: sourceSearchBusy,
+  }), [detectedCount, hasComposerText, rippo, selectedFetchProvider, sourceSearchBusy]);
 
   useEffect(() => {
     if (!rippo) {
@@ -462,6 +640,10 @@ export function App() {
     if (!providerOptions.length) return;
     setFetchProvider((current) => current === AUTO_PROVIDER || providerOptions.some((provider) => provider.id === current) ? current : AUTO_PROVIDER);
   }, [providerOptions]);
+
+  useEffect(() => {
+    if (detectedCount > 0 && sourceSearch.query) setSourceSearch(EMPTY_SOURCE_SEARCH);
+  }, [detectedCount, sourceSearch.query]);
 
   useEffect(() => {
     if (!rippo) return undefined;
@@ -500,10 +682,9 @@ export function App() {
     failed: items.filter((item) => item.status === "failed").length,
   }), [items]);
 
-  async function addAndFetch() {
-    const urls = extractUrls(input);
-    if (!urls.length || !rippo || !selectedFetchProvider) return;
-    const provider = selectedFetchProvider;
+  async function queueUrls(urls: string[], providerOverride: ProviderId | typeof AUTO_PROVIDER = selectedFetchProvider) {
+    if (!urls.length || !rippo || !providerOverride) return;
+    const provider = providerOverride;
     const initialPreset = provider === AUTO_PROVIDER ? "" : defaultPresetForProvider(provider, providerOptions);
     const initialCookieSource = cookieSource;
 
@@ -512,7 +693,8 @@ export function App() {
       .filter((url) => !existing.has(url))
       .map((url) => ({ localId: crypto.randomUUID().slice(0, 10), url, status: "queued" as const, preset: initialPreset, cookieSource: initialCookieSource }));
 
-    setInput("");
+    if (!fresh.length) return;
+
     setItems((current) => [...fresh, ...current]);
 
     for (const item of fresh) {
@@ -529,6 +711,56 @@ export function App() {
         setItems((current) => current.map((candidate) => candidate.localId === item.localId ? { ...candidate, status: "failed", error: fetchErrorMessage(error) } : candidate));
       }
     }
+  }
+
+  async function addAndFetch() {
+    const urls = inputUrls;
+    if (!urls.length) return;
+    setInput("");
+    setSourceSearch(EMPTY_SOURCE_SEARCH);
+    await queueUrls(urls);
+  }
+
+  function openSourceResult(source: SourceSearchResult) {
+    const url = sourceOpenUrl(source);
+    if (rippo) rippo.openExternal(url).catch(() => undefined);
+    else window.open(url, "_blank", "noopener,noreferrer");
+  }
+
+  async function searchSources() {
+    const query = input.trim().slice(0, 120);
+    if (!query || !rippo || typeof rippo.searchSources !== "function") {
+      setSourceSearch({
+        ...EMPTY_SOURCE_SEARCH,
+        query,
+        pack: activeSourcePack,
+        error: "Source search runs inside the desktop app.",
+      });
+      return;
+    }
+
+    setSourceSearchBusy(true);
+    try {
+      const result = await rippo.searchSources(query, activeSourcePack);
+      setSourceSearch(result);
+    } catch (error) {
+      setSourceSearch({
+        ...EMPTY_SOURCE_SEARCH,
+        query,
+        pack: activeSourcePack,
+        error: consumerErrorMessage(error instanceof Error ? error.message : String(error), "Could not search sources."),
+      });
+    } finally {
+      setSourceSearchBusy(false);
+    }
+  }
+
+  async function runComposerAction() {
+    if (composerAction.id === "search") {
+      await searchSources();
+      return;
+    }
+    if (composerAction.id === "fetch") await addAndFetch();
   }
 
   async function downloadReady() {
@@ -625,32 +857,53 @@ export function App() {
                 onKeyDown={(event) => {
                   if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
                     event.preventDefault();
-                    addAndFetch();
+                    runComposerAction();
                   }
                 }}
-                placeholder="Paste link(s) to start…"
+                placeholder="Paste link(s) or search…"
                 rows={1}
-                aria-label="URLs to fetch"
+                aria-label="Links or search text"
               />
               <div className="composer-foot">
                 <div className="composer-tools">
-                  <select
-                    className="provider-select"
-                    value={selectedFetchProvider}
-                    onChange={(event) => setFetchProvider(event.target.value as ProviderId | typeof AUTO_PROVIDER)}
-                    disabled={!providerOptions.length}
-                    aria-label="Source type"
-                  >
-                    {providerOptions.length === 0 ? <option value="">Loading</option> : null}
-                    {providerOptions.length > 0 ? <option value={AUTO_PROVIDER}>Auto</option> : null}
-                    {providerOptions.map((option) => (
-                      <option key={option.id} value={option.id}>{option.label}</option>
-                    ))}
-                  </select>
-                  {detectedCount > 1 ? <span className="link-count">{detectedCount} links</span> : <span className="composer-hint">⌘↵ to fetch</span>}
+                  {composerAction.id === "search" ? (
+                    <div className="pack-select-wrap">
+                      <select
+                        className="provider-select"
+                        value={activeSourcePack}
+                        onChange={(event) => setActiveSourcePack(event.target.value)}
+                        aria-label="Search area"
+                      >
+                        {sourcePacks.map((pack) => (
+                          <option key={pack.id} value={pack.id}>{pack.label}</option>
+                        ))}
+                      </select>
+                    </div>
+                  ) : (
+                    <select
+                      className="provider-select"
+                      value={selectedFetchProvider}
+                      onChange={(event) => setFetchProvider(event.target.value as ProviderId | typeof AUTO_PROVIDER)}
+                      disabled={!providerOptions.length}
+                      aria-label="Source type"
+                    >
+                      {providerOptions.length === 0 ? <option value="">Loading</option> : null}
+                      {providerOptions.length > 0 ? <option value={AUTO_PROVIDER}>Auto</option> : null}
+                      {providerOptions.map((option) => (
+                        <option key={option.id} value={option.id}>{option.label}</option>
+                      ))}
+                    </select>
+                  )}
+                  {detectedCount > 1 ? <span className="link-count">{detectedCount} links</span> : <span className="composer-hint">⌘↵ to {composerAction.hint}</span>}
                 </div>
-                <button type="button" className="btn btn-primary btn-fetch" onClick={addAndFetch} disabled={!detectedCount || !rippo || !selectedFetchProvider}>
-                  Fetch{detectedCount > 1 ? ` ${detectedCount}` : ""}
+                <button
+                  type="button"
+                  className="btn btn-primary btn-fetch"
+                  onClick={runComposerAction}
+                  disabled={composerAction.disabled}
+                >
+                  {sourceSearchBusy && composerAction.id === "search" ? <Loader2 className="spin" size={15} strokeWidth={2} aria-hidden /> : composerAction.icon === "search" ? <Search size={15} strokeWidth={2} aria-hidden /> : null}
+                  {sourceSearchBusy && composerAction.id === "search" ? composerAction.busyLabel : `${composerAction.label}${composerAction.countSuffix || ""}`}
                 </button>
               </div>
             </div>
@@ -658,13 +911,46 @@ export function App() {
           <div className="hero-gradient" />
         </header>
 
-        <section className="queue">
+        <section className="workspace">
           {healthError ? <p className="error-text">{healthError}</p> : null}
+          {(sourceSearch.query || sourceSearch.results.length > 0 || sourceSearch.error || sourceSearchBusy) ? (
+            <div className="search-panel">
+              <div className="search-status">
+                <span>{sourceStatusLabel(sourceSearch, sourceSearchBusy)}</span>
+                <span>{sourceContextLabel(sourceSearch, input)}</span>
+              </div>
+              {sourceSearch.error ? <p className="error-text">{sourceSearch.error}</p> : null}
+              <div className="source-results">
+                {sourceSearch.results.map((source) => (
+                  <article key={source.id} className="source-card">
+                    <div className="source-main">
+                      <div className="source-head">
+                        <span className="source-pack-label">{source.packLabel}</span>
+                        <h3 className="source-title">{source.title}</h3>
+                      </div>
+                      <p className="source-desc">{source.description}</p>
+                      <div className="source-tags">
+                        <span className="source-badge">{sourceBadgeLabel(source)}</span>
+                        {source.mediaTypes.slice(0, 4).map((type) => <span key={type} className="source-tag">{type}</span>)}
+                      </div>
+                      {source.usage ? <p className="source-note">{source.usage}</p> : null}
+                    </div>
+                    <div className="source-actions">
+                      <button type="button" className="btn btn-primary btn-source" onClick={() => openSourceResult(source)}>
+                        <ExternalLink size={14} strokeWidth={2} aria-hidden /> {sourceActionLabel(source)}
+                      </button>
+                    </div>
+                  </article>
+                ))}
+              </div>
+            </div>
+          ) : null}
+
           {items.length > 0 && (
             <p className="queue-summary">{items.length} · {totals.ready} ready · {totals.done} saved{totals.failed ? ` · ${totals.failed} failed` : ""}</p>
           )}
-          {items.length === 0 ? (
-            <div className="empty">No URLs yet.</div>
+          {items.length === 0 && !sourceSearch.query && !sourceSearch.results.length && !sourceSearch.error && !sourceSearchBusy ? (
+            <div className="empty">Paste a link or search anything.</div>
           ) : (
             items.map((item) => {
               const itemPresets = presetsForItem(item, presetOptions, providerOptions);
@@ -788,6 +1074,37 @@ export function App() {
                   <RotateCcw size={14} strokeWidth={2} aria-hidden /> Default
                 </button>
               </div>
+            </section>
+
+            <section className="settings-section">
+              <div className="settings-row-head">
+                <Search size={14} strokeWidth={2} aria-hidden />
+                <h3 className="settings-row-title">Search routing</h3>
+                <span className="settings-version">{openRouterKeyText(aiCatalog, health)}</span>
+              </div>
+              <p className="settings-hint">Search-result context is read first when configured; OpenRouter then routes to the right source adapters.</p>
+              <p className="settings-hint">Web context: {searchEvidenceText(health)}</p>
+              <select
+                className="settings-select"
+                value={openRouterModelText(aiCatalog, health)}
+                onChange={(event) => changeAiModel(event.target.value)}
+                disabled={!rippo || aiStatus !== "idle"}
+                aria-label="OpenRouter routing model"
+              >
+                {(aiCatalog?.models?.length ? aiCatalog.models : [{ id: openRouterModelText(aiCatalog, health), name: openRouterModelText(aiCatalog, health) }]).map((model) => (
+                  <option key={model.id} value={model.id}>{model.name}</option>
+                ))}
+              </select>
+              <div className="settings-actions">
+                <button type="button" className="btn btn-ghost btn-footer" onClick={() => loadAiModels(true)} disabled={!rippo || aiStatus !== "idle"}>
+                  {aiStatus === "loading" ? <Loader2 className="spin" size={14} strokeWidth={2} aria-hidden /> : <RefreshCcw size={14} strokeWidth={2} aria-hidden />}
+                  Refresh free models
+                </button>
+              </div>
+              <p className="settings-hint">
+                {aiCatalog?.models?.length ? `${aiCatalog.models.length} free text models cached. Selected: ${openRouterModelText(aiCatalog, health)}` : `Selected: ${openRouterModelText(aiCatalog, health)}`}
+              </p>
+              {aiError ? <p className="settings-warning">{consumerErrorMessage(aiError, "Could not refresh OpenRouter models.")}</p> : null}
             </section>
 
             <section className="settings-section">

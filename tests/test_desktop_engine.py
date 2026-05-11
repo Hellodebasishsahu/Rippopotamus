@@ -10,7 +10,7 @@ from contextlib import redirect_stdout
 from pathlib import Path
 from unittest import mock
 
-from rippopotamus import desktop_engine
+from rippopotamus import desktop_engine, query_intelligence, search_evidence, source_registry
 from rippopotamus.providers import ProviderContext, desktop_download_command
 
 
@@ -127,6 +127,402 @@ class DesktopEngineTests(unittest.TestCase):
         self.assertIn("--cookies-from-browser", command)
         self.assertLess(command.index("--ignore-config"), command.index("--cookies-from-browser"))
         self.assertEqual(command[command.index("--cookies-from-browser") + 1], "chrome")
+
+    def test_source_search_returns_renderer_facing_response_shape(self) -> None:
+        args = argparse.Namespace(query="moon landing", pack="all", limit=3)
+        payload = {
+            "ok": True,
+            "query": "moon landing",
+            "pack": "all",
+            "packs": [{"id": "public", "label": "Public archives"}],
+            "results": [{
+                "id": "nasa:moon",
+                "pack": "public",
+                "packLabel": "NASA Images",
+                "title": "Moon landing",
+                "description": "Actual NASA media result.",
+                "url": "https://images.nasa.gov/details/moon",
+                "openUrl": "https://images.nasa.gov/details/moon",
+                "mediaTypes": ["image"],
+                "usage": "Actual NASA Images result.",
+                "actionLabel": "Open NASA",
+                "score": 104,
+                "resultKind": "item",
+                "sourceName": "NASA Images",
+            }],
+            "actualResultCount": 1,
+            "routeResultCount": 0,
+            "searchedSources": ["NASA Images"],
+        }
+        stream = io.StringIO()
+        intelligence = query_intelligence.build_query_intelligence("moon landing", "all")
+        with mock.patch("rippopotamus.desktop_engine.build_query_intelligence", return_value=intelligence):
+            with mock.patch("rippopotamus.desktop_engine.search_sources", return_value=payload) as search_sources:
+                with redirect_stdout(stream):
+                    self.assertEqual(desktop_engine.command_source_search(args), 0)
+
+        search_sources.assert_called_once_with("moon landing", "all", 3)
+        response = json.loads(stream.getvalue())
+        self.assertEqual(response["results"], payload["results"])
+        self.assertEqual(response["requestedPack"], "all")
+        self.assertEqual(response["intelligence"], intelligence)
+
+    def test_source_search_result_shape_has_real_result_metadata(self) -> None:
+        response = source_registry.search_sources(
+            "wrapped movie",
+            "movies",
+            2,
+            fetch_json=lambda _url: {
+                "d": [{
+                    "id": "tt8924522",
+                    "l": "Wrapped",
+                    "q": "feature",
+                    "qid": "movie",
+                    "s": "Mike Markoff, Barbara Ackles",
+                    "y": 2019,
+                    "i": {"imageUrl": "https://images.example/wrapped.jpg"},
+                }],
+            },
+        )
+
+        self.assertTrue(response["ok"])
+        self.assertEqual(response["query"], "wrapped movie")
+        self.assertEqual(response["pack"], "movies")
+        self.assertEqual(response["actualResultCount"], 1)
+        self.assertGreaterEqual(response["routeResultCount"], 1)
+
+        result = response["results"][0]
+        self.assertEqual(result["id"], "imdb:tt8924522")
+        self.assertEqual(result["title"], "Wrapped")
+        self.assertEqual(result["resultKind"], "item")
+        self.assertEqual(result["sourceName"], "IMDb")
+        self.assertEqual(result["openUrl"], "https://www.imdb.com/title/tt8924522/")
+        self.assertEqual(result["actionLabel"], "Open IMDb")
+        self.assertEqual(result["thumbnailUrl"], "https://images.example/wrapped.jpg")
+
+    def test_source_search_command_emits_registry_payload(self) -> None:
+        args = argparse.Namespace(query="moon landing", pack="all", limit=3)
+        stream = io.StringIO()
+        intelligence = query_intelligence.build_query_intelligence("moon landing", "all")
+        with mock.patch("rippopotamus.desktop_engine.build_query_intelligence", return_value=intelligence):
+            with mock.patch("rippopotamus.desktop_engine.search_sources") as search_sources:
+                search_sources.return_value = {
+                    "ok": True,
+                    "query": "moon landing",
+                    "pack": "all",
+                    "packs": [{"id": "public", "label": "Public archives"}],
+                    "results": [],
+                    "actualResultCount": 0,
+                    "routeResultCount": 0,
+                    "searchedSources": [],
+                }
+                with redirect_stdout(stream):
+                    self.assertEqual(desktop_engine.command_source_search(args), 0)
+
+        search_sources.assert_called_once_with("moon landing", "all", 3)
+
+    def test_source_search_ai_can_route_all_pack_to_specific_adapter(self) -> None:
+        args = argparse.Namespace(query="wrapped", pack="all", limit=3)
+        intelligence = {
+            "enabled": True,
+            "source": "openrouter",
+            "requestedPack": "all",
+            "pack": "movies",
+            "packLabel": "Movies and shows",
+            "confidence": 0.9,
+            "reason": "Looks like an entertainment title.",
+            "searchTerms": ["wrapped"],
+            "ui": "result-list",
+            "query": "wrapped",
+        }
+        with mock.patch("rippopotamus.desktop_engine.build_query_intelligence", return_value=intelligence):
+            with mock.patch("rippopotamus.desktop_engine.search_sources", return_value={"ok": True, "query": "wrapped", "pack": "movies", "packs": [], "results": []}) as search_sources:
+                stream = io.StringIO()
+                with redirect_stdout(stream):
+                    self.assertEqual(desktop_engine.command_source_search(args), 0)
+
+        search_sources.assert_called_once_with("wrapped", "movies", 3)
+        response = json.loads(stream.getvalue())
+        self.assertEqual(response["requestedPack"], "all")
+        self.assertEqual(response["intelligence"]["pack"], "movies")
+
+    def test_query_intelligence_stays_off_without_openrouter_key(self) -> None:
+        with mock.patch.dict(os.environ, {}, clear=True):
+            intelligence = query_intelligence.build_query_intelligence("wrapped", "all")
+
+        self.assertFalse(intelligence["enabled"])
+        self.assertEqual(intelligence["pack"], "all")
+
+    def test_query_intelligence_normalizes_openrouter_payload(self) -> None:
+        with mock.patch.dict(os.environ, {"OPENROUTER_API_KEY": "test-key"}):
+            with mock.patch("rippopotamus.query_intelligence._call_openrouter", return_value={
+                "pack": "movies",
+                "confidence": 0.88,
+                "reason": "Likely movie title.",
+                "searchTerms": ["wrapped"],
+                "ui": "result-list",
+            }):
+                intelligence = query_intelligence.build_query_intelligence("wrapped", "all")
+
+        self.assertTrue(intelligence["enabled"])
+        self.assertEqual(intelligence["source"], "openrouter")
+        self.assertEqual(intelligence["pack"], "movies")
+        self.assertEqual(intelligence["packLabel"], "Movies and shows")
+        self.assertEqual(intelligence["searchTerms"], ["wrapped"])
+
+    def test_query_intelligence_passes_search_evidence_to_openrouter(self) -> None:
+        evidence = {
+            "enabled": True,
+            "source": "google_cse",
+            "label": "Google Programmable Search",
+            "query": "wrapped",
+            "results": [{
+                "title": "Wrapped movie",
+                "url": "https://www.imdb.com/title/tt8924522/",
+                "displayUrl": "imdb.com",
+                "snippet": "Wrapped is a feature film.",
+            }],
+            "resultCount": 1,
+        }
+        with mock.patch.dict(os.environ, {"OPENROUTER_API_KEY": "test-key"}, clear=True):
+            with mock.patch("rippopotamus.query_intelligence.collect_search_evidence", return_value=evidence):
+                with mock.patch("rippopotamus.query_intelligence._call_openrouter", return_value={
+                    "pack": "movies",
+                    "confidence": 0.91,
+                    "reason": "Search evidence points to a film title.",
+                    "searchTerms": ["wrapped movie"],
+                }) as call_openrouter:
+                    intelligence = query_intelligence.build_query_intelligence("wrapped", "all")
+
+        call_openrouter.assert_called_once()
+        self.assertEqual(call_openrouter.call_args.args[3], evidence)
+        self.assertEqual(intelligence["webEvidence"], evidence)
+        self.assertEqual(intelligence["pack"], "movies")
+
+    def test_search_evidence_collects_google_cse_results(self) -> None:
+        with mock.patch.dict(os.environ, {"GOOGLE_CSE_API_KEY": "key", "GOOGLE_CSE_ID": "cx"}, clear=True):
+            with mock.patch("rippopotamus.search_evidence._fetch_json", return_value={
+                "items": [{
+                    "title": "Wrapped - IMDb",
+                    "link": "https://www.imdb.com/title/tt8924522/",
+                    "displayLink": "www.imdb.com",
+                    "snippet": "Wrapped is a feature film.",
+                }],
+            }) as fetch_json:
+                evidence = search_evidence.collect_search_evidence("wrapped", "all", limit=3)
+
+        fetch_json.assert_called_once()
+        self.assertIn("customsearch/v1", fetch_json.call_args.args[0])
+        self.assertTrue(evidence["enabled"])
+        self.assertEqual(evidence["source"], "google_cse")
+        self.assertEqual(evidence["resultCount"], 1)
+        self.assertEqual(evidence["results"][0]["displayUrl"], "www.imdb.com")
+
+    def test_search_evidence_accepts_renderer_collected_evidence(self) -> None:
+        renderer_payload = json.dumps({
+            "enabled": True,
+            "source": "electron_google",
+            "provider": "electron_google",
+            "label": "Electron Google",
+            "query": "wrapped",
+            "requestedPack": "all",
+            "results": [{
+                "title": "Wrapped - IMDb",
+                "url": "https://www.imdb.com/title/tt8924522/",
+                "displayUrl": "imdb.com",
+                "snippet": "",
+                "position": 1,
+            }],
+            "resultCount": 1,
+            "reason": "Read Google search-result context through Electron Chromium before routing.",
+        })
+        with mock.patch.dict(os.environ, {
+            "RIPPO_SEARCH_EVIDENCE_JSON": renderer_payload,
+            "RIPPO_SERP_BROWSER": "1",
+        }, clear=True):
+            with mock.patch("rippopotamus.search_evidence._crawl4ai_google_search") as crawl:
+                evidence = search_evidence.collect_search_evidence("wrapped", "all", limit=3)
+
+        crawl.assert_not_called()
+        self.assertTrue(evidence["enabled"])
+        self.assertEqual(evidence["source"], "electron_google")
+        self.assertEqual(evidence["results"][0]["title"], "Wrapped - IMDb")
+
+    def test_search_evidence_uses_crawl4ai_google_when_provider_forced(self) -> None:
+        with mock.patch.dict(os.environ, {"RIPPO_SEARCH_PROVIDER": "crawl4ai_google"}, clear=True):
+            with mock.patch("rippopotamus.search_evidence._crawl4ai_google_search", return_value=[{
+                "title": "Wrapped - IMDb",
+                "url": "https://www.imdb.com/title/tt8924522/",
+                "displayUrl": "imdb.com",
+                "snippet": "",
+                "position": 1,
+            }]) as crawl:
+                evidence = search_evidence.collect_search_evidence("wrapped", "all", limit=3)
+
+        crawl.assert_called_once_with("wrapped", 3)
+        self.assertTrue(evidence["enabled"])
+        self.assertEqual(evidence["source"], "crawl4ai_google")
+        self.assertEqual(evidence["results"][0]["title"], "Wrapped - IMDb")
+
+    def test_search_evidence_does_not_use_crawl4ai_for_electron_browser_flag(self) -> None:
+        with mock.patch.dict(os.environ, {"RIPPO_SERP_BROWSER": "1"}, clear=True):
+            with mock.patch("rippopotamus.search_evidence._crawl4ai_google_search") as crawl:
+                evidence = search_evidence.collect_search_evidence("wrapped", "all", limit=3)
+
+        crawl.assert_not_called()
+        self.assertFalse(evidence["enabled"])
+        self.assertEqual(evidence["source"], "off")
+
+    def test_search_evidence_falls_through_when_google_cse_is_blocked(self) -> None:
+        with mock.patch.dict(os.environ, {
+            "GOOGLE_CSE_API_KEY": "key",
+            "GOOGLE_CSE_ID": "cx",
+            "SERPER_API_KEY": "serper-key",
+            "RIPPO_SERP_BROWSER": "1",
+        }, clear=True):
+            with mock.patch("rippopotamus.search_evidence._google_cse_search", side_effect=RuntimeError("Custom Search JSON API is closed")) as cse:
+                with mock.patch("rippopotamus.search_evidence._serper_search", return_value=[{
+                    "title": "Wrapped - IMDb",
+                    "url": "https://www.imdb.com/title/tt8924522/",
+                    "displayUrl": "imdb.com",
+                    "snippet": "",
+                    "position": 1,
+                }]) as serper:
+                    with mock.patch("rippopotamus.search_evidence._crawl4ai_google_search") as crawl:
+                        evidence = search_evidence.collect_search_evidence("wrapped", "all", limit=3)
+
+        cse.assert_called_once_with("wrapped", 3)
+        serper.assert_called_once_with("wrapped", 3)
+        crawl.assert_not_called()
+        self.assertTrue(evidence["enabled"])
+        self.assertEqual(evidence["source"], "serper")
+        self.assertEqual(evidence["providers"], ["google_cse", "serper"])
+        self.assertEqual(evidence["fallbackErrors"][0]["provider"], "google_cse")
+
+    def test_google_serp_parser_skips_obvious_sponsored_links(self) -> None:
+        html = """
+        <html><body>
+          <div data-text-ad="1">
+            <a href="/url?q=https://ads.example/buy&sa=U"><h3>Sponsored Result</h3></a>
+          </div>
+          <div class="g">
+            <a href="/url?q=https://www.imdb.com/title/tt8924522/&sa=U"><h3>Wrapped - IMDb</h3></a>
+          </div>
+          <div class="g">
+            <a href="https://www.google.com/search?q=wrapped+cast"><h3>More Google</h3></a>
+          </div>
+          <div class="g">
+            <a href="/url?q=https://www.themoviedb.org/movie/123-wrapped&sa=U"><h3>Wrapped - TMDB</h3></a>
+          </div>
+        </body></html>
+        """
+
+        results = search_evidence._parse_google_serp_html(html, limit=5)
+
+        self.assertEqual([result["title"] for result in results], ["Wrapped - IMDb", "Wrapped - TMDB"])
+        self.assertEqual(results[0]["displayUrl"], "imdb.com")
+
+    def test_openrouter_model_catalog_filters_and_caches_free_models(self) -> None:
+        payload = {
+            "data": [
+                {
+                    "id": "provider/free-one:free",
+                    "name": "Free One",
+                    "context_length": 8192,
+                    "pricing": {"prompt": "0", "completion": "0", "request": "0", "web_search": "0", "internal_reasoning": "0"},
+                    "architecture": {"input_modalities": ["text"], "output_modalities": ["text"]},
+                },
+                {
+                    "id": "provider/paid",
+                    "name": "Paid",
+                    "pricing": {"prompt": "0.01", "completion": "0", "request": "0"},
+                    "architecture": {"output_modalities": ["text"]},
+                },
+            ]
+        }
+
+        with tempfile.TemporaryDirectory() as tmp:
+            cache = str(Path(tmp) / "models.json")
+            with mock.patch.dict(os.environ, {"RIPPO_OPENROUTER_MODELS_CACHE": cache}, clear=True):
+                with mock.patch("rippopotamus.query_intelligence._fetch_models_payload", return_value=payload):
+                    catalog = query_intelligence.openrouter_model_catalog(refresh=True, selected_model="provider/free-one:free")
+
+        self.assertEqual(catalog["selectedModel"], "provider/free-one:free")
+        self.assertIn("openrouter/free", [model["id"] for model in catalog["models"]])
+        self.assertIn("provider/free-one:free", [model["id"] for model in catalog["models"]])
+        self.assertNotIn("provider/paid", [model["id"] for model in catalog["models"]])
+
+    def test_ai_models_command_emits_selected_catalog(self) -> None:
+        args = argparse.Namespace(refresh=False, selected_model="openrouter/free")
+        with mock.patch("rippopotamus.desktop_engine.openrouter_model_catalog", return_value={"ok": True, "selectedModel": "openrouter/free", "models": []}) as catalog:
+            stream = io.StringIO()
+            with redirect_stdout(stream):
+                self.assertEqual(desktop_engine.command_ai_models(args), 0)
+
+        catalog.assert_called_once_with(refresh=False, selected_model="openrouter/free")
+        self.assertEqual(json.loads(stream.getvalue())["selectedModel"], "openrouter/free")
+
+    def test_source_search_pack_limit_and_query_url_are_applied(self) -> None:
+        def fake_fetch_json(url: str) -> dict[str, object]:
+            self.assertIn("images-api.nasa.gov/search", url)
+            self.assertIn("q=space+shuttle", url)
+            return {
+                "collection": {
+                    "items": [{
+                        "data": [{
+                            "nasa_id": "KSC-1",
+                            "title": "Space Shuttle Launch",
+                            "description": "A shuttle launch.",
+                            "media_type": "image",
+                            "date_created": "2011-07-08T00:00:00Z",
+                        }],
+                        "links": [{"rel": "preview", "href": "https://images.example/shuttle.jpg"}],
+                    }],
+                },
+            }
+
+        response = source_registry.search_sources("space shuttle", "public", 1, fetch_json=fake_fetch_json)
+
+        self.assertEqual(response["pack"], "public")
+        self.assertEqual(len(response["results"]), 1)
+        self.assertEqual(response["results"][0]["id"], "nasa:KSC-1")
+        self.assertEqual(response["results"][0]["openUrl"], "https://images.nasa.gov/details/KSC-1")
+        self.assertEqual(response["results"][0]["actionLabel"], "Open NASA")
+        self.assertEqual(response["results"][0]["resultKind"], "item")
+
+    def test_source_search_movie_queries_return_actual_title_results_first(self) -> None:
+        response = source_registry.search_sources(
+            "wrapped movie",
+            "all",
+            3,
+            fetch_json=lambda _url: {
+                "d": [
+                    {"id": "tt8924522", "l": "Wrapped", "q": "feature", "qid": "movie", "s": "Mike Markoff", "y": 2019},
+                    {"id": "tt7605066", "l": "Wrapped Up in Christmas", "q": "TV movie", "qid": "tvMovie", "y": 2017},
+                ],
+            },
+        )
+
+        self.assertEqual(response["results"][0]["id"], "imdb:tt8924522")
+        self.assertEqual(response["results"][0]["packLabel"], "IMDb")
+        self.assertEqual(response["results"][0]["resultKind"], "item")
+        self.assertEqual(response["results"][0]["openUrl"], "https://www.imdb.com/title/tt8924522/")
+        self.assertIn("movies", [pack["id"] for pack in response["packs"]])
+
+    def test_source_search_parser_accepts_electron_command_shape(self) -> None:
+        parser = desktop_engine.build_parser()
+        args = parser.parse_args(["source-search", "--query", "city skyline", "--pack", "stock", "--limit", "2"])
+
+        self.assertEqual(args.query, "city skyline")
+        self.assertEqual(args.pack, "stock")
+        self.assertEqual(args.limit, 2)
+        self.assertIs(args.func, desktop_engine.command_source_search)
+
+    def test_source_search_rejects_unknown_pack(self) -> None:
+        args = argparse.Namespace(query="", pack="private", limit=3)
+
+        with self.assertRaises(SystemExit):
+            desktop_engine.command_source_search(args)
 
     def test_fetch_auto_uses_yt_dlp_when_supported(self) -> None:
         args = argparse.Namespace(url="https://www.youtube.com/watch?v=TQd2k1pEXp4", provider="auto")

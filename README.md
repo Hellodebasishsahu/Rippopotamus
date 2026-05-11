@@ -95,3 +95,22 @@ open release/mac-arm64/Rippopotamus.app
 ```
 
 The macOS app package currently includes the renderer, Electron main process, Python engine source, and bundled `ffmpeg-static`. The remaining distribution step is freezing the Python engine/provider runtime into a standalone binary so friends do not need a local Python install.
+
+## Search Routing
+
+Text searches use a small query scout before source adapters run. Preferred evidence providers are stable APIs:
+
+- `GOOGLE_CSE_API_KEY` + `GOOGLE_CSE_ID`
+- `SERPER_API_KEY`
+
+Google Custom Search JSON API is closed to new customers, so fresh Google Cloud projects can still fail even with a valid key and search engine ID. Keep `SERPER_API_KEY` or the desktop browser scout as the practical fallback.
+
+For local experiments, enable browser SERP scouting:
+
+```bash
+RIPPO_SERP_BROWSER=1 npm run dev
+```
+
+In the desktop app, that mode uses Electron's bundled Chromium to open Google Search, strips obvious sponsored/noise links, and passes only organic titles/URLs/snippets into the Python router. It is a fallback surface: CAPTCHA, consent pages, layout changes, and regional variance can still break it.
+
+For CLI-only experiments outside Electron, `pip install -e ".[browser-serp]"` enables the older Crawl4AI provider only when explicitly forced with `RIPPO_SEARCH_PROVIDER=crawl4ai_google`.

@@ -2,6 +2,10 @@ import { contextBridge, ipcRenderer } from "electron";
 
 contextBridge.exposeInMainWorld("rippo", {
   health: () => ipcRenderer.invoke("engine:health"),
+  probePage: (url: string) => ipcRenderer.invoke("page:probe", url),
+  searchSources: (query?: string, pack?: string) => ipcRenderer.invoke("engine:source-search", query, pack),
+  listAiModels: (refresh?: boolean) => ipcRenderer.invoke("ai:models", refresh),
+  setAiModel: (modelId: string) => ipcRenderer.invoke("ai:set-model", modelId),
   fetch: (url: string, provider?: string, cookieSource?: unknown) => ipcRenderer.invoke("engine:fetch", url, provider, cookieSource),
   download: (payload: { url: string; preset: string; outputRoot?: string; itemId?: string; title?: string; cookieSource?: unknown }) =>
     ipcRenderer.invoke("engine:download", payload),

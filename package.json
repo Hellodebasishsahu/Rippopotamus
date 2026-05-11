@@ -6,10 +6,10 @@
   "scripts": {
     "dev": "npm run build:electron && concurrently -k \"vite --host 127.0.0.1 --strictPort\" \"wait-on http://127.0.0.1:5173 && VITE_DEV_SERVER_URL=http://127.0.0.1:5173 electron .\"",
     "build": "npm run build:ui && npm run build:electron",
-    "build:ui": "vite build",
+    "build:ui": "tsc -p tsconfig.json --noEmit && vite build",
     "build:electron": "tsc -p tsconfig.electron.json",
     "package:mac": "npm run build && electron-builder --mac dir",
-    "test": "PYTHONPATH=src python -m unittest discover -s tests && npm run build && node --test tests/electron_cookie_validation.test.cjs tests/electron_thumbnail_validation.test.cjs tests/url_parser_validation.test.cjs"
+    "test": "PYTHONPATH=src python -m unittest discover -s tests && npm run build && node --test tests/electron_cookie_validation.test.cjs tests/electron_thumbnail_validation.test.cjs tests/electron_page_probe_policy_validation.test.cjs tests/url_parser_validation.test.cjs"
   },
   "keywords": [],
   "author": "",

@@ -27,6 +27,9 @@ from rippopotamus.providers import (
     yt_dlp_cookie_check_command,
     yt_dlp_run as provider_yt_dlp_run,
 )
+from rippopotamus.query_intelligence import PACK_LABELS, build_query_intelligence, effective_pack, openrouter_model_catalog
+from rippopotamus.search_evidence import search_evidence_status
+from rippopotamus.source_registry import search_sources
 
 
 def emit(payload: dict[str, Any]) -> None:
@@ -242,6 +245,7 @@ def command_health(args: argparse.Namespace) -> int:
         "cookies": verify_cookies_browser(base, cookies_browser),
         "providers": catalog["providers"],
         "presets": catalog["presets"],
+        "searchEvidence": search_evidence_status(),
     })
     return 0
 
@@ -268,6 +272,27 @@ def command_fetch(args: argparse.Namespace) -> int:
         output = run_text(metadata_command(provider, args.url, provider_context(cookies_browser)))
     metadata = parse_metadata_output(provider, args.url, output)
     emit({"ok": True, "url": args.url, "metadata": metadata})
+    return 0
+
+
+def command_source_search(args: argparse.Namespace) -> int:
+    requested_pack = args.pack or "all"
+    if requested_pack != "all" and requested_pack not in PACK_LABELS:
+        raise SystemExit(f"Unknown source pack `{requested_pack}`.")
+    intelligence = build_query_intelligence(args.query or "", requested_pack)
+    search_pack = effective_pack(requested_pack, intelligence)
+    try:
+        payload = search_sources(args.query or "", search_pack, args.limit)
+    except ValueError as exc:
+        raise SystemExit(str(exc)) from exc
+    payload["requestedPack"] = requested_pack
+    payload["intelligence"] = intelligence
+    emit(payload)
+    return 0
+
+
+def command_ai_models(args: argparse.Namespace) -> int:
+    emit(openrouter_model_catalog(refresh=args.refresh, selected_model=args.selected_model))
     return 0
 
 
@@ -499,6 +524,17 @@ def build_parser() -> argparse.ArgumentParser:
     download.add_argument("--title")
     download.add_argument("--cookies-browser", default="")
     download.set_defaults(func=command_download)
+
+    source_search = sub.add_parser("source-search")
+    source_search.add_argument("--query", default="")
+    source_search.add_argument("--pack", default="all")
+    source_search.add_argument("--limit", type=int, default=12)
+    source_search.set_defaults(func=command_source_search)
+
+    ai_models = sub.add_parser("ai-models")
+    ai_models.add_argument("--refresh", action="store_true")
+    ai_models.add_argument("--selected-model", default="")
+    ai_models.set_defaults(func=command_ai_models)
     return parser
 
 
