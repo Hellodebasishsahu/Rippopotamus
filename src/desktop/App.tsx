@@ -1,6 +1,6 @@
-import { Cookie, Download, ExternalLink, FolderOpen, FolderSearch, ImageOff, Link2, Loader2, RefreshCcw, RotateCcw, Search, Settings, Trash2, X } from "lucide-react";
+import { Cookie, Download, ExternalLink, FolderOpen, FolderSearch, ImageOff, Link2, Loader2, Radar as RadarIcon, RefreshCcw, RotateCcw, Search, Settings, Trash2, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { BrowserInfo, CookieSource, DownloadEvent, EngineHealth, FetchResponse, GalleryDlUpdateInfo, OpenRouterModelCatalog, PresetOption, ProviderId, ProviderOption, SourceSearchPack, SourceSearchResponse, SourceSearchResult, YtDlpUpdateInfo } from "../../electron/types";
+import type { BrowserInfo, CookieSource, DownloadEvent, EngineHealth, FetchResponse, GalleryDlUpdateInfo, IndexSearchResponse, IndexSearchResult, IndexStatusResponse, OpenRouterModelCatalog, PresetOption, ProviderId, ProviderOption, SourceSearchPack, SourceSearchResponse, SourceSearchResult, YtDlpUpdateInfo } from "../../electron/types";
 import { extractUrls } from "./urlParser";
 
 type QueueItem = {
@@ -48,12 +48,52 @@ const EMPTY_SOURCE_SEARCH: SourceSearchResponse = {
   packs: DEFAULT_SOURCE_PACKS,
   results: [],
 };
+const EMPTY_INDEX_SEARCH: IndexSearchResponse = {
+  ok: false,
+  query: "",
+  indexRoot: "",
+  assetCount: 0,
+  momentCount: 0,
+  embeddedMomentCount: 0,
+  embeddingEndpointConfigured: false,
+  results: [],
+  resultCount: 0,
+};
 
 function formatDuration(seconds?: number) {
   if (!seconds) return "Unknown length";
   const minutes = Math.floor(seconds / 60);
   const rest = Math.floor(seconds % 60).toString().padStart(2, "0");
   return `${minutes}:${rest}`;
+}
+
+function formatMomentTime(seconds?: number | null): string {
+  if (seconds === null || seconds === undefined) return "";
+  const safe = Math.max(0, Math.floor(seconds));
+  const hours = Math.floor(safe / 3600);
+  const minutes = Math.floor((safe % 3600) / 60).toString().padStart(hours ? 2 : 1, "0");
+  const rest = (safe % 60).toString().padStart(2, "0");
+  return hours ? `${hours}:${minutes}:${rest}` : `${minutes}:${rest}`;
+}
+
+function momentRange(result: IndexSearchResult): string {
+  const start = formatMomentTime(result.start);
+  const end = formatMomentTime(result.end);
+  if (start && end) return `${start} – ${end}`;
+  if (start) return start;
+  return "Full file";
+}
+
+function folderForPath(filePath: string): string {
+  const normalized = filePath.replace(/\\/g, "/");
+  const index = normalized.lastIndexOf("/");
+  return index > 0 ? filePath.slice(0, index) : filePath;
+}
+
+function indexStatusLine(status: IndexStatusResponse | null): string {
+  if (!status) return "Not indexed yet";
+  if (!status.assetCount && !status.momentCount) return "No footage indexed";
+  return `${status.assetCount} files · ${status.momentCount} moments`;
 }
 
 function shortUrl(url: string) {
@@ -426,6 +466,10 @@ export function App() {
   const [activeSourcePack, setActiveSourcePack] = useState("all");
   const [sourceSearch, setSourceSearch] = useState<SourceSearchResponse>(EMPTY_SOURCE_SEARCH);
   const [sourceSearchBusy, setSourceSearchBusy] = useState(false);
+  const [indexStatus, setIndexStatus] = useState<IndexStatusResponse | null>(null);
+  const [indexSearch, setIndexSearch] = useState<IndexSearchResponse>(EMPTY_INDEX_SEARCH);
+  const [indexBusy, setIndexBusy] = useState<"idle" | "ingesting" | "searching">("idle");
+  const [indexError, setIndexError] = useState<string | null>(null);
   const [fetchProvider, setFetchProvider] = useState<ProviderId | typeof AUTO_PROVIDER>(AUTO_PROVIDER);
   const [items, setItems] = useState<QueueItem[]>([]);
   const [outputRoot, setOutputRoot] = useState("");
@@ -442,6 +486,7 @@ export function App() {
   const [aiStatus, setAiStatus] = useState<"idle" | "loading" | "saving">("idle");
   const [aiError, setAiError] = useState<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsSection, setSettingsSection] = useState<"general" | "search" | "watch" | "access" | "tools">("general");
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
 
   useEffect(() => {
@@ -622,12 +667,12 @@ export function App() {
   const presetOptions = health?.presets || [];
   const selectedFetchProvider = fetchProvider || AUTO_PROVIDER;
   const composerAction = useMemo(() => resolveComposerAction({
-    hasText: hasComposerText,
-    urlCount: detectedCount,
-    canUseDesktop: Boolean(rippo),
-    hasProvider: Boolean(selectedFetchProvider),
-    searchBusy: sourceSearchBusy,
-  }), [detectedCount, hasComposerText, rippo, selectedFetchProvider, sourceSearchBusy]);
+      hasText: hasComposerText,
+      urlCount: detectedCount,
+      canUseDesktop: Boolean(rippo),
+      hasProvider: Boolean(selectedFetchProvider),
+      searchBusy: sourceSearchBusy || indexBusy === "searching",
+    }), [detectedCount, hasComposerText, indexBusy, rippo, selectedFetchProvider, sourceSearchBusy]);
 
   useEffect(() => {
     if (!rippo) {
@@ -646,6 +691,17 @@ export function App() {
     if (!providerOptions.length) return;
     setFetchProvider((current) => current === AUTO_PROVIDER || providerOptions.some((provider) => provider.id === current) ? current : AUTO_PROVIDER);
   }, [providerOptions]);
+
+  useEffect(() => {
+    if (!rippo || typeof rippo.indexStatus !== "function" || !outputRoot) return;
+    let cancelled = false;
+    rippo.indexStatus(outputRoot).then((result) => {
+      if (!cancelled) setIndexStatus(result);
+    }).catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [rippo, outputRoot]);
 
   useEffect(() => {
     if (detectedCount > 0 && sourceSearch.query) setSourceSearch(EMPTY_SOURCE_SEARCH);
@@ -746,6 +802,7 @@ export function App() {
     }
 
     setSourceSearchBusy(true);
+    void searchSavedFootage(query);
     try {
       const result = await rippo.searchSources(query, activeSourcePack);
       setSourceSearch(result);
@@ -758,6 +815,48 @@ export function App() {
       });
     } finally {
       setSourceSearchBusy(false);
+    }
+  }
+
+  async function indexSavedFolder() {
+    if (!rippo || typeof rippo.indexIngest !== "function" || !outputRoot) {
+      setIndexError("Index runs inside the desktop app.");
+      return;
+    }
+
+    setIndexBusy("ingesting");
+    setIndexError(null);
+    try {
+      const result = await rippo.indexIngest({ indexRoot: outputRoot, paths: [outputRoot] });
+      if (result.ok) setIndexStatus(result);
+      else setIndexError(result.error || "Could not index this folder.");
+    } catch (error) {
+      setIndexError(consumerErrorMessage(error instanceof Error ? error.message : String(error), "Could not index this folder."));
+    } finally {
+      setIndexBusy("idle");
+    }
+  }
+
+  async function searchSavedFootage(query = input.trim().slice(0, 240)) {
+    if (!query) return;
+    if (!rippo || typeof rippo.indexSearch !== "function" || !outputRoot) {
+      setIndexSearch({ ...EMPTY_INDEX_SEARCH, query, indexRoot: outputRoot });
+      setIndexError("Index search runs inside the desktop app.");
+      return;
+    }
+
+    setIndexBusy("searching");
+    setIndexError(null);
+    try {
+      const result = await rippo.indexSearch({ indexRoot: outputRoot, query, limit: 24 });
+      setIndexSearch(result);
+      setIndexStatus(result);
+      if (!result.ok) setIndexError(result.error || "Could not search the index.");
+    } catch (error) {
+      setIndexSearch({ ...EMPTY_INDEX_SEARCH, query, indexRoot: outputRoot });
+      setIndexError(consumerErrorMessage(error instanceof Error ? error.message : String(error), "Could not search the index."));
+    } finally {
+      setIndexBusy("idle");
     }
   }
 
@@ -908,8 +1007,8 @@ export function App() {
                   onClick={runComposerAction}
                   disabled={composerAction.disabled}
                 >
-                  {sourceSearchBusy && composerAction.id === "search" ? <Loader2 className="spin" size={15} strokeWidth={2} aria-hidden /> : composerAction.icon === "search" ? <Search size={15} strokeWidth={2} aria-hidden /> : null}
-                  {sourceSearchBusy && composerAction.id === "search" ? composerAction.busyLabel : `${composerAction.label}${composerAction.countSuffix || ""}`}
+                  {(sourceSearchBusy && composerAction.id === "search") || (indexBusy === "searching" && composerAction.id === "search") ? <Loader2 className="spin" size={15} strokeWidth={2} aria-hidden /> : composerAction.icon === "search" ? <Search size={15} strokeWidth={2} aria-hidden /> : null}
+                  {(sourceSearchBusy && composerAction.id === "search") || (indexBusy === "searching" && composerAction.id === "search") ? composerAction.busyLabel : `${composerAction.label}${composerAction.countSuffix || ""}`}
                 </button>
               </div>
             </div>
@@ -919,6 +1018,60 @@ export function App() {
 
         <section className="workspace">
           {healthError ? <p className="error-text">{healthError}</p> : null}
+          {(indexSearch.query || indexSearch.results.length > 0 || indexError || indexBusy === "searching") ? (
+            <div className="index-panel">
+              <div className="index-head">
+                <div className="index-title-block">
+                  <p className="index-eyebrow">Index</p>
+                  <h2 className="index-title">Search your saved footage.</h2>
+                </div>
+                <button type="button" className="btn btn-ghost btn-index" onClick={indexSavedFolder} disabled={!rippo || indexBusy !== "idle"}>
+                  {indexBusy === "ingesting" ? <Loader2 className="spin" size={14} strokeWidth={2} aria-hidden /> : <FolderSearch size={14} strokeWidth={2} aria-hidden />}
+                  Index saved folder
+                </button>
+              </div>
+              <div className="index-meta-row">
+                <span>{indexStatusLine(indexStatus)}</span>
+                <span title={outputRoot || undefined}>{outputRoot || "Saved folder not ready"}</span>
+              </div>
+              {indexError ? <p className="error-text">{indexError}</p> : null}
+              {indexSearch.results.length > 0 ? (
+                <div className="index-results">
+                  <div className="index-results-head">
+                    <span>{indexSearch.resultCount} moments</span>
+                    <span>{indexSearch.query}</span>
+                  </div>
+                  {indexSearch.results.map((result) => (
+                    <article key={result.id} className="index-result">
+                      <div className="index-thumb" aria-hidden>
+                        <span>{result.kind.slice(0, 1).toUpperCase()}</span>
+                      </div>
+                      <div className="index-result-body">
+                        <div className="index-result-head">
+                          <h3 className="index-result-title">{result.title || result.file}</h3>
+                          <span className="index-time">{momentRange(result)}</span>
+                        </div>
+                        <p className="index-result-desc">{result.description || result.file}</p>
+                        <p className="index-result-path">{result.file} · {result.matchType}</p>
+                      </div>
+                      <button
+                        type="button"
+                        className="btn btn-ghost btn-reveal"
+                        onClick={() => rippo?.openFolder(folderForPath(result.path))}
+                        disabled={!rippo}
+                      >
+                        Reveal
+                      </button>
+                    </article>
+                  ))}
+                </div>
+              ) : (
+                <div className="index-empty">
+                  {indexBusy === "searching" ? "Searching saved footage..." : indexStatus?.momentCount ? "Type what you need and search." : "Index the saved folder, then search for a moment."}
+                </div>
+              )}
+            </div>
+          ) : null}
           {(sourceSearch.query || sourceSearch.results.length > 0 || sourceSearch.error || sourceSearchBusy) ? (
             <div className="search-panel">
               <div className="search-status">
@@ -926,37 +1079,85 @@ export function App() {
                 <span>{sourceContextLabel(sourceSearch, input)}</span>
               </div>
               {sourceSearch.error ? <p className="error-text">{sourceSearch.error}</p> : null}
-              <div className="source-results">
-                {sourceSearch.results.map((source) => (
-                  <article key={source.id} className="source-card">
-                    <div className="source-main">
-                      <div className="source-head">
-                        <span className="source-pack-label">{source.packLabel}</span>
-                        <h3 className="source-title">{source.title}</h3>
+              {sourceSearch.media ? (
+                <article className="media-card">
+                  {sourceSearch.media.poster ? (
+                    <img className="media-poster" src={sourceSearch.media.poster} alt={sourceSearch.media.title || ""} loading="lazy" />
+                  ) : (
+                    <div className="media-poster media-poster-empty" aria-hidden />
+                  )}
+                  <div className="media-body">
+                    <div className="media-head">
+                      <h2 className="media-title">{sourceSearch.media.title}</h2>
+                      <div className="media-meta">
+                        {sourceSearch.media.year ? <span>{sourceSearch.media.year}</span> : null}
+                        {sourceSearch.media.type ? <span className="media-kind">{sourceSearch.media.type === "series" ? "Series" : "Movie"}</span> : null}
+                        {sourceSearch.media.runtime ? <span>{sourceSearch.media.runtime}</span> : null}
+                        {sourceSearch.media.imdbRating ? <span className="media-rating">★ {sourceSearch.media.imdbRating}</span> : null}
                       </div>
-                      <p className="source-desc">{source.description}</p>
-                      <div className="source-tags">
-                        <span className="source-badge">{sourceBadgeLabel(source)}</span>
-                        {source.mediaTypes.slice(0, 4).map((type) => <span key={type} className="source-tag">{type}</span>)}
+                    </div>
+                    {sourceSearch.media.synopsis ? <p className="media-synopsis">{sourceSearch.media.synopsis}</p> : null}
+                    {sourceSearch.media.genres?.length ? (
+                      <div className="media-tags">
+                        {sourceSearch.media.genres.slice(0, 4).map((genre) => (
+                          <span key={genre} className="media-tag">{genre}</span>
+                        ))}
                       </div>
-                      {source.usage ? <p className="source-note">{source.usage}</p> : null}
-                    </div>
-                    <div className="source-actions">
-                      <button type="button" className="btn btn-primary btn-source" onClick={() => openSourceResult(source)}>
-                        <ExternalLink size={14} strokeWidth={2} aria-hidden /> {sourceActionLabel(source)}
-                      </button>
-                    </div>
-                  </article>
-                ))}
-              </div>
+                    ) : null}
+                    {sourceSearch.media.cast?.length ? (
+                      <p className="media-cast">{sourceSearch.media.cast.join(" · ")}</p>
+                    ) : null}
+                  </div>
+                </article>
+              ) : null}
+              {sourceSearch.playable && sourceSearch.playable.length > 0 ? (
+                <div className="playable-list">
+                  {sourceSearch.playable.map((link, idx) => (
+                    <article key={`${link.url}-${idx}`} className="playable-row">
+                      <div className="playable-info">
+                        <span className="playable-host">{link.host}</span>
+                        <span className="playable-label" title={link.label}>{link.label}</span>
+                        <div className="playable-meta">
+                          {link.extension ? <span className="playable-tag">{link.extension.toUpperCase()}</span> : null}
+                          {link.size ? <span>{link.size}</span> : null}
+                          {link.quality ? <span>{link.quality}</span> : null}
+                        </div>
+                      </div>
+                      <div className="playable-actions">
+                        <button type="button" className="btn btn-primary btn-source" onClick={() => rippo?.openExternal(link.url)}>
+                          <ExternalLink size={14} strokeWidth={2} aria-hidden /> Play
+                        </button>
+                      </div>
+                    </article>
+                  ))}
+                </div>
+              ) : !sourceSearchBusy && sourceSearch.query ? (
+                <p className="empty-playable">No playable sources matched yet — more adapters landing soon.</p>
+              ) : null}
             </div>
           ) : null}
 
           {items.length > 0 && (
-            <p className="queue-summary">{items.length} · {totals.ready} ready · {totals.done} saved{totals.failed ? ` · ${totals.failed} failed` : ""}</p>
+            <div className="queue-summary-row">
+              <p className="queue-summary">{items.length} · {totals.ready} ready · {totals.done} saved{totals.failed ? ` · ${totals.failed} failed` : ""}</p>
+              <div className="queue-summary-actions">
+                <button type="button" className="btn btn-ghost btn-footer" onClick={() => rippo?.openFolder(outputRoot)} disabled={!rippo} title={outputRoot || undefined}>
+                  <FolderOpen size={14} strokeWidth={2} aria-hidden /> Open folder
+                </button>
+                <button type="button" className="btn btn-primary btn-footer" onClick={downloadReady} disabled={!totals.ready || busy || !rippo}>
+                  {busy ? <Loader2 className="spin" size={14} strokeWidth={2} aria-hidden /> : <Download size={14} strokeWidth={2} aria-hidden />} Download{totals.ready ? ` ${totals.ready}` : ""}
+                </button>
+              </div>
+            </div>
           )}
           {items.length === 0 && !sourceSearch.query && !sourceSearch.results.length && !sourceSearch.error && !sourceSearchBusy ? (
-            <div className="empty">Paste a link or search anything.</div>
+            <div className="empty">
+              <span>Paste a link or search anything.</span>
+              <button type="button" className="empty-index-action" onClick={indexSavedFolder} disabled={!rippo || indexBusy !== "idle"}>
+                {indexBusy === "ingesting" ? <Loader2 className="spin" size={13} strokeWidth={2} aria-hidden /> : <FolderSearch size={13} strokeWidth={2} aria-hidden />}
+                Index saved folder
+              </button>
+            </div>
           ) : (
             items.map((item) => {
               const itemPresets = presetsForItem(item, presetOptions, providerOptions);
@@ -1039,31 +1240,61 @@ export function App() {
           )}
         </section>
 
-        <footer className="app-footer">
-          <div className="footer-row footer-meta">
-            <p className="footer-path" title={outputRoot || undefined}>{outputRoot || "Set output when engine connects."}</p>
-          </div>
-          <div className="footer-actions">
-            <button type="button" className="btn btn-ghost btn-footer" onClick={() => rippo?.openFolder(outputRoot)} disabled={!rippo}>
-              <FolderOpen size={16} strokeWidth={2} aria-hidden /> Open folder
-            </button>
-            <button type="button" className="btn btn-primary btn-footer" onClick={downloadReady} disabled={!totals.ready || busy || !rippo}>
-              {busy ? <Loader2 className="spin" size={16} strokeWidth={2} aria-hidden /> : <Download size={16} strokeWidth={2} aria-hidden />} Download{totals.ready ? ` ${totals.ready}` : ""}
-            </button>
-          </div>
-        </footer>
       </div>
       {health && !health.ok && health.error ? <p className="error-text health-banner">{health.error}</p> : null}
       {settingsOpen ? (
-        <div className="settings-overlay" onClick={() => setSettingsOpen(false)}>
-          <div className="settings-panel" role="dialog" aria-label="Settings" onClick={(e) => e.stopPropagation()}>
-            <div className="settings-head">
-              <h2 className="settings-title">Settings</h2>
-              <button type="button" className="icon-btn" onClick={() => setSettingsOpen(false)} aria-label="Close settings" title="Close">
-                <X size={16} strokeWidth={2} aria-hidden />
+        <div className="settings-fullscreen" role="dialog" aria-label="Settings" aria-modal="true">
+          <div className="settings-panel">
+            <nav className="settings-rail" aria-label="Settings sections">
+              <button
+                type="button"
+                className="settings-back"
+                onClick={() => setSettingsOpen(false)}
+                aria-label="Back to app"
+              >
+                <X size={14} strokeWidth={2} aria-hidden /> Back to app
               </button>
-            </div>
+              {([
+                { id: "general", label: "General", icon: FolderOpen },
+                { id: "search",  label: "Search",  icon: Search },
+                { id: "watch",   label: "Watch",   icon: RadarIcon },
+                { id: "access",  label: "Access",  icon: Cookie },
+                { id: "tools",   label: "Tools",   icon: Download },
+              ] as const).map((item) => {
+                const Icon = item.icon;
+                const active = settingsSection === item.id;
+                return (
+                  <button
+                    key={item.id}
+                    type="button"
+                    className={`settings-rail-item ${active ? "is-active" : ""}`}
+                    onClick={() => setSettingsSection(item.id)}
+                    aria-current={active ? "page" : undefined}
+                  >
+                    <Icon size={14} strokeWidth={2} aria-hidden />
+                    {item.label}
+                  </button>
+                );
+              })}
+            </nav>
+            <div className="settings-pane">
+              <div className="settings-head">
+                <h2 className="settings-title">
+                  {settingsSection === "general" ? "General" :
+                   settingsSection === "search"  ? "Search"  :
+                   settingsSection === "watch"   ? "Watch"   :
+                   settingsSection === "access"  ? "Access"  : "Tools"}
+                </h2>
+                <p className="settings-subtitle">
+                  {settingsSection === "general" ? "Where Rippo saves what you download." :
+                   settingsSection === "search"  ? "How Rippo finds links across the web." :
+                   settingsSection === "watch"   ? "Channels and feeds Rippo monitors for new finds." :
+                   settingsSection === "access"  ? "Browser logins for sites that need them." :
+                                                   "Download engines and updates."}
+                </p>
+              </div>
 
+            {settingsSection === "general" && (
             <section className="settings-section">
               <div className="settings-row-head">
                 <FolderOpen size={14} strokeWidth={2} aria-hidden />
@@ -1081,7 +1312,9 @@ export function App() {
                 </button>
               </div>
             </section>
+            )}
 
+            {settingsSection === "search" && (
             <section className="settings-section">
               <div className="settings-row-head">
                 <Search size={14} strokeWidth={2} aria-hidden />
@@ -1108,11 +1341,57 @@ export function App() {
                 </button>
               </div>
               <p className="settings-hint">
-                {aiCatalog?.models?.length ? `${aiCatalog.models.length} free text models cached. Selected: ${openRouterModelText(aiCatalog, health)}` : `Selected: ${openRouterModelText(aiCatalog, health)}`}
+                {aiCatalog?.models?.length ? `${aiCatalog.models.length} free text-only models cached. Selected: ${openRouterModelText(aiCatalog, health)}` : `Selected: ${openRouterModelText(aiCatalog, health)}`}
               </p>
               {aiError ? <p className="settings-warning">{consumerErrorMessage(aiError, "Could not refresh OpenRouter models.")}</p> : null}
             </section>
+            )}
 
+            {settingsSection === "watch" && (
+            <section className="settings-section">
+              <div className="settings-row-head">
+                <RadarIcon size={14} strokeWidth={2} aria-hidden />
+                <h3 className="settings-row-title">Watching</h3>
+                <span className="settings-version">2 channels</span>
+              </div>
+              <p className="settings-hint">
+                Paste a channel or feed URL. Rippo checks it on a schedule and drops new finds into your queue.
+              </p>
+              <div className="watch-add-row">
+                <input
+                  type="text"
+                  className="watch-add-input"
+                  placeholder="https://… channel, feed, or playlist"
+                  aria-label="Channel URL"
+                  disabled
+                />
+                <button type="button" className="btn btn-primary btn-footer" disabled>Add</button>
+              </div>
+              <ul className="watch-list" aria-label="Watched channels">
+                <li className="watch-row">
+                  <div className="watch-row-body">
+                    <p className="watch-row-url">youtube.com/@example-channel</p>
+                    <p className="watch-row-meta">last scan 4m ago · <b>3</b> new this week</p>
+                  </div>
+                  <button type="button" className="icon-btn icon-btn-danger" disabled aria-label="Remove" title="Remove">
+                    <Trash2 size={14} strokeWidth={2} aria-hidden />
+                  </button>
+                </li>
+                <li className="watch-row">
+                  <div className="watch-row-body">
+                    <p className="watch-row-url">vimeo.com/example/feed</p>
+                    <p className="watch-row-meta">last scan 22m ago · no new finds yet</p>
+                  </div>
+                  <button type="button" className="icon-btn icon-btn-danger" disabled aria-label="Remove" title="Remove">
+                    <Trash2 size={14} strokeWidth={2} aria-hidden />
+                  </button>
+                </li>
+              </ul>
+              <p className="settings-hint">Scanning every 30 minutes when Rippo is open.</p>
+            </section>
+            )}
+
+            {settingsSection === "access" && (
             <section className="settings-section">
               <div className="settings-row-head">
                 <Cookie size={14} strokeWidth={2} aria-hidden />
@@ -1136,7 +1415,9 @@ export function App() {
                 <p className="settings-warning" title={health.cookies.message || undefined}>Browser login failed — {health.cookies.message}</p>
               ) : null}
             </section>
+            )}
 
+            {settingsSection === "tools" && (
             <section className="settings-section">
               <div className="settings-row-head">
                 <Download size={14} strokeWidth={2} aria-hidden />
@@ -1211,6 +1492,8 @@ export function App() {
                 {health?.torrentError ? <p className="settings-warning">{consumerErrorMessage(health.torrentError)}</p> : null}
               </div>
             </section>
+            )}
+            </div>
           </div>
         </div>
       ) : null}
