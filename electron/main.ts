@@ -53,6 +53,19 @@ function appManagedOpenRouterModelsCache(): string {
   return path.join(app.getPath("userData"), "cache", "openrouter-free-models.json");
 }
 
+function appManagedQbittorrentProfileRoot(): string {
+  return path.join(app.getPath("userData"), "qbittorrent");
+}
+
+function bundledQbittorrentPath(): string | null {
+  const executable = process.platform === "win32" ? "qbittorrent-nox.exe" : "qbittorrent-nox";
+  const candidates = [
+    path.join(process.resourcesPath, "bin", executable),
+    path.join(app.getAppPath(), "bin", executable),
+  ];
+  return candidates.find((candidate) => fs.existsSync(candidate)) || null;
+}
+
 type Settings = {
   cookieSource?: CookieSource;
   cookiesBrowser?: string;
@@ -769,6 +782,9 @@ function engineEnv(): NodeJS.ProcessEnv {
     RIPPO_GALLERYDL_ROOT: fs.existsSync(managedGalleryDlRoot) ? managedGalleryDlRoot : "",
     RIPPO_OPENROUTER_MODELS_CACHE: appManagedOpenRouterModelsCache(),
     OPENROUTER_MODEL: selectedOpenRouterModel,
+    RIPPO_QBITTORRENT_PATH: process.env.RIPPO_QBITTORRENT_PATH || bundledQbittorrentPath() || "",
+    RIPPO_QBITTORRENT_PROFILE_ROOT: process.env.RIPPO_QBITTORRENT_PROFILE_ROOT || appManagedQbittorrentProfileRoot(),
+    RIPPO_QBITTORRENT_WEBUI_PORT: process.env.RIPPO_QBITTORRENT_WEBUI_PORT || "39080",
   };
 }
 

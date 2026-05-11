@@ -36,10 +36,17 @@ export type EngineHealth = {
   galleryDlPath?: string | null;
   galleryDlOk?: boolean;
   galleryDlError?: string | null;
+  qBittorrent?: string | null;
+  qBittorrentPath?: string | null;
+  qBittorrentOk?: boolean;
+  qBittorrentError?: string | null;
   aria2c?: string | null;
   aria2cPath?: string | null;
   aria2cOk?: boolean;
   aria2cError?: string | null;
+  torrentEngine?: "qbittorrent" | "aria2c" | null;
+  torrentOk?: boolean;
+  torrentError?: string | null;
   ffmpeg?: string | null;
   ffmpegOk?: boolean;
   ffmpegVersion?: string | null;

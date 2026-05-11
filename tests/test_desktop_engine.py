@@ -634,14 +634,14 @@ class DesktopEngineTests(unittest.TestCase):
         self.assertEqual(payload["metadata"]["provider"], "gallery-dl")
         self.assertEqual(payload["metadata"]["title"], "asset")
 
-    def test_fetch_auto_routes_magnet_to_aria2c(self) -> None:
+    def test_fetch_auto_routes_magnet_to_torrent_provider(self) -> None:
         args = argparse.Namespace(url="magnet:?xt=urn:btih:abc&dn=Example", provider="auto")
         stream = io.StringIO()
         with redirect_stdout(stream):
             self.assertEqual(desktop_engine.command_fetch(args), 0)
 
         payload = json.loads(stream.getvalue())
-        self.assertEqual(payload["metadata"]["provider"], "aria2c")
+        self.assertEqual(payload["metadata"]["provider"], "torrent")
         self.assertEqual(payload["metadata"]["title"], "Example")
 
     def test_gallery_preset_is_explicit_download_path(self) -> None:
@@ -661,7 +661,7 @@ class DesktopEngineTests(unittest.TestCase):
 
         gallery_download.assert_called_once()
 
-    def test_torrent_preset_is_explicit_aria2_download_path(self) -> None:
+    def test_torrent_preset_prefers_qbittorrent_when_available(self) -> None:
         args = argparse.Namespace(
             url="magnet:?xt=urn:btih:abc&dn=Example",
             preset="torrent",
@@ -672,11 +672,61 @@ class DesktopEngineTests(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as tmp:
             args.output_root = tmp
-            with mock.patch("rippopotamus.providers.aria2c_base", return_value=["aria2c"]):
-                with mock.patch("rippopotamus.desktop_engine.command_aria2_download", return_value=0) as aria_download:
+            with mock.patch("rippopotamus.desktop_engine.qbittorrent_status", return_value={"ok": True}):
+                with mock.patch("rippopotamus.desktop_engine.command_qbittorrent_download", return_value=0) as qbit_download:
                     self.assertEqual(desktop_engine.command_download(args), 0)
 
+        qbit_download.assert_called_once()
+
+    def test_torrent_preset_falls_back_to_aria2_download_path(self) -> None:
+        args = argparse.Namespace(
+            url="magnet:?xt=urn:btih:abc&dn=Example",
+            preset="torrent",
+            output_root="",
+            item_id="torrent",
+            title="Torrent",
+        )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            args.output_root = tmp
+            with mock.patch("rippopotamus.desktop_engine.qbittorrent_status", return_value={"ok": False}):
+                with mock.patch("rippopotamus.providers.aria2c_base", return_value=["aria2c"]):
+                    with mock.patch("rippopotamus.desktop_engine.command_aria2_download", return_value=0) as aria_download:
+                        self.assertEqual(desktop_engine.command_download(args), 0)
+
         aria_download.assert_called_once()
+
+    def test_qbittorrent_status_reports_torrent_runtime(self) -> None:
+        completed = desktop_engine.subprocess.CompletedProcess(
+            args=[],
+            returncode=0,
+            stdout="qBittorrent v5.1.4\n",
+            stderr="",
+        )
+        with mock.patch("rippopotamus.desktop_engine.qbittorrent_nox_base", return_value=["qbittorrent-nox"]):
+            with mock.patch("rippopotamus.desktop_engine.subprocess.run", return_value=completed):
+                self.assertEqual(
+                    desktop_engine.qbittorrent_status(),
+                    {"ok": True, "version": "5.1.4", "path": "qbittorrent-nox", "error": None},
+                )
+
+    def test_torrent_engine_status_prefers_qbittorrent_over_aria2(self) -> None:
+        with mock.patch("rippopotamus.desktop_engine.qbittorrent_status", return_value={"ok": True, "version": "5.1.4"}):
+            with mock.patch("rippopotamus.desktop_engine.aria2c_status", return_value={"ok": True, "version": "1.37.0"}):
+                self.assertEqual(desktop_engine.torrent_engine_status()["engine"], "qbittorrent")
+
+    def test_qbittorrent_config_uses_app_owned_profile(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            profile = Path(tmp) / "qbt"
+            output = Path(tmp) / "out"
+            desktop_engine.write_qbt_config(profile, 39080, output)
+            config = profile / "qBittorrent_rippo" / "config" / "qBittorrent.conf"
+
+            text = config.read_text(encoding="utf-8")
+            self.assertIn("Accepted=true", text)
+            self.assertIn("WebUI\\LocalHostAuth=false", text)
+            self.assertIn("WebUI\\Port=39080", text)
+            self.assertIn(f"Downloads\\SavePath={(output / 'Files').resolve()}", text)
 
     def test_torrent_command_uses_app_owned_dht_cache(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

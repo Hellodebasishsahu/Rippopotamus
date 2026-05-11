@@ -192,6 +192,8 @@ const TECHNICAL_MESSAGE_PATTERNS = [
   /\bdht\.dat\b/i,
   /\/Users\//i,
   /\baria2c?\b/i,
+  /\bqBittorrent\b/i,
+  /\bqbittorrent-nox\b/i,
   /\byt-dlp\b/i,
   /\bgallery-dl\b/i,
 ];
@@ -228,6 +230,9 @@ function consumerErrorMessage(message: string, fallback = "Download failed. Try 
     return "This source is no longer available.";
   }
   if (lower.includes("missing required command") && lower.includes("aria2")) {
+    return "Torrent support is not installed yet.";
+  }
+  if (lower.includes("qbittorrent") || lower.includes("torrent support needs")) {
     return "Torrent support is not installed yet.";
   }
   if (lower.includes("missing") && lower.includes("gallery-dl")) {
@@ -284,15 +289,16 @@ function galleryDlPathText(update: GalleryDlUpdateInfo | null, health: EngineHea
 }
 
 function aria2cStatusText(health: EngineHealth | null, healthError: string | null): string {
-  if (health?.aria2c) return "Ready";
-  if (health?.aria2cOk === false) return "Missing";
+  if (health?.torrentOk) return "Ready";
+  if (health?.torrentOk === false) return "Missing";
   if (healthError) return "Unavailable";
   return "Checking...";
 }
 
 function aria2cPathText(health: EngineHealth | null): string {
-  if (health?.aria2cPath) return "Ready to save magnet links and torrent files.";
-  return "Install aria2c to save magnet links and torrent files.";
+  if (health?.torrentEngine === "qbittorrent") return "Ready with enhanced torrent support.";
+  if (health?.torrentEngine === "aria2c") return "Ready to save magnet links and torrent files.";
+  return "Install torrent support to save magnet links and torrent files.";
 }
 
 function openRouterModelText(catalog: OpenRouterModelCatalog | null, health: EngineHealth | null): string {
@@ -1199,10 +1205,10 @@ export function App() {
                   </div>
                   <span className="settings-version">{aria2cStatusText(health, healthError)}</span>
                 </div>
-                <p className="settings-hint" title={health?.aria2cPath || undefined}>
+                <p className="settings-hint" title={health?.qBittorrentPath || health?.aria2cPath || undefined}>
                   {aria2cPathText(health)}
                 </p>
-                {health?.aria2cError ? <p className="settings-warning">{consumerErrorMessage(health.aria2cError)}</p> : null}
+                {health?.torrentError ? <p className="settings-warning">{consumerErrorMessage(health.torrentError)}</p> : null}
               </div>
             </section>
           </div>
