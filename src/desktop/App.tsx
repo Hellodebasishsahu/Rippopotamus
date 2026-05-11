@@ -1,6 +1,6 @@
 import { Cookie, Download, ExternalLink, FolderOpen, FolderSearch, ImageOff, Link2, Loader2, RefreshCcw, RotateCcw, Settings, Trash2, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { BrowserInfo, DownloadEvent, EngineHealth, FetchResponse, PresetOption, ProviderId, ProviderOption, YtDlpUpdateInfo } from "../../electron/types";
+import type { BrowserInfo, DownloadEvent, EngineHealth, FetchResponse, GalleryDlUpdateInfo, PresetOption, ProviderId, ProviderOption, YtDlpUpdateInfo } from "../../electron/types";
 import { extractUrls } from "./urlParser";
 
 type QueueItem = {
@@ -71,10 +71,10 @@ function metaLine(item: QueueItem): string {
   return parts.join(" · ");
 }
 
-function updaterErrorMessage(error: unknown): string {
+function updaterErrorMessage(error: unknown, tool: "yt-dlp" | "gallery-dl"): string {
   const message = error instanceof Error ? error.message : String(error);
-  if (message.includes("No handler registered") || message.includes("checkYtDlpUpdate is not a function")) {
-    return "Restart Rippopotamus to load the yt-dlp updater.";
+  if (message.includes("No handler registered") || message.includes("is not a function")) {
+    return `Restart Rippopotamus to load the ${tool} updater.`;
   }
   return message;
 }
@@ -89,6 +89,33 @@ function fetchErrorMessage(error: unknown): string {
     return "Unsupported site. Paste a supported video or audio page.";
   }
   return message || "Fetch failed.";
+}
+
+function ytDlpStatusText(health: EngineHealth | null, healthError: string | null): string {
+  if (health?.ytDlp) return `Installed: ${health.ytDlp}`;
+  if (healthError) return "Engine unavailable";
+  return "Checking...";
+}
+
+function ytDlpPathText(update: YtDlpUpdateInfo | null, health: EngineHealth | null): string {
+  if (update?.binaryPath) return update.binaryPath;
+  if (health?.ytDlpPath) return health.ytDlpPath;
+  if (health?.ytDlp) return "Using the bundled Python yt-dlp package.";
+  return "Rippopotamus will use its managed yt-dlp when installed.";
+}
+
+function galleryDlStatusText(health: EngineHealth | null, healthError: string | null): string {
+  if (health?.galleryDl) return `Installed: ${health.galleryDl}`;
+  if (health?.galleryDlOk === false) return "Missing";
+  if (healthError) return "Engine unavailable";
+  return "Checking...";
+}
+
+function galleryDlPathText(update: GalleryDlUpdateInfo | null, health: EngineHealth | null): string {
+  if (update?.binaryPath) return update.binaryPath;
+  if (health?.galleryDlPath) return health.galleryDlPath;
+  if (health?.galleryDl) return "Using the bundled Python gallery-dl package.";
+  return "Rippopotamus will use its managed gallery-dl when installed.";
 }
 
 function thumbnailUrls(item: QueueItem): string[] {
@@ -166,6 +193,9 @@ export function App() {
   const [ytDlpUpdate, setYtDlpUpdate] = useState<YtDlpUpdateInfo | null>(null);
   const [ytDlpStatus, setYtDlpStatus] = useState<"idle" | "checking" | "updating">("idle");
   const [ytDlpError, setYtDlpError] = useState<string | null>(null);
+  const [galleryDlUpdate, setGalleryDlUpdate] = useState<GalleryDlUpdateInfo | null>(null);
+  const [galleryDlStatus, setGalleryDlStatus] = useState<"idle" | "checking" | "updating">("idle");
+  const [galleryDlError, setGalleryDlError] = useState<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
 
@@ -229,7 +259,7 @@ export function App() {
       const result = await rippo.checkYtDlpUpdate();
       setYtDlpUpdate(result);
     } catch (error) {
-      setYtDlpError(updaterErrorMessage(error));
+      setYtDlpError(updaterErrorMessage(error, "yt-dlp"));
     } finally {
       setYtDlpStatus("idle");
     }
@@ -248,9 +278,46 @@ export function App() {
       setYtDlpUpdate(result);
       setHealth(result.health);
     } catch (error) {
-      setYtDlpError(updaterErrorMessage(error));
+      setYtDlpError(updaterErrorMessage(error, "yt-dlp"));
     } finally {
       setYtDlpStatus("idle");
+    }
+  }
+
+  async function checkGalleryDlUpdate() {
+    if (!rippo || galleryDlStatus !== "idle") return;
+    if (typeof rippo.checkGalleryDlUpdate !== "function") {
+      setGalleryDlError("Restart Rippopotamus to load the gallery-dl updater.");
+      return;
+    }
+    setGalleryDlStatus("checking");
+    setGalleryDlError(null);
+    try {
+      const result = await rippo.checkGalleryDlUpdate();
+      setGalleryDlUpdate(result);
+    } catch (error) {
+      setGalleryDlError(updaterErrorMessage(error, "gallery-dl"));
+    } finally {
+      setGalleryDlStatus("idle");
+    }
+  }
+
+  async function updateGalleryDl() {
+    if (!rippo || galleryDlStatus !== "idle") return;
+    if (typeof rippo.updateGalleryDl !== "function") {
+      setGalleryDlError("Restart Rippopotamus to load the gallery-dl updater.");
+      return;
+    }
+    setGalleryDlStatus("updating");
+    setGalleryDlError(null);
+    try {
+      const result = await rippo.updateGalleryDl();
+      setGalleryDlUpdate(result);
+      setHealth(result.health);
+    } catch (error) {
+      setGalleryDlError(updaterErrorMessage(error, "gallery-dl"));
+    } finally {
+      setGalleryDlStatus("idle");
     }
   }
 
@@ -602,29 +669,66 @@ export function App() {
 
             <section className="settings-section">
               <div className="settings-row-head">
-                <h3 className="settings-row-title">yt-dlp</h3>
-                <span className="settings-version">{health?.ytDlp || "unknown"}</span>
+                <Download size={14} strokeWidth={2} aria-hidden />
+                <h3 className="settings-row-title">Download engines</h3>
               </div>
-              <p className="settings-hint" title={ytDlpUpdate?.binaryPath || health?.ytDlpPath || undefined}>
-                {ytDlpUpdate?.binaryPath || health?.ytDlpPath || "Managed by Rippopotamus."}
-              </p>
-              <div className="settings-actions">
-                {ytDlpUpdate?.updateAvailable ? (
-                  <button type="button" className="btn btn-primary btn-footer" onClick={updateYtDlp} disabled={!rippo || ytDlpStatus !== "idle"}>
-                    {ytDlpStatus === "updating" ? <Loader2 className="spin" size={14} strokeWidth={2} aria-hidden /> : null}
-                    {ytDlpUpdate.currentVersion ? "Update" : "Install"}
-                  </button>
-                ) : (
-                  <button type="button" className="btn btn-ghost btn-footer" onClick={checkYtDlpUpdate} disabled={!rippo || ytDlpStatus !== "idle"}>
-                    {ytDlpStatus === "checking" ? <Loader2 className="spin" size={14} strokeWidth={2} aria-hidden /> : <RefreshCcw size={14} strokeWidth={2} aria-hidden />}
-                    Check for updates
-                  </button>
-                )}
+              <div className="settings-engine-list">
+                <div className="settings-engine-row">
+                  <div className="settings-engine-copy">
+                    <p className="settings-engine-name">Video</p>
+                    <p className="settings-hint">yt-dlp</p>
+                  </div>
+                  <span className="settings-version">{ytDlpStatusText(health, healthError)}</span>
+                </div>
+                <p className="settings-hint" title={ytDlpUpdate?.binaryPath || health?.ytDlpPath || undefined}>
+                  {ytDlpPathText(ytDlpUpdate, health)}
+                </p>
+                <div className="settings-actions">
+                  {ytDlpUpdate?.updateAvailable ? (
+                    <button type="button" className="btn btn-primary btn-footer" onClick={updateYtDlp} disabled={!rippo || ytDlpStatus !== "idle"}>
+                      {ytDlpStatus === "updating" ? <Loader2 className="spin" size={14} strokeWidth={2} aria-hidden /> : null}
+                      {ytDlpUpdate.currentVersion ? "Update" : "Install"}
+                    </button>
+                  ) : (
+                    <button type="button" className="btn btn-ghost btn-footer" onClick={checkYtDlpUpdate} disabled={!rippo || ytDlpStatus !== "idle"}>
+                      {ytDlpStatus === "checking" ? <Loader2 className="spin" size={14} strokeWidth={2} aria-hidden /> : <RefreshCcw size={14} strokeWidth={2} aria-hidden />}
+                      Check for updates
+                    </button>
+                  )}
+                </div>
+                {ytDlpError ? <p className="settings-warning">{ytDlpError}</p> : null}
+                {ytDlpUpdate && !ytDlpUpdate.updateAvailable && !ytDlpError ? (
+                  <p className="settings-hint">yt-dlp is current{ytDlpUpdate.latestVersion ? ` (${ytDlpUpdate.latestVersion})` : ""}.</p>
+                ) : null}
+                <div className="settings-engine-row settings-engine-row-spaced">
+                  <div className="settings-engine-copy">
+                    <p className="settings-engine-name">Images</p>
+                    <p className="settings-hint">gallery-dl</p>
+                  </div>
+                  <span className="settings-version">{galleryDlStatusText(health, healthError)}</span>
+                </div>
+                <p className="settings-hint" title={galleryDlUpdate?.binaryPath || health?.galleryDlPath || undefined}>
+                  {galleryDlPathText(galleryDlUpdate, health)}
+                </p>
+                <div className="settings-actions">
+                  {galleryDlUpdate?.updateAvailable ? (
+                    <button type="button" className="btn btn-primary btn-footer" onClick={updateGalleryDl} disabled={!rippo || galleryDlStatus !== "idle"}>
+                      {galleryDlStatus === "updating" ? <Loader2 className="spin" size={14} strokeWidth={2} aria-hidden /> : null}
+                      {galleryDlUpdate.currentVersion ? "Update" : "Install"}
+                    </button>
+                  ) : (
+                    <button type="button" className="btn btn-ghost btn-footer" onClick={checkGalleryDlUpdate} disabled={!rippo || galleryDlStatus !== "idle"}>
+                      {galleryDlStatus === "checking" ? <Loader2 className="spin" size={14} strokeWidth={2} aria-hidden /> : <RefreshCcw size={14} strokeWidth={2} aria-hidden />}
+                      Check for updates
+                    </button>
+                  )}
+                </div>
+                {galleryDlError ? <p className="settings-warning">{galleryDlError}</p> : null}
+                {health?.galleryDlError && !galleryDlError ? <p className="settings-warning">{health.galleryDlError}</p> : null}
+                {galleryDlUpdate && !galleryDlUpdate.updateAvailable && !galleryDlError ? (
+                  <p className="settings-hint">gallery-dl is current{galleryDlUpdate.latestVersion ? ` (${galleryDlUpdate.latestVersion})` : ""}.</p>
+                ) : null}
               </div>
-              {ytDlpError ? <p className="settings-warning">{ytDlpError}</p> : null}
-              {ytDlpUpdate && !ytDlpUpdate.updateAvailable && !ytDlpError ? (
-                <p className="settings-hint">yt-dlp is current{ytDlpUpdate.latestVersion ? ` (${ytDlpUpdate.latestVersion})` : ""}.</p>
-              ) : null}
             </section>
           </div>
         </div>

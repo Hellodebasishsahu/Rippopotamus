@@ -29,6 +29,10 @@ function appManagedYtDlpPath(): string {
   return path.join(app.getPath("userData"), "bin", process.platform === "win32" ? "yt-dlp.exe" : "yt-dlp");
 }
 
+function appManagedGalleryDlRoot(): string {
+  return path.join(app.getPath("userData"), "python", "gallery-dl");
+}
+
 type Settings = {
   cookiesBrowser?: string;
   outputRoot?: string;
@@ -69,6 +73,12 @@ type YtDlpUpdateInfo = {
   managedBinaryExists: boolean;
   downloadUrl?: string;
   error?: string;
+};
+
+type PyPiPackageInfo = {
+  info: {
+    version: string;
+  };
 };
 
 function detectBrowsers(): BrowserInfo[] {
@@ -183,6 +193,43 @@ async function checkYtDlpUpdate(): Promise<YtDlpUpdateInfo> {
   };
 }
 
+async function fetchLatestGalleryDlPackage(): Promise<PyPiPackageInfo> {
+  const response = await fetch("https://pypi.org/pypi/gallery-dl/json", {
+    headers: {
+      "Accept": "application/json",
+      "User-Agent": "Rippopotamus",
+    },
+  });
+  if (!response.ok) throw new Error(`gallery-dl release check failed: ${response.status}`);
+  return await response.json() as PyPiPackageInfo;
+}
+
+async function currentGalleryDlVersion(): Promise<string | null> {
+  try {
+    const health = await runEngine(["health"]) as { galleryDl?: string | null };
+    return normalizeVersion(health.galleryDl);
+  } catch {
+    return null;
+  }
+}
+
+async function checkGalleryDlUpdate(): Promise<YtDlpUpdateInfo> {
+  const binaryPath = appManagedGalleryDlRoot();
+  const [latest, currentVersion] = await Promise.all([
+    fetchLatestGalleryDlPackage(),
+    currentGalleryDlVersion(),
+  ]);
+  const latestVersion = normalizeVersion(latest.info.version);
+  return {
+    currentVersion,
+    latestVersion,
+    updateAvailable: Boolean(latestVersion && (!currentVersion || compareVersions(latestVersion, currentVersion) > 0)),
+    binaryPath,
+    managedBinaryExists: fs.existsSync(binaryPath),
+    downloadUrl: latestVersion ? `gallery-dl==${latestVersion}` : undefined,
+  };
+}
+
 async function installYtDlpUpdate(downloadUrl: string): Promise<void> {
   const binaryPath = appManagedYtDlpPath();
   const binDir = path.dirname(binaryPath);
@@ -202,6 +249,75 @@ async function installYtDlpUpdate(downloadUrl: string): Promise<void> {
   fs.renameSync(tmpPath, binaryPath);
 }
 
+function runPython(args: string[], env: NodeJS.ProcessEnv = engineEnv()): Promise<void> {
+  const pythons = candidatePythons();
+
+  return new Promise((resolve, reject) => {
+    let index = 0;
+
+    const tryNext = () => {
+      const python = pythons[index++];
+      if (!python) {
+        reject(new Error("No Python runtime found for the local engine."));
+        return;
+      }
+
+      const child = spawn(python, args, {
+        env,
+        cwd: engineCwd(),
+      });
+
+      let stderr = "";
+      child.stdout.on("data", () => undefined);
+      child.stderr.on("data", (chunk: Buffer) => {
+        stderr += chunk.toString();
+      });
+
+      child.on("error", () => {
+        tryNext();
+      });
+
+      child.on("close", (code) => {
+        if (code === 0) {
+          resolve();
+          return;
+        }
+
+        if (stderr.includes("No module named pip") && index < pythons.length) {
+          tryNext();
+          return;
+        }
+
+        reject(new Error(stderr.trim() || `Python exited with code ${code}`));
+      });
+    };
+
+    tryNext();
+  });
+}
+
+async function installGalleryDlUpdate(version: string): Promise<void> {
+  const target = appManagedGalleryDlRoot();
+  const tmpTarget = path.join(path.dirname(target), `gallery-dl.${process.pid}.tmp`);
+  fs.rmSync(tmpTarget, { recursive: true, force: true });
+  fs.mkdirSync(path.dirname(target), { recursive: true });
+
+  await runPython([
+    "-m",
+    "pip",
+    "install",
+    "--upgrade",
+    "--no-input",
+    "--disable-pip-version-check",
+    "--target",
+    tmpTarget,
+    `gallery-dl==${version}`,
+  ]);
+
+  fs.rmSync(target, { recursive: true, force: true });
+  fs.renameSync(tmpTarget, target);
+}
+
 function candidatePythons(): string[] {
   const configured = process.env.RIPPO_PYTHON;
   return [
@@ -217,14 +333,16 @@ function engineEnv(): NodeJS.ProcessEnv {
   const resourcesEngine = path.join(process.resourcesPath, "engine");
   const devEngine = path.join(app.getAppPath(), "src");
   const pythonPath = app.isPackaged ? resourcesEngine : devEngine;
+  const managedGalleryDlRoot = appManagedGalleryDlRoot();
   const bundledFfmpeg = ffmpegPath();
   fs.mkdirSync(path.dirname(appManagedYtDlpPath()), { recursive: true });
   const selectedBrowser = selectedCookiesBrowser();
   return {
     ...process.env,
-    PYTHONPATH: [pythonPath, process.env.PYTHONPATH].filter(Boolean).join(path.delimiter),
+    PYTHONPATH: [fs.existsSync(managedGalleryDlRoot) ? managedGalleryDlRoot : null, pythonPath, process.env.PYTHONPATH].filter(Boolean).join(path.delimiter),
     RIPPO_FFMPEG_PATH: bundledFfmpeg || process.env.RIPPO_FFMPEG_PATH || "",
     RIPPO_YTDLP_PATH: process.env.RIPPO_YTDLP_PATH || appManagedYtDlpPath(),
+    RIPPO_GALLERYDL_ROOT: fs.existsSync(managedGalleryDlRoot) ? managedGalleryDlRoot : "",
     RIPPO_COOKIES_FROM_BROWSER: selectedBrowser || process.env.RIPPO_COOKIES_FROM_BROWSER || "",
   };
 }
@@ -457,6 +575,25 @@ app.whenReady().then(() => {
     };
     return {
       ...(await checkYtDlpUpdate()),
+      health,
+    };
+  });
+
+  ipcMain.handle("gallerydl:check-update", async () => {
+    return checkGalleryDlUpdate();
+  });
+
+  ipcMain.handle("gallerydl:update", async () => {
+    const update = await checkGalleryDlUpdate();
+    if (!update.latestVersion) throw new Error("No gallery-dl version is available.");
+    await installGalleryDlUpdate(update.latestVersion);
+    const health = {
+      ...((await runEngine(["health"])) as Record<string, unknown>),
+      outputRoot: currentOutputRoot(),
+      packaged: app.isPackaged,
+    };
+    return {
+      ...(await checkGalleryDlUpdate()),
       health,
     };
   });

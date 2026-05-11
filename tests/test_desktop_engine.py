@@ -120,6 +120,27 @@ class DesktopEngineTests(unittest.TestCase):
 
         self.assertIn("--ignore-config", run.call_args.args[0])
 
+    def test_gallery_dl_status_reports_image_provider_runtime(self) -> None:
+        completed = desktop_engine.subprocess.CompletedProcess(
+            args=[],
+            returncode=0,
+            stdout="1.32.1\n",
+            stderr="",
+        )
+        with mock.patch("rippopotamus.desktop_engine.gallery_dl_base", return_value=["gallery-dl"]):
+            with mock.patch("rippopotamus.desktop_engine.subprocess.run", return_value=completed):
+                self.assertEqual(
+                    desktop_engine.gallery_dl_status(),
+                    {"ok": True, "version": "1.32.1", "path": "gallery-dl", "error": None},
+                )
+
+    def test_gallery_dl_status_reports_missing_runtime_without_failing_health(self) -> None:
+        with mock.patch("rippopotamus.desktop_engine.gallery_dl_base", side_effect=SystemExit("Missing gallery-dl.")):
+            self.assertEqual(
+                desktop_engine.gallery_dl_status(),
+                {"ok": False, "version": None, "path": None, "error": "Missing gallery-dl."},
+            )
+
     def test_build_download_command_keeps_cookies_explicit_after_config_ignore(self) -> None:
         command = desktop_download_command(
             "https://www.youtube.com/watch?v=TQd2k1pEXp4",

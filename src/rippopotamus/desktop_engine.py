@@ -19,6 +19,7 @@ from rippopotamus.providers import (
     ProviderContext,
     desktop_download_command,
     friendly_error,
+    gallery_dl_base,
     metadata_command,
     parse_metadata_output,
     provider_catalog,
@@ -126,6 +127,36 @@ def provider_context() -> ProviderContext:
     )
 
 
+def gallery_dl_status() -> dict[str, Any]:
+    try:
+        base = gallery_dl_base()
+    except SystemExit as exc:
+        return {
+            "ok": False,
+            "version": None,
+            "path": None,
+            "error": friendly_error(str(exc)),
+        }
+
+    managed_root = os.environ.get("RIPPO_GALLERYDL_ROOT", "").strip() or None
+    path = base[0] if len(base) == 1 else managed_root
+    try:
+        result = subprocess.run([*base, "--version"], capture_output=True, text=True, check=True)
+        return {
+            "ok": True,
+            "version": result.stdout.strip() or "installed",
+            "path": path,
+            "error": None,
+        }
+    except Exception as exc:
+        return {
+            "ok": False,
+            "version": None,
+            "path": path,
+            "error": friendly_error(str(exc)),
+        }
+
+
 def run_text(args: list[str]) -> str:
     try:
         result = subprocess.run(args, capture_output=True, text=True, check=True)
@@ -163,11 +194,16 @@ def command_health(_args: argparse.Namespace) -> int:
             ffmpeg_ok = False
 
     catalog = provider_catalog()
+    gallery = gallery_dl_status()
     emit({
         "ok": True,
         "python": sys.executable,
         "ytDlp": yt_dlp_version,
         "ytDlpPath": base[0] if len(base) == 1 else None,
+        "galleryDl": gallery["version"],
+        "galleryDlPath": gallery["path"],
+        "galleryDlOk": gallery["ok"],
+        "galleryDlError": gallery["error"],
         "ffmpeg": ffmpeg,
         "ffmpegOk": ffmpeg_ok,
         "ffmpegVersion": ffmpeg_version,

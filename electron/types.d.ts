@@ -13,6 +13,8 @@ declare global {
       setCookiesBrowser: (browserId: string | null) => Promise<CookiesBrowserResponse>;
       checkYtDlpUpdate: () => Promise<YtDlpUpdateInfo>;
       updateYtDlp: () => Promise<YtDlpUpdateResult>;
+      checkGalleryDlUpdate: () => Promise<GalleryDlUpdateInfo>;
+      updateGalleryDl: () => Promise<GalleryDlUpdateResult>;
       chooseOutputRoot: () => Promise<{ outputRoot: string; canceled: boolean }>;
       resetOutputRoot: () => Promise<{ outputRoot: string }>;
       onDownloadEvent: (callback: (event: DownloadEvent) => void) => () => void;
@@ -25,6 +27,10 @@ export type EngineHealth = {
   python?: string;
   ytDlp?: string;
   ytDlpPath?: string | null;
+  galleryDl?: string | null;
+  galleryDlPath?: string | null;
+  galleryDlOk?: boolean;
+  galleryDlError?: string | null;
   ffmpeg?: string | null;
   ffmpegOk?: boolean;
   ffmpegVersion?: string | null;
@@ -85,6 +91,12 @@ export type YtDlpUpdateInfo = {
 };
 
 export type YtDlpUpdateResult = YtDlpUpdateInfo & {
+  health: EngineHealth;
+};
+
+export type GalleryDlUpdateInfo = YtDlpUpdateInfo;
+
+export type GalleryDlUpdateResult = GalleryDlUpdateInfo & {
   health: EngineHealth;
 };
 

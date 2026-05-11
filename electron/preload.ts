@@ -12,6 +12,8 @@ contextBridge.exposeInMainWorld("rippo", {
   setCookiesBrowser: (browserId: string | null) => ipcRenderer.invoke("cookies:set-browser", browserId),
   checkYtDlpUpdate: () => ipcRenderer.invoke("ytdlp:check-update"),
   updateYtDlp: () => ipcRenderer.invoke("ytdlp:update"),
+  checkGalleryDlUpdate: () => ipcRenderer.invoke("gallerydl:check-update"),
+  updateGalleryDl: () => ipcRenderer.invoke("gallerydl:update"),
   chooseOutputRoot: () => ipcRenderer.invoke("output:choose"),
   resetOutputRoot: () => ipcRenderer.invoke("output:reset"),
   onDownloadEvent: (callback: (event: unknown) => void) => {

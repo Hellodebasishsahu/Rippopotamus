@@ -222,6 +222,7 @@ button:disabled {
   font-weight: 600;
   color: var(--text-muted);
   font-variant-numeric: tabular-nums;
+  text-align: right;
 }
 
 .settings-hint {
@@ -266,6 +267,35 @@ button:disabled {
   display: flex;
   gap: 8px;
   margin-top: 4px;
+}
+
+.settings-engine-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.settings-engine-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.settings-engine-row-spaced {
+  margin-top: 8px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+
+.settings-engine-copy {
+  min-width: 0;
+}
+
+.settings-engine-name {
+  margin: 0;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text);
 }
 
 .settings-warning {
