@@ -62,6 +62,8 @@ PROVIDER_CATALOG: dict[str, dict[str, str]] = {
 }
 
 PROVIDERS = set(PROVIDER_CATALOG)
+DEFAULT_PROVIDER = next(iter(PROVIDER_CATALOG))
+DEFAULT_PRESET = PROVIDER_CATALOG[DEFAULT_PROVIDER]["defaultPreset"]
 
 
 @dataclass(frozen=True)

@@ -14,6 +14,8 @@ from pathlib import Path
 from typing import Any
 
 from rippopotamus.providers import (
+    DEFAULT_PRESET,
+    DEFAULT_PROVIDER,
     PRESETS,
     PROVIDERS,
     download_command,
@@ -158,7 +160,7 @@ def command_add(args: argparse.Namespace) -> int:
     return 0
 
 
-def fetch_metadata(url: str, provider: str = "yt-dlp") -> dict[str, Any]:
+def fetch_metadata(url: str, provider: str = DEFAULT_PROVIDER) -> dict[str, Any]:
     result = run_checked(metadata_command(provider, url))
     return parse_metadata_output(provider, url, result.stdout)
 
@@ -319,11 +321,11 @@ def build_parser() -> argparse.ArgumentParser:
 
     fetch = sub.add_parser("fetch", help="fetch metadata for queued URLs")
     fetch.add_argument("--refresh", action="store_true")
-    fetch.add_argument("--provider", choices=sorted(PROVIDERS), default="yt-dlp")
+    fetch.add_argument("--provider", choices=sorted(PROVIDERS), default=DEFAULT_PROVIDER)
     fetch.set_defaults(func=command_fetch)
 
     download = sub.add_parser("download", help="download fetched items")
-    download.add_argument("--preset", default="mp4-best", choices=sorted(PRESETS))
+    download.add_argument("--preset", default=DEFAULT_PRESET, choices=sorted(PRESETS))
     download.add_argument("--dry-run", action="store_true")
     download.set_defaults(func=command_download)
 

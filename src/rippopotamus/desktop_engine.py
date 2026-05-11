@@ -13,6 +13,7 @@ from typing import Any
 
 from rippopotamus.cli import slugify
 from rippopotamus.providers import (
+    DEFAULT_PROVIDER,
     PRESETS,
     PROVIDERS,
     ProviderContext,
@@ -338,7 +339,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     fetch = sub.add_parser("fetch")
     fetch.add_argument("--url", required=True)
-    fetch.add_argument("--provider", choices=sorted(PROVIDERS), default="yt-dlp")
+    fetch.add_argument("--provider", choices=sorted(PROVIDERS), default=DEFAULT_PROVIDER)
     fetch.set_defaults(func=command_fetch)
 
     download = sub.add_parser("download")

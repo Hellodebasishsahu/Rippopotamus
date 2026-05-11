@@ -3,9 +3,6 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { BrowserInfo, DownloadEvent, EngineHealth, FetchResponse, PresetOption, ProviderId, ProviderOption, YtDlpUpdateInfo } from "../../electron/types";
 import { extractUrls } from "./urlParser";
 
-const DEFAULT_PROVIDER = "yt-dlp";
-const DEFAULT_PRESET = "mp4-best";
-
 type QueueItem = {
   localId: string;
   url: string;
@@ -43,16 +40,16 @@ function sourceUrl(item: QueueItem) {
   return item.metadata?.webpage_url || item.url;
 }
 
-function providerForItem(item: QueueItem, presets: PresetOption[]): ProviderId {
-  return item.metadata?.provider || presets.find((preset) => preset.id === item.preset)?.provider || DEFAULT_PROVIDER;
+function providerForItem(item: QueueItem, presets: PresetOption[], providers: ProviderOption[]): ProviderId {
+  return item.metadata?.provider || presets.find((preset) => preset.id === item.preset)?.provider || providers[0]?.id || "";
 }
 
 function defaultPresetForProvider(provider: ProviderId, providers: ProviderOption[]): string {
-  return providers.find((option) => option.id === provider)?.defaultPreset || DEFAULT_PRESET;
+  return providers.find((option) => option.id === provider)?.defaultPreset || providers[0]?.defaultPreset || "";
 }
 
-function presetsForItem(item: QueueItem, presets: PresetOption[]) {
-  const provider = providerForItem(item, presets);
+function presetsForItem(item: QueueItem, presets: PresetOption[], providers: ProviderOption[]) {
+  const provider = providerForItem(item, presets, providers);
   return presets.filter((preset) => preset.provider === provider);
 }
 
@@ -160,7 +157,7 @@ export function App() {
   const [health, setHealth] = useState<EngineHealth | null>(null);
   const [healthError, setHealthError] = useState<string | null>(null);
   const [input, setInput] = useState("");
-  const [fetchProvider, setFetchProvider] = useState<ProviderId>(DEFAULT_PROVIDER);
+  const [fetchProvider, setFetchProvider] = useState<ProviderId>("");
   const [items, setItems] = useState<QueueItem[]>([]);
   const [outputRoot, setOutputRoot] = useState("");
   const [busy, setBusy] = useState(false);
@@ -267,6 +264,7 @@ export function App() {
   const detectedCount = useMemo(() => extractUrls(input).length, [input]);
   const providerOptions = health?.providers || [];
   const presetOptions = health?.presets || [];
+  const selectedFetchProvider = fetchProvider || providerOptions[0]?.id || "";
 
   useEffect(() => {
     if (!rippo) {
@@ -320,8 +318,8 @@ export function App() {
 
   async function addAndFetch() {
     const urls = extractUrls(input);
-    if (!urls.length || !rippo || !providerOptions.length) return;
-    const provider = fetchProvider;
+    if (!urls.length || !rippo || !selectedFetchProvider) return;
+    const provider = selectedFetchProvider;
 
     const existing = new Set(items.map((item) => item.url));
     const fresh = urls
@@ -376,7 +374,8 @@ export function App() {
 
   async function refetch(item: QueueItem) {
     if (!rippo) return;
-    const provider = providerForItem(item, presetOptions);
+    const provider = providerForItem(item, presetOptions, providerOptions);
+    if (!provider) return;
     setItems((current) => current.map((candidate) => candidate.localId === item.localId ? { ...candidate, status: "fetching", error: undefined, notices: [] } : candidate));
     try {
       const result = await rippo.fetch(item.url, provider);
@@ -445,19 +444,19 @@ export function App() {
                 <div className="composer-tools">
                   <select
                     className="provider-select"
-                    value={fetchProvider}
+                    value={selectedFetchProvider}
                     onChange={(event) => setFetchProvider(event.target.value as ProviderId)}
                     disabled={!providerOptions.length}
                     aria-label="Source type"
                   >
-                    {providerOptions.length === 0 ? <option value={fetchProvider}>Loading</option> : null}
+                    {providerOptions.length === 0 ? <option value="">Loading</option> : null}
                     {providerOptions.map((option) => (
                       <option key={option.id} value={option.id}>{option.label}</option>
                     ))}
                   </select>
                   {detectedCount > 1 ? <span className="link-count">{detectedCount} links</span> : <span className="composer-hint">⌘↵ to fetch</span>}
                 </div>
-                <button type="button" className="btn btn-primary btn-fetch" onClick={addAndFetch} disabled={!detectedCount || !rippo || !providerOptions.length}>
+                <button type="button" className="btn btn-primary btn-fetch" onClick={addAndFetch} disabled={!detectedCount || !rippo || !selectedFetchProvider}>
                   Fetch{detectedCount > 1 ? ` ${detectedCount}` : ""}
                 </button>
               </div>
@@ -475,7 +474,7 @@ export function App() {
             <div className="empty">No URLs yet.</div>
           ) : (
             items.map((item) => {
-              const itemPresets = presetsForItem(item, presetOptions);
+              const itemPresets = presetsForItem(item, presetOptions, providerOptions);
               const progress = item.status === "downloading" ? Math.max(2, Math.round(item.progress || 0)) : null;
               let statusText: string;
               if (item.status === "downloading") {
