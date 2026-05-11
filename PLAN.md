@@ -19,6 +19,7 @@ Deliverables:
 - Project workspace creator
 - URL queue
 - Metadata fetcher
+- Explicit provider routing
 - Preset-based downloader
 - Manifest writer
 - Plain English errors
@@ -30,6 +31,7 @@ Presets:
 - `mp4-best`: best reasonable MP4
 - `audio-mp3`: MP3 extraction
 - `thumbnail`: best thumbnail
+- `gallery`: image/gallery download through gallery-dl
 - `proxy`: smaller H.264 MP4 for editing/reference
 - `clip`: optional start/end segment extraction
 
@@ -52,6 +54,7 @@ Mac first:
 
 - Bundle engine
 - Bundle `yt-dlp`
+- Bundle `gallery-dl`
 - Bundle `ffmpeg`
 - Sign/notarize when ready
 - Ship `.dmg`

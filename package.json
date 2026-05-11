@@ -9,7 +9,7 @@
     "build:ui": "vite build",
     "build:electron": "tsc -p tsconfig.electron.json",
     "package:mac": "npm run build && electron-builder --mac dir",
-    "test": "PYTHONPATH=src python -m unittest discover -s tests && npm run build && node --test tests/electron_cookie_validation.test.cjs"
+    "test": "PYTHONPATH=src python -m unittest discover -s tests && npm run build && node --test tests/electron_cookie_validation.test.cjs tests/electron_thumbnail_validation.test.cjs tests/url_parser_validation.test.cjs"
   },
   "keywords": [],
   "author": "",

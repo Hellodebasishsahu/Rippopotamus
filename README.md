@@ -6,9 +6,10 @@ Rippopotamus is a local desktop media ingest tool for editors, designers, and cr
 
 ## Product Shape
 
-Rippopotamus is not trying to beat `yt-dlp` as a downloader engine. It uses `yt-dlp` and `ffmpeg` as the low-level media tools, then adds the missing creative workflow layer:
+Rippopotamus is not trying to beat downloader engines. It uses providers like `yt-dlp`, `gallery-dl`, and `ffmpeg` as low-level media tools, then adds the missing creative workflow layer:
 
 - Batch link intake
+- Explicit source provider choice
 - Metadata and thumbnail preview
 - Editor-friendly presets
 - Clean file naming
@@ -21,10 +22,13 @@ Rippopotamus is not trying to beat `yt-dlp` as a downloader engine. It uses `yt-
 
 1. Paste many URLs.
 2. Fetch metadata: title, thumbnail, duration, platform, available formats.
-3. Choose preset:
+3. Choose provider and preset:
+   - Video / audio through `yt-dlp`
+   - Images through `gallery-dl`
    - Best MP4
    - MP3 audio
    - Thumbnail only
+   - Image gallery
    - Proxy MP4
 4. Download into a structured project folder.
 5. Generate `manifest.json` with source URLs and metadata.
@@ -32,7 +36,7 @@ Rippopotamus is not trying to beat `yt-dlp` as a downloader engine. It uses `yt-
 
 ## First Architecture
 
-- Core engine: Python CLI wrapping `yt-dlp` and `ffmpeg`
+- Core engine: Python CLI routing explicit providers like `yt-dlp`, `gallery-dl`, and `ffmpeg`
 - Desktop shell: Electron or Tauri after the CLI engine is stable
 - Local state: SQLite
 - Output: normal folders on disk
@@ -43,6 +47,7 @@ Rippopotamus is not trying to beat `yt-dlp` as a downloader engine. It uses `yt-
 Project Name/
   Source/
   Audio/
+  Images/
   Thumbnails/
   Clips/
   Exports/
@@ -75,6 +80,7 @@ Available presets:
 - `mp4-best`
 - `audio-mp3`
 - `thumbnail`
+- `gallery`
 - `proxy`
 
 ## Desktop MVP
@@ -88,4 +94,4 @@ npm run package:mac
 open release/mac-arm64/Rippopotamus.app
 ```
 
-The macOS app package currently includes the renderer, Electron main process, Python engine source, and bundled `ffmpeg-static`. The remaining distribution step is freezing the Python engine/yt-dlp runtime into a standalone binary so friends do not need a local Python/yt-dlp install.
+The macOS app package currently includes the renderer, Electron main process, Python engine source, and bundled `ffmpeg-static`. The remaining distribution step is freezing the Python engine/provider runtime into a standalone binary so friends do not need a local Python install.

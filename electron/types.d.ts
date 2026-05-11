@@ -4,11 +4,11 @@ declare global {
   interface Window {
     rippo: {
       health: () => Promise<EngineHealth>;
-      fetch: (url: string) => Promise<FetchResponse>;
+      fetch: (url: string, provider?: ProviderId) => Promise<FetchResponse>;
       download: (payload: DownloadRequest) => Promise<DownloadResponse>;
       openFolder: (folder: string) => Promise<void>;
       openExternal: (url: string) => Promise<void>;
-      loadThumbnail: (urls: string[], pageUrl?: string) => Promise<ThumbnailLoadResult>;
+      loadThumbnail: (urls: string[]) => Promise<ThumbnailLoadResult>;
       listBrowsers: () => Promise<CookiesBrowserResponse>;
       setCookiesBrowser: (browserId: string | null) => Promise<CookiesBrowserResponse>;
       checkYtDlpUpdate: () => Promise<YtDlpUpdateInfo>;
@@ -38,6 +38,8 @@ export type EngineHealth = {
 };
 
 export type BrowserInfo = { id: string; label: string; appPath: string };
+
+export type ProviderId = "yt-dlp" | "gallery-dl";
 
 export type ThumbnailLoadResult = {
   src: string | null;
@@ -72,7 +74,7 @@ export type YtDlpUpdateResult = YtDlpUpdateInfo & {
 };
 
 export type FetchResponse = {
-  ok: boolean;
+  ok: true;
   url: string;
   metadata: {
     id?: string;
@@ -85,7 +87,12 @@ export type FetchResponse = {
     thumbnail?: string;
     thumbnails?: string[];
     description?: string;
+    provider?: ProviderId;
   };
+} | {
+  ok: false;
+  url: string;
+  error: string;
 };
 
 export type DownloadRequest = {

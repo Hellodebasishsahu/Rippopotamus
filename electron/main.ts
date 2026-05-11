@@ -357,8 +357,18 @@ app.whenReady().then(() => {
     packaged: app.isPackaged,
   }));
 
-  ipcMain.handle("engine:fetch", async (_event, url: string) => {
-    return runEngine(["fetch", "--url", url]);
+  ipcMain.handle("engine:fetch", async (_event, url: string, provider?: string) => {
+    const selectedProvider = provider === "gallery-dl" ? "gallery-dl" : "yt-dlp";
+    try {
+      return await runEngine(["fetch", "--url", url, "--provider", selectedProvider]);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return {
+        ok: false,
+        url,
+        error: message || "Fetch failed.",
+      };
+    }
   });
 
   ipcMain.handle("engine:download", async (event, payload: { url: string; preset: string; outputRoot?: string; itemId?: string; title?: string }) => {
@@ -427,19 +437,8 @@ app.whenReady().then(() => {
     return { selected: selectedCookiesBrowser(), supported: cookiesSupported(), browsers };
   });
 
-  ipcMain.handle("thumbnail:load", async (_event, urls: unknown, pageUrl?: unknown) => {
-    const direct = await loadThumbnail(urls);
-    if (direct.src || typeof pageUrl !== "string") return direct;
-
-    try {
-      const parsed = new URL(pageUrl);
-      if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return direct;
-      const extracted = await runEngine(["thumbnail", "--url", parsed.toString()]) as { ok?: boolean; src?: string };
-      if (extracted.ok && extracted.src) return { src: extracted.src, url: parsed.toString() };
-    } catch {
-      return direct;
-    }
-    return direct;
+  ipcMain.handle("thumbnail:load", async (_event, urls: unknown) => {
+    return loadThumbnail(urls);
   });
 
   ipcMain.handle("ytdlp:check-update", async () => {

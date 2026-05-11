@@ -1,22 +1,28 @@
 import { Cookie, Download, ExternalLink, FolderOpen, FolderSearch, ImageOff, Link2, Loader2, RefreshCcw, RotateCcw, Settings, Trash2, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { BrowserInfo, DownloadEvent, EngineHealth, FetchResponse, YtDlpUpdateInfo } from "../../electron/types";
+import type { BrowserInfo, DownloadEvent, EngineHealth, FetchResponse, ProviderId, YtDlpUpdateInfo } from "../../electron/types";
+import { extractUrls } from "./urlParser";
 
-const presets = [
-  { id: "mp4-best", label: "MP4", detail: "Best source" },
-  { id: "audio-mp3", label: "MP3", detail: "Audio only" },
-  { id: "thumbnail", label: "Thumb", detail: "JPG cover" },
-  { id: "proxy", label: "Proxy", detail: "720p MP4" },
+const presets: { id: string; label: string; detail: string; provider: ProviderId }[] = [
+  { id: "mp4-best", label: "MP4", detail: "Best MP4", provider: "yt-dlp" },
+  { id: "audio-mp3", label: "MP3", detail: "Audio only", provider: "yt-dlp" },
+  { id: "thumbnail", label: "Thumb", detail: "JPG cover", provider: "yt-dlp" },
+  { id: "proxy", label: "Proxy", detail: "720p MP4", provider: "yt-dlp" },
+  { id: "gallery", label: "Images", detail: "Image gallery", provider: "gallery-dl" },
 ];
 
 const DEFAULT_PRESET = "mp4-best";
+const PROVIDER_OPTIONS: { id: ProviderId; label: string; preset: string }[] = [
+  { id: "yt-dlp", label: "Video", preset: DEFAULT_PRESET },
+  { id: "gallery-dl", label: "Images", preset: "gallery" },
+];
 
 type QueueItem = {
   localId: string;
   url: string;
   status: "queued" | "fetching" | "ready" | "downloading" | "done" | "failed";
   preset: string;
-  metadata?: FetchResponse["metadata"];
+  metadata?: Extract<FetchResponse, { ok: true }>["metadata"];
   error?: string;
   progress?: number;
   stage?: string;
@@ -27,10 +33,6 @@ type QueueItem = {
   jobId?: string;
   notices?: { level: "warning" | "error"; message: string }[];
 };
-
-function splitUrls(value: string): string[] {
-  return Array.from(new Set(value.split(/[\s,]+/).map((part) => part.trim()).filter((part) => /^https?:\/\//.test(part))));
-}
 
 function formatDuration(seconds?: number) {
   if (!seconds) return "Unknown length";
@@ -50,6 +52,19 @@ function shortUrl(url: string) {
 
 function sourceUrl(item: QueueItem) {
   return item.metadata?.webpage_url || item.url;
+}
+
+function providerForItem(item: QueueItem): ProviderId {
+  return item.metadata?.provider || (item.preset === "gallery" ? "gallery-dl" : "yt-dlp");
+}
+
+function defaultPresetForProvider(provider: ProviderId): string {
+  return PROVIDER_OPTIONS.find((option) => option.id === provider)?.preset || DEFAULT_PRESET;
+}
+
+function presetsForItem(item: QueueItem) {
+  const provider = providerForItem(item);
+  return presets.filter((preset) => preset.provider === provider);
 }
 
 const statusLabels: Record<QueueItem["status"], string> = {
@@ -78,6 +93,18 @@ function updaterErrorMessage(error: unknown): string {
   return message;
 }
 
+function fetchErrorMessage(error: unknown): string {
+  const raw = error instanceof Error ? error.message : String(error);
+  const message = raw
+    .replace(/^Error invoking remote method '[^']+':\s*/i, "")
+    .replace(/^Error:\s*/i, "")
+    .trim();
+  if (/unsupported url/i.test(message)) {
+    return "Unsupported site. Paste a supported video or audio page.";
+  }
+  return message || "Fetch failed.";
+}
+
 function thumbnailUrls(item: QueueItem): string[] {
   const candidates = [
     item.metadata?.thumbnail,
@@ -86,7 +113,7 @@ function thumbnailUrls(item: QueueItem): string[] {
   return Array.from(new Set(candidates));
 }
 
-function ThumbnailImage({ urls, pageUrl }: { urls: string[]; pageUrl: string }) {
+function ThumbnailImage({ urls }: { urls: string[] }) {
   const [src, setSrc] = useState<string | null>(null);
   const [failed, setFailed] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -99,15 +126,7 @@ function ThumbnailImage({ urls, pageUrl }: { urls: string[]; pageUrl: string }) 
     setLoading(true);
     setOrientation("landscape");
 
-    if (typeof window.rippo.loadThumbnail !== "function") {
-      setLoading(false);
-      setFailed(true);
-      return () => {
-        cancelled = true;
-      };
-    }
-
-    window.rippo.loadThumbnail(urls, pageUrl).then((result) => {
+    window.rippo.loadThumbnail(urls).then((result) => {
       if (cancelled) return;
       if (result.src) setSrc(result.src);
       else setFailed(true);
@@ -120,7 +139,7 @@ function ThumbnailImage({ urls, pageUrl }: { urls: string[]; pageUrl: string }) 
     return () => {
       cancelled = true;
     };
-  }, [pageUrl, urls.join("\n")]);
+  }, [urls.join("\n")]);
 
   if (loading) {
     return <Loader2 className="thumb-spinner" size={26} strokeWidth={1.8} aria-hidden />;
@@ -152,6 +171,7 @@ export function App() {
   const [health, setHealth] = useState<EngineHealth | null>(null);
   const [healthError, setHealthError] = useState<string | null>(null);
   const [input, setInput] = useState("");
+  const [fetchProvider, setFetchProvider] = useState<ProviderId>("yt-dlp");
   const [items, setItems] = useState<QueueItem[]>([]);
   const [outputRoot, setOutputRoot] = useState("");
   const [busy, setBusy] = useState(false);
@@ -192,7 +212,7 @@ export function App() {
   }
 
   async function chooseOutputRoot() {
-    if (!rippo || typeof rippo.chooseOutputRoot !== "function") return;
+    if (!rippo) return;
     try {
       const result = await rippo.chooseOutputRoot();
       if (!result.canceled) setOutputRoot(result.outputRoot);
@@ -202,7 +222,7 @@ export function App() {
   }
 
   async function resetOutputRoot() {
-    if (!rippo || typeof rippo.resetOutputRoot !== "function") return;
+    if (!rippo) return;
     try {
       const result = await rippo.resetOutputRoot();
       setOutputRoot(result.outputRoot);
@@ -255,7 +275,7 @@ export function App() {
     el.style.height = `${Math.min(el.scrollHeight, 192)}px`;
   }, [input]);
 
-  const detectedCount = useMemo(() => splitUrls(input).length, [input]);
+  const detectedCount = useMemo(() => extractUrls(input).length, [input]);
 
   useEffect(() => {
     if (!rippo) {
@@ -303,13 +323,14 @@ export function App() {
   }), [items]);
 
   async function addAndFetch() {
-    const urls = splitUrls(input);
+    const urls = extractUrls(input);
     if (!urls.length || !rippo) return;
+    const provider = fetchProvider;
 
     const existing = new Set(items.map((item) => item.url));
     const fresh = urls
       .filter((url) => !existing.has(url))
-      .map((url) => ({ localId: crypto.randomUUID().slice(0, 10), url, status: "queued" as const, preset: DEFAULT_PRESET }));
+      .map((url) => ({ localId: crypto.randomUUID().slice(0, 10), url, status: "queued" as const, preset: defaultPresetForProvider(provider) }));
 
     setInput("");
     setItems((current) => [...fresh, ...current]);
@@ -317,10 +338,14 @@ export function App() {
     for (const item of fresh) {
       setItems((current) => current.map((candidate) => candidate.localId === item.localId ? { ...candidate, status: "fetching" } : candidate));
       try {
-        const result = await rippo.fetch(item.url);
-        setItems((current) => current.map((candidate) => candidate.localId === item.localId ? { ...candidate, status: "ready", metadata: result.metadata } : candidate));
+        const result = await rippo.fetch(item.url, provider);
+        if (result.ok) {
+          setItems((current) => current.map((candidate) => candidate.localId === item.localId ? { ...candidate, status: "ready", preset: defaultPresetForProvider(result.metadata.provider || provider), metadata: result.metadata, error: undefined } : candidate));
+        } else {
+          setItems((current) => current.map((candidate) => candidate.localId === item.localId ? { ...candidate, status: "failed", error: fetchErrorMessage(result.error) } : candidate));
+        }
       } catch (error) {
-        setItems((current) => current.map((candidate) => candidate.localId === item.localId ? { ...candidate, status: "failed", error: error instanceof Error ? error.message : String(error) } : candidate));
+        setItems((current) => current.map((candidate) => candidate.localId === item.localId ? { ...candidate, status: "failed", error: fetchErrorMessage(error) } : candidate));
       }
     }
   }
@@ -355,12 +380,17 @@ export function App() {
 
   async function refetch(item: QueueItem) {
     if (!rippo) return;
+    const provider = providerForItem(item);
     setItems((current) => current.map((candidate) => candidate.localId === item.localId ? { ...candidate, status: "fetching", error: undefined, notices: [] } : candidate));
     try {
-      const result = await rippo.fetch(item.url);
-      setItems((current) => current.map((candidate) => candidate.localId === item.localId ? { ...candidate, status: "ready", metadata: result.metadata } : candidate));
+      const result = await rippo.fetch(item.url, provider);
+      if (result.ok) {
+        setItems((current) => current.map((candidate) => candidate.localId === item.localId ? { ...candidate, status: "ready", preset: defaultPresetForProvider(result.metadata.provider || provider), metadata: result.metadata, error: undefined } : candidate));
+      } else {
+        setItems((current) => current.map((candidate) => candidate.localId === item.localId ? { ...candidate, status: "failed", error: fetchErrorMessage(result.error) } : candidate));
+      }
     } catch (error) {
-      setItems((current) => current.map((candidate) => candidate.localId === item.localId ? { ...candidate, status: "failed", error: error instanceof Error ? error.message : String(error) } : candidate));
+      setItems((current) => current.map((candidate) => candidate.localId === item.localId ? { ...candidate, status: "failed", error: fetchErrorMessage(error) } : candidate));
     }
   }
 
@@ -416,7 +446,19 @@ export function App() {
                 aria-label="URLs to fetch"
               />
               <div className="composer-foot">
-                {detectedCount > 1 ? <span className="link-count">{detectedCount} links</span> : <span className="composer-hint">⌘↵ to fetch</span>}
+                <div className="composer-tools">
+                  <select
+                    className="provider-select"
+                    value={fetchProvider}
+                    onChange={(event) => setFetchProvider(event.target.value as ProviderId)}
+                    aria-label="Source type"
+                  >
+                    {PROVIDER_OPTIONS.map((option) => (
+                      <option key={option.id} value={option.id}>{option.label}</option>
+                    ))}
+                  </select>
+                  {detectedCount > 1 ? <span className="link-count">{detectedCount} links</span> : <span className="composer-hint">⌘↵ to fetch</span>}
+                </div>
                 <button type="button" className="btn btn-primary btn-fetch" onClick={addAndFetch} disabled={!detectedCount || !rippo}>
                   Fetch{detectedCount > 1 ? ` ${detectedCount}` : ""}
                 </button>
@@ -435,6 +477,7 @@ export function App() {
             <div className="empty">No URLs yet.</div>
           ) : (
             items.map((item) => {
+              const itemPresets = presetsForItem(item);
               const progress = item.status === "downloading" ? Math.max(2, Math.round(item.progress || 0)) : null;
               let statusText: string;
               if (item.status === "downloading") {
@@ -447,7 +490,7 @@ export function App() {
               return (
                 <article key={item.localId} className={`queue-item ${item.status}`}>
                   <button type="button" className="thumb" onClick={() => openSource(item)} aria-label="Open source page" title="Open source page">
-                    {item.metadata ? <ThumbnailImage urls={thumbnailUrls(item)} pageUrl={sourceUrl(item)} /> : <Link2 size={28} strokeWidth={1.5} aria-hidden />}
+                    {item.metadata ? <ThumbnailImage urls={thumbnailUrls(item)} /> : <Link2 size={28} strokeWidth={1.5} aria-hidden />}
                     <span className="thumb-overlay"><ExternalLink size={20} strokeWidth={2} aria-hidden /></span>
                   </button>
                   <div className="item-body">
@@ -473,7 +516,7 @@ export function App() {
                           aria-label="Output format"
                           title={presets.find((p) => p.id === item.preset)?.detail}
                         >
-                          {presets.map((option) => (
+                          {itemPresets.map((option) => (
                             <option key={option.id} value={option.id}>{option.label}</option>
                           ))}
                         </select>
@@ -556,7 +599,7 @@ export function App() {
                 ))}
               </select>
               {health?.cookies?.status === "error" ? (
-                <p className="settings-warning" title={health.cookies.message || undefined}>Cookie access failed{health.cookies.message ? ` — ${health.cookies.message}` : ""}</p>
+                <p className="settings-warning" title={health.cookies.message || undefined}>Cookie access failed — {health.cookies.message}</p>
               ) : null}
             </section>
 

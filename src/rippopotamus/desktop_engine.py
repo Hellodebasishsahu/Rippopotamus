@@ -11,7 +11,7 @@ import uuid
 from pathlib import Path
 from typing import Any
 
-from rippopotamus.cli import PRESETS, friendly_error, slugify
+from rippopotamus.cli import PRESETS, PROVIDERS, first_json_metadata, friendly_error, gallery_dl_base, metadata_from_media_raw, slugify
 
 
 def emit(payload: dict[str, Any]) -> None:
@@ -40,6 +40,8 @@ def cookies_browser_args() -> list[str]:
 
 def cookie_error_message(message: str) -> str:
     lower = message.lower()
+    if "requested format is not available" in lower:
+        return "Selected format is not available for this link."
     if "cookies" not in lower and "cookie" not in lower:
         return friendly_error(message)
     if "locked" in lower or "database is locked" in lower:
@@ -60,6 +62,7 @@ def verify_cookies_browser(base: list[str]) -> dict[str, Any]:
 
     command = [
         *base,
+        "--ignore-config",
         "--cookies-from-browser",
         browser,
         "--simulate",
@@ -102,7 +105,7 @@ def yt_dlp_base() -> list[str]:
 
 
 def yt_dlp_run() -> list[str]:
-    return [*yt_dlp_base(), *cookies_browser_args()]
+    return [*yt_dlp_base(), "--ignore-config", *cookies_browser_args()]
 
 
 def ffmpeg_path() -> str | None:
@@ -121,20 +124,6 @@ def run_json(args: list[str]) -> dict[str, Any]:
         message = (exc.stderr or exc.stdout or str(exc)).strip()
         raise SystemExit(cookie_error_message(message)) from exc
     return json.loads(result.stdout)
-
-
-def metadata_from_raw(raw: dict[str, Any]) -> dict[str, Any]:
-    return {
-        "id": raw.get("id"),
-        "title": raw.get("title"),
-        "extractor": raw.get("extractor_key") or raw.get("extractor"),
-        "webpage_url": raw.get("webpage_url"),
-        "duration": raw.get("duration"),
-        "uploader": raw.get("uploader"),
-        "upload_date": raw.get("upload_date"),
-        "thumbnail": raw.get("thumbnail"),
-        "description": raw.get("description"),
-    }
 
 
 def command_health(_args: argparse.Namespace) -> int:
@@ -173,9 +162,27 @@ def command_health(_args: argparse.Namespace) -> int:
 
 
 def command_fetch(args: argparse.Namespace) -> int:
-    raw = run_json([*yt_dlp_run(), "--dump-single-json", "--skip-download", "--no-playlist", args.url])
-    emit({"ok": True, "url": args.url, "metadata": metadata_from_raw(raw)})
+    if args.provider == "yt-dlp":
+        raw = run_json([*yt_dlp_run(), "--dump-single-json", "--skip-download", "--no-playlist", "--ignore-no-formats-error", args.url])
+        metadata = metadata_from_media_raw(raw, args.url, "yt-dlp")
+    elif args.provider == "gallery-dl":
+        raw = run_json_lines([*gallery_dl_base(), "--dump-json", args.url])
+        metadata = metadata_from_media_raw(raw, args.url, "gallery-dl")
+    else:
+        raise SystemExit(f"Unknown provider `{args.provider}`.")
+    emit({"ok": True, "url": args.url, "metadata": metadata})
     return 0
+
+
+def run_json_lines(args: list[str]) -> dict[str, Any]:
+    try:
+        result = subprocess.run(args, capture_output=True, text=True, check=True)
+    except FileNotFoundError as exc:
+        raise SystemExit(f"Missing required command: {args[0]}") from exc
+    except subprocess.CalledProcessError as exc:
+        message = (exc.stderr or exc.stdout or str(exc)).strip()
+        raise SystemExit(cookie_error_message(message)) from exc
+    return first_json_metadata(result.stdout)
 
 
 def snapshot_files(root: Path) -> set[Path]:
@@ -195,19 +202,7 @@ def parse_progress(line: str) -> dict[str, Any] | None:
     }
 
 
-def command_download(args: argparse.Namespace) -> int:
-    if args.preset not in PRESETS:
-        raise SystemExit(f"Unknown preset `{args.preset}`.")
-
-    root = Path(args.output_root).expanduser().resolve()
-    for folder in ["Source", "Audio", "Thumbnails", "Clips", "Exports"]:
-        (root / folder).mkdir(parents=True, exist_ok=True)
-
-    spec = PRESETS[args.preset]
-    item_id = args.item_id or uuid.uuid4().hex[:10]
-    title = slugify(args.title or item_id)
-    output_template = str(root / spec["folder"] / f"{title}--{item_id}.%(ext)s")
-
+def build_ytdlp_download_command(args: argparse.Namespace, spec: dict[str, Any], output_template: str) -> list[str]:
     cmd = [*yt_dlp_run(), "--newline", "--no-playlist", "-o", output_template]
     ffmpeg = ffmpeg_path()
     if ffmpeg:
@@ -216,10 +211,10 @@ def command_download(args: argparse.Namespace) -> int:
         cmd += ["-f", spec["format"]]
     cmd += spec["extra"]
     cmd.append(args.url)
+    return cmd
 
-    before = snapshot_files(root)
-    emit({"type": "started", "url": args.url, "preset": args.preset})
 
+def run_ytdlp_download_command(cmd: list[str], root: Path, before: set[Path]) -> tuple[int, str, list[str]]:
     process = subprocess.Popen(
         cmd,
         stdout=subprocess.PIPE,
@@ -261,9 +256,87 @@ def command_download(args: argparse.Namespace) -> int:
             emit({"type": "stage", "message": label, "finalizing": True})
 
     code = process.wait()
+    if code == 0:
+        after = snapshot_files(root)
+        files = sorted(str(path.relative_to(root)) for path in after - before)
+        emit({"type": "success", "files": files, "outputRoot": str(root), "warnings": [n for n in notices if n.startswith("WARNING:")]})
+    return code, last_line, notices
+
+
+def command_download(args: argparse.Namespace) -> int:
+    if args.preset not in PRESETS:
+        raise SystemExit(f"Unknown preset `{args.preset}`.")
+
+    root = Path(args.output_root).expanduser().resolve()
+    for folder in ["Source", "Audio", "Images", "Thumbnails", "Clips", "Exports"]:
+        (root / folder).mkdir(parents=True, exist_ok=True)
+
+    spec = PRESETS[args.preset]
+    if spec["provider"] == "gallery-dl":
+        return command_gallery_download(args, root, spec)
+
+    item_id = args.item_id or uuid.uuid4().hex[:10]
+    title = slugify(args.title or item_id)
+    output_template = str(root / spec["folder"] / f"{title}--{item_id}.%(ext)s")
+
+    before = snapshot_files(root)
+    emit({"type": "started", "url": args.url, "preset": args.preset})
+
+    cmd = build_ytdlp_download_command(args, spec, output_template)
+    code, last_line, notices = run_ytdlp_download_command(cmd, root, before)
+    detail = next((n for n in notices if n.startswith("ERROR:")), last_line)
+
+    if code != 0:
+        emit({"type": "error", "error": cookie_error_message(detail)})
+        return code
+
+    return 0
+
+
+def command_gallery_download(args: argparse.Namespace, root: Path, spec: dict[str, Any]) -> int:
+    target = root / spec["folder"]
+    target.mkdir(parents=True, exist_ok=True)
+    cmd = [
+        *gallery_dl_base(),
+        "--dest",
+        str(target),
+        "--write-metadata",
+        args.url,
+    ]
+
+    before = snapshot_files(root)
+    emit({"type": "started", "url": args.url, "preset": args.preset})
+    emit({"type": "stage", "message": "Downloading images", "finalizing": False})
+
+    process = subprocess.Popen(
+        cmd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        bufsize=1,
+    )
+
+    last_line = ""
+    notices: list[str] = []
+    saved = 0
+    assert process.stdout is not None
+    for line in process.stdout:
+        line = line.strip()
+        if not line:
+            continue
+        last_line = line
+        if line.startswith("WARNING:") or line.startswith("ERROR:"):
+            notices.append(line)
+            level = "error" if line.startswith("ERROR:") else "warning"
+            emit({"type": "notice", "level": level, "message": line})
+            continue
+        saved += 1
+        emit({"type": "stage", "message": f"Saved {saved} file{'s' if saved != 1 else ''}", "finalizing": False})
+
+    code = process.wait()
     if code != 0:
         detail = next((n for n in notices if n.startswith("ERROR:")), last_line)
-        emit({"type": "error", "error": cookie_error_message(detail)})
+        emit({"type": "error", "error": friendly_error(detail)})
         return code
 
     after = snapshot_files(root)
@@ -281,6 +354,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     fetch = sub.add_parser("fetch")
     fetch.add_argument("--url", required=True)
+    fetch.add_argument("--provider", choices=sorted(PROVIDERS), default="yt-dlp")
     fetch.set_defaults(func=command_fetch)
 
     download = sub.add_parser("download")
