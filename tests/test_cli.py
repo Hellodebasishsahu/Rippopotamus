@@ -63,7 +63,7 @@ class CliTests(unittest.TestCase):
     def test_friendly_error_maps_aria_server_error(self) -> None:
         self.assertEqual(
             friendly_error("[HttpSkipResponseCommand.cc:240] errorCode=22 The response status is not successful. status=500"),
-            "source server returned 500 while downloading. retry later or use another source.",
+            "The source is having trouble right now. Try again later or use another link.",
         )
 
     def test_init_add_manifest_zip(self) -> None:

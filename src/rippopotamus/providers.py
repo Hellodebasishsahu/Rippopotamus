@@ -368,11 +368,11 @@ def friendly_error(message: str) -> str:
     if "Requested format is not available" in message:
         return "selected format is not available for this link"
     if "status=500" in lower or "response status is not successful" in lower:
-        return "source server returned 500 while downloading. retry later or use another source."
+        return "The source is having trouble right now. Try again later or use another link."
     if "download aborted" in lower:
-        return "torrent download aborted. retry later or use another source."
+        return "The download stopped before it finished. Try again later or use another link."
     if "dht routing table" in lower:
-        return "torrent routing cache was unreadable. retry the download."
+        return "The download needs a retry before it can start."
     if "timed out" in lower:
         return "request timed out"
     return message.splitlines()[-1][:240] if message else "unknown error"

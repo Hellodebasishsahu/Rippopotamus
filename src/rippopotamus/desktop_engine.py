@@ -404,8 +404,6 @@ def command_aria2_download(args: argparse.Namespace, root: Path, cmd: list[str])
 
     last_line = ""
     notices: list[str] = []
-    reported_retry_notice = False
-    reported_dht_notice = False
     assert process.stdout is not None
     for line in process.stdout:
         line = line.strip()
@@ -414,15 +412,9 @@ def command_aria2_download(args: argparse.Namespace, root: Path, cmd: list[str])
         last_line = line
         lower = line.lower()
         if "dht routing table" in lower:
-            if not reported_dht_notice:
-                reported_dht_notice = True
-                emit({"type": "notice", "level": "warning", "message": "Using a fresh torrent routing cache."})
             continue
         if "error" in lower or "failed" in lower or "download aborted" in lower:
             notices.append(line)
-            if not reported_retry_notice:
-                reported_retry_notice = True
-                emit({"type": "notice", "level": "warning", "message": "Torrent source returned an error. Retrying if possible."})
             continue
         if "download complete" in lower:
             emit({"type": "stage", "message": "Downloaded file", "finalizing": False})

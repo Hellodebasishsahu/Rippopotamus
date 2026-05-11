@@ -113,48 +113,118 @@ function fetchErrorMessage(error: unknown): string {
     .replace(/^Error invoking remote method '[^']+':\s*/i, "")
     .replace(/^Error:\s*/i, "")
     .trim();
-  if (/unsupported url/i.test(message)) {
-    return "Unsupported site. Paste a supported video or audio page.";
+  return consumerErrorMessage(message, "Could not read this link. Try another link.");
+}
+
+const TECHNICAL_MESSAGE_PATTERNS = [
+  /\bCUID#/i,
+  /\bException:/i,
+  /\berrorCode=\d+/i,
+  /\bHttpSkipResponseCommand/i,
+  /\bDHTRoutingTable/i,
+  /\bdht\.dat\b/i,
+  /\/Users\//i,
+  /\baria2c?\b/i,
+  /\byt-dlp\b/i,
+  /\bgallery-dl\b/i,
+];
+
+function consumerErrorMessage(message: string, fallback = "Download failed. Try again or use another link."): string {
+  const cleaned = message
+    .replace(/^Error invoking remote method '[^']+':\s*/i, "")
+    .replace(/^Error:\s*/i, "")
+    .trim();
+  const lower = cleaned.toLowerCase();
+
+  if (/unsupported url/i.test(cleaned)) {
+    return "This link is not supported yet.";
   }
-  return message || "Fetch failed.";
+  if (lower.includes("restart rippopotamus") && lower.includes("updater")) {
+    return "Restart Rippopotamus to load the update tool.";
+  }
+  if (lower.includes("requested format is not available") || lower.includes("selected format is not available")) {
+    return "This link does not have that format. Choose another format and try again.";
+  }
+  if (lower.includes("status=500") || lower.includes("response status is not successful") || lower.includes("source is having trouble")) {
+    return "The source is having trouble right now. Try again later or use another link.";
+  }
+  if (lower.includes("download aborted") || lower.includes("download stopped before it finished")) {
+    return "The download stopped before it finished. Try again later or use another link.";
+  }
+  if (lower.includes("dht routing table") || lower.includes("routing cache")) {
+    return "The download needs a retry before it can start.";
+  }
+  if (lower.includes("http error 403") || lower.includes("access denied") || lower.includes("forbidden")) {
+    return "This source blocked the download. Try browser login or another link.";
+  }
+  if (lower.includes("http error 404") || lower.includes("not found")) {
+    return "This source is no longer available.";
+  }
+  if (lower.includes("missing required command") && lower.includes("aria2")) {
+    return "Torrent support is not installed yet.";
+  }
+  if (lower.includes("missing") && lower.includes("gallery-dl")) {
+    return "Image support is not installed yet.";
+  }
+  if (lower.includes("missing") && lower.includes("yt-dlp")) {
+    return "Video support is not installed yet.";
+  }
+  if (!cleaned || TECHNICAL_MESSAGE_PATTERNS.some((pattern) => pattern.test(cleaned))) {
+    return fallback;
+  }
+  return cleaned.length > 180 ? `${cleaned.slice(0, 177)}...` : cleaned;
+}
+
+function consumerNoticeMessage(message: string): string | null {
+  const cleaned = message.trim();
+  const lower = cleaned.toLowerCase();
+  if (!cleaned) return null;
+  if (
+    lower.includes("fresh torrent routing cache") ||
+    lower.includes("torrent source returned an error") ||
+    lower.includes("retrying if possible") ||
+    lower.includes("dht routing table") ||
+    lower.includes("status=500") ||
+    lower.includes("download aborted") ||
+    TECHNICAL_MESSAGE_PATTERNS.some((pattern) => pattern.test(cleaned))
+  ) {
+    return null;
+  }
+  return consumerErrorMessage(cleaned, "");
 }
 
 function ytDlpStatusText(health: EngineHealth | null, healthError: string | null): string {
-  if (health?.ytDlp) return `Installed: ${health.ytDlp}`;
-  if (healthError) return "Engine unavailable";
+  if (health?.ytDlp) return "Ready";
+  if (healthError) return "Unavailable";
   return "Checking...";
 }
 
 function ytDlpPathText(update: YtDlpUpdateInfo | null, health: EngineHealth | null): string {
-  if (update?.binaryPath) return update.binaryPath;
-  if (health?.ytDlpPath) return health.ytDlpPath;
-  if (health?.ytDlp) return "Using the bundled Python yt-dlp package.";
-  return "Rippopotamus will use its managed yt-dlp when installed.";
+  if (update?.binaryPath || health?.ytDlpPath || health?.ytDlp) return "Ready to save videos and audio.";
+  return "Install video support from here.";
 }
 
 function galleryDlStatusText(health: EngineHealth | null, healthError: string | null): string {
-  if (health?.galleryDl) return `Installed: ${health.galleryDl}`;
+  if (health?.galleryDl) return "Ready";
   if (health?.galleryDlOk === false) return "Missing";
-  if (healthError) return "Engine unavailable";
+  if (healthError) return "Unavailable";
   return "Checking...";
 }
 
 function galleryDlPathText(update: GalleryDlUpdateInfo | null, health: EngineHealth | null): string {
-  if (update?.binaryPath) return update.binaryPath;
-  if (health?.galleryDlPath) return health.galleryDlPath;
-  if (health?.galleryDl) return "Using the bundled Python gallery-dl package.";
-  return "Rippopotamus will use its managed gallery-dl when installed.";
+  if (update?.binaryPath || health?.galleryDlPath || health?.galleryDl) return "Ready to save image galleries.";
+  return "Install image support from here.";
 }
 
 function aria2cStatusText(health: EngineHealth | null, healthError: string | null): string {
-  if (health?.aria2c) return `Installed: ${health.aria2c}`;
+  if (health?.aria2c) return "Ready";
   if (health?.aria2cOk === false) return "Missing";
-  if (healthError) return "Engine unavailable";
+  if (healthError) return "Unavailable";
   return "Checking...";
 }
 
 function aria2cPathText(health: EngineHealth | null): string {
-  if (health?.aria2cPath) return health.aria2cPath;
+  if (health?.aria2cPath) return "Ready to save magnet links and torrent files.";
   return "Install aria2c to save magnet links and torrent files.";
 }
 
@@ -399,8 +469,12 @@ export function App() {
       setItems((current) => current.map((item) => {
         if (item.jobId !== event.jobId) return item;
         if (event.type === "notice") {
-          const notice = { level: event.level || "warning", message: event.message || "" };
-          const notices = [...(item.notices || []), notice];
+          const message = consumerNoticeMessage(event.message || "");
+          if (!message) return item;
+          const notice = { level: event.level || "warning", message };
+          const notices = [...(item.notices || []), notice]
+            .filter((candidate, index, list) => list.findIndex((other) => other.message === candidate.message) === index)
+            .slice(-2);
           return { ...item, notices, finalizing: notice.level === "error" ? false : item.finalizing };
         }
         if (event.type === "phase") {
@@ -414,7 +488,7 @@ export function App() {
           return { ...item, stage: event.message, finalizing: event.finalizing ? true : item.finalizing, progress: event.finalizing ? 100 : item.progress };
         }
         if (event.type === "success") return { ...item, status: "done", progress: 100, files: event.files, stage: "Saved", finalizing: false };
-        if (event.type === "error") return { ...item, status: "failed", error: event.error || "Download failed", finalizing: false };
+        if (event.type === "error") return { ...item, status: "failed", error: consumerErrorMessage(event.error || ""), finalizing: false, notices: [] };
         return item;
       }));
     });
@@ -480,7 +554,7 @@ export function App() {
           setItems((current) => current.map((candidate) => candidate.localId === item.localId ? { ...candidate, jobId: response.jobId } : candidate));
         }
       } catch (error) {
-        setItems((current) => current.map((candidate) => candidate.localId === item.localId ? { ...candidate, status: "failed", error: error instanceof Error ? error.message : String(error) } : candidate));
+        setItems((current) => current.map((candidate) => candidate.localId === item.localId ? { ...candidate, status: "failed", error: consumerErrorMessage(error instanceof Error ? error.message : String(error)), notices: [] } : candidate));
       }
     }
     setBusy(false);
@@ -604,6 +678,10 @@ export function App() {
                 statusText = statusLabels[item.status];
               }
               const showBrowserAccess = browsers.length > 0 && itemSupportsBrowserAccess(item, presetOptions, providerOptions);
+              const visibleNotices = item.error ? [] : (item.notices || []).flatMap((notice) => {
+                const message = consumerNoticeMessage(notice.message);
+                return message ? [{ ...notice, message }] : [];
+              });
               return (
                 <article key={item.localId} className={`queue-item ${item.status}`}>
                   <button type="button" className="thumb" onClick={() => openSource(item)} aria-label="Open source page" title="Open source page">
@@ -614,8 +692,8 @@ export function App() {
                     <div className="item-head">
                       <h3 className="item-title">{item.metadata?.title || shortUrl(item.url)}</h3>
                       <p className="item-meta">{metaLine(item)}</p>
-                      {item.error ? <p className="item-error">{item.error}</p> : null}
-                      {item.notices?.map((notice, i) => (
+                      {item.error ? <p className="item-error">{consumerErrorMessage(item.error)}</p> : null}
+                      {visibleNotices.map((notice, i) => (
                         <p key={i} className={notice.level === "error" ? "item-error" : "item-warning"}>{notice.message}</p>
                       ))}
                       {item.files?.length && !item.error ? <p className="item-files">{item.files.join(" · ")}</p> : null}
@@ -739,13 +817,13 @@ export function App() {
             <section className="settings-section">
               <div className="settings-row-head">
                 <Download size={14} strokeWidth={2} aria-hidden />
-                <h3 className="settings-row-title">Download engines</h3>
+                <h3 className="settings-row-title">Download support</h3>
               </div>
               <div className="settings-engine-list">
                 <div className="settings-engine-row">
                   <div className="settings-engine-copy">
                     <p className="settings-engine-name">Video</p>
-                    <p className="settings-hint">yt-dlp</p>
+                    <p className="settings-hint">Videos and audio</p>
                   </div>
                   <span className="settings-version">{ytDlpStatusText(health, healthError)}</span>
                 </div>
@@ -765,14 +843,14 @@ export function App() {
                     </button>
                   )}
                 </div>
-                {ytDlpError ? <p className="settings-warning">{ytDlpError}</p> : null}
+                {ytDlpError ? <p className="settings-warning">{consumerErrorMessage(ytDlpError)}</p> : null}
                 {ytDlpUpdate && !ytDlpUpdate.updateAvailable && !ytDlpError ? (
-                  <p className="settings-hint">yt-dlp is current{ytDlpUpdate.latestVersion ? ` (${ytDlpUpdate.latestVersion})` : ""}.</p>
+                  <p className="settings-hint">Video support is up to date.</p>
                 ) : null}
                 <div className="settings-engine-row settings-engine-row-spaced">
                   <div className="settings-engine-copy">
                     <p className="settings-engine-name">Images</p>
-                    <p className="settings-hint">gallery-dl</p>
+                    <p className="settings-hint">Image galleries</p>
                   </div>
                   <span className="settings-version">{galleryDlStatusText(health, healthError)}</span>
                 </div>
@@ -792,22 +870,22 @@ export function App() {
                     </button>
                   )}
                 </div>
-                {galleryDlError ? <p className="settings-warning">{galleryDlError}</p> : null}
-                {health?.galleryDlError && !galleryDlError ? <p className="settings-warning">{health.galleryDlError}</p> : null}
+                {galleryDlError ? <p className="settings-warning">{consumerErrorMessage(galleryDlError)}</p> : null}
+                {health?.galleryDlError && !galleryDlError ? <p className="settings-warning">{consumerErrorMessage(health.galleryDlError)}</p> : null}
                 {galleryDlUpdate && !galleryDlUpdate.updateAvailable && !galleryDlError ? (
-                  <p className="settings-hint">gallery-dl is current{galleryDlUpdate.latestVersion ? ` (${galleryDlUpdate.latestVersion})` : ""}.</p>
+                  <p className="settings-hint">Image support is up to date.</p>
                 ) : null}
                 <div className="settings-engine-row settings-engine-row-spaced">
                   <div className="settings-engine-copy">
                     <p className="settings-engine-name">Torrents</p>
-                    <p className="settings-hint">aria2c</p>
+                    <p className="settings-hint">Magnet links and torrent files</p>
                   </div>
                   <span className="settings-version">{aria2cStatusText(health, healthError)}</span>
                 </div>
                 <p className="settings-hint" title={health?.aria2cPath || undefined}>
                   {aria2cPathText(health)}
                 </p>
-                {health?.aria2cError ? <p className="settings-warning">{health.aria2cError}</p> : null}
+                {health?.aria2cError ? <p className="settings-warning">{consumerErrorMessage(health.aria2cError)}</p> : null}
               </div>
             </section>
           </div>

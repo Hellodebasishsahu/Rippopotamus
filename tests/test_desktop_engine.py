@@ -14,6 +14,15 @@ from rippopotamus import desktop_engine
 from rippopotamus.providers import ProviderContext, desktop_download_command
 
 
+class FakeProcess:
+    def __init__(self, lines: list[str], code: int) -> None:
+        self.stdout = iter(lines)
+        self._code = code
+
+    def wait(self) -> int:
+        return self._code
+
+
 class DesktopEngineTests(unittest.TestCase):
     def test_yt_dlp_base_prefers_configured_executable(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -297,6 +306,45 @@ class DesktopEngineTests(unittest.TestCase):
             media.write_text("media", encoding="utf-8")
 
             self.assertEqual(desktop_engine.snapshot_files(root), {media})
+
+    def test_torrent_success_suppresses_transient_retry_noise(self) -> None:
+        args = argparse.Namespace(url="magnet:?xt=urn:btih:abc&dn=Example", preset="torrent")
+        lines = [
+            "05/11 16:25:54 [ERROR] Exception caught while loading DHT routing table from /Users/dev/.cache/aria2/dht.dat\n",
+            "[HttpSkipResponseCommand.cc:240] errorCode=22 The response status is not successful. status=500\n",
+            "[#abc 1.0MiB/2.0MiB(50%) CN:1 DL:1.0MiB ETA:1s]\n",
+            "Download complete: Example.mp4\n",
+        ]
+
+        with tempfile.TemporaryDirectory() as tmp:
+            stream = io.StringIO()
+            with mock.patch("rippopotamus.desktop_engine.subprocess.Popen", return_value=FakeProcess(lines, 0)):
+                with redirect_stdout(stream):
+                    self.assertEqual(desktop_engine.command_aria2_download(args, Path(tmp), ["aria2c"]), 0)
+
+        events = [json.loads(line) for line in stream.getvalue().splitlines()]
+        self.assertFalse([event for event in events if event["type"] == "notice"])
+        self.assertEqual(events[-1]["type"], "success")
+
+    def test_torrent_failure_reports_plain_error_only(self) -> None:
+        args = argparse.Namespace(url="magnet:?xt=urn:btih:abc&dn=Example", preset="torrent")
+        lines = [
+            "05/11 16:25:54 [ERROR] Exception caught while loading DHT routing table from /Users/dev/.cache/aria2/dht.dat\n",
+            "[HttpSkipResponseCommand.cc:240] errorCode=22 The response status is not successful. status=500\n",
+        ]
+
+        with tempfile.TemporaryDirectory() as tmp:
+            stream = io.StringIO()
+            with mock.patch("rippopotamus.desktop_engine.subprocess.Popen", return_value=FakeProcess(lines, 1)):
+                with redirect_stdout(stream):
+                    self.assertEqual(desktop_engine.command_aria2_download(args, Path(tmp), ["aria2c"]), 1)
+
+        events = [json.loads(line) for line in stream.getvalue().splitlines()]
+        self.assertFalse([event for event in events if event["type"] == "notice"])
+        self.assertEqual(
+            events[-1],
+            {"type": "error", "error": "The source is having trouble right now. Try again later or use another link."},
+        )
 
     def test_download_failure_reports_once_without_retry(self) -> None:
         args = argparse.Namespace(
