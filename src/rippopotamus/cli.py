@@ -125,7 +125,7 @@ def normalize_urls(values: list[str]) -> list[str]:
     urls: list[str] = []
     for value in values:
         urls.extend(part.strip() for part in re.split(r"[\s,]+", value) if part.strip())
-    return [url for url in urls if url.startswith(("http://", "https://"))]
+    return [url for url in urls if url.startswith(("http://", "https://", "magnet:"))]
 
 
 def command_add(args: argparse.Namespace) -> int:
@@ -161,7 +161,7 @@ def command_add(args: argparse.Namespace) -> int:
 
 
 def fetch_metadata(url: str, provider: str = DEFAULT_PROVIDER) -> dict[str, Any]:
-    if provider == "aria2c":
+    if provider == "torrent":
         return parse_metadata_output(provider, url, "")
     result = run_checked(metadata_command(provider, url))
     return parse_metadata_output(provider, url, result.stdout)

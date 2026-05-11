@@ -40,6 +40,19 @@ function appManagedGalleryDlRoot(): string {
   return path.join(app.getPath("userData"), "python", "gallery-dl");
 }
 
+function appManagedQbittorrentProfileRoot(): string {
+  return path.join(app.getPath("userData"), "qbittorrent");
+}
+
+function bundledQbittorrentPath(): string | null {
+  const executable = process.platform === "win32" ? "qbittorrent-nox.exe" : "qbittorrent-nox";
+  const candidates = [
+    path.join(process.resourcesPath, "bin", executable),
+    path.join(app.getAppPath(), "bin", executable),
+  ];
+  return candidates.find((candidate) => fs.existsSync(candidate)) || null;
+}
+
 type Settings = {
   cookieSource?: CookieSource;
   cookiesBrowser?: string;
@@ -366,6 +379,9 @@ function engineEnv(): NodeJS.ProcessEnv {
     RIPPO_FFMPEG_PATH: bundledFfmpeg || process.env.RIPPO_FFMPEG_PATH || "",
     RIPPO_YTDLP_PATH: process.env.RIPPO_YTDLP_PATH || appManagedYtDlpPath(),
     RIPPO_GALLERYDL_ROOT: fs.existsSync(managedGalleryDlRoot) ? managedGalleryDlRoot : "",
+    RIPPO_QBITTORRENT_PATH: process.env.RIPPO_QBITTORRENT_PATH || bundledQbittorrentPath() || "",
+    RIPPO_QBITTORRENT_PROFILE_ROOT: process.env.RIPPO_QBITTORRENT_PROFILE_ROOT || appManagedQbittorrentProfileRoot(),
+    RIPPO_QBITTORRENT_WEBUI_PORT: process.env.RIPPO_QBITTORRENT_WEBUI_PORT || "39080",
   };
 }
 

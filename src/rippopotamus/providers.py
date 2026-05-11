@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import sys
 from dataclasses import dataclass
@@ -55,7 +56,7 @@ PRESETS: dict[str, dict[str, Any]] = {
         "extension": None,
     },
     "torrent": {
-        "provider": "aria2c",
+        "provider": "torrent",
         "label": "Torrent",
         "detail": "Magnet or torrent file",
         "folder": "Files",
@@ -68,7 +69,7 @@ PRESETS: dict[str, dict[str, Any]] = {
 PROVIDER_CATALOG: dict[str, dict[str, str]] = {
     "yt-dlp": {"id": "yt-dlp", "label": "Video", "defaultPreset": "mp4-best"},
     "gallery-dl": {"id": "gallery-dl", "label": "Images", "defaultPreset": "gallery"},
-    "aria2c": {"id": "aria2c", "label": "Torrent", "defaultPreset": "torrent"},
+    "torrent": {"id": "torrent", "label": "Torrent", "defaultPreset": "torrent"},
 }
 
 PROVIDERS = set(PROVIDER_CATALOG)
@@ -115,6 +116,21 @@ def aria2c_base() -> list[str]:
     if executable:
         return [executable]
     raise SystemExit("Missing aria2c. Install aria2c or place aria2c on PATH.")
+
+
+def qbittorrent_nox_base() -> list[str]:
+    configured = os.environ.get("RIPPO_QBITTORRENT_PATH", "").strip()
+    if configured:
+        path = Path(configured).expanduser()
+        if path.exists() and path.is_file() and os.access(path, os.X_OK):
+            return [str(path)]
+        raise SystemExit("Configured qBittorrent is not executable.")
+
+    for candidate in ["qbittorrent-nox", "qbittorrent-nox-static"]:
+        executable = shutil.which(candidate)
+        if executable:
+            return [executable]
+    raise SystemExit("Missing qBittorrent-nox. Install qBittorrent-nox or place it on PATH.")
 
 
 def torrent_title(url: str) -> str:
@@ -174,7 +190,7 @@ def metadata_command(provider: str, url: str, context: ProviderContext | None = 
         return [*yt_dlp_run(context), "--dump-single-json", "--skip-download", "--no-playlist", "--ignore-no-formats-error", url]
     if provider == "gallery-dl":
         return [*gallery_dl_base(), "--dump-json", url]
-    if provider == "aria2c":
+    if provider == "torrent":
         return []
     raise SystemExit(f"Unknown provider `{provider}`.")
 
@@ -191,7 +207,7 @@ def download_command(
         raise SystemExit(f"Unknown preset `{preset}`.")
 
     spec = PRESETS[preset]
-    if spec["provider"] == "aria2c":
+    if spec["provider"] == "torrent":
         if output_dir is None:
             raise SystemExit("Torrent downloads need an output directory.")
         aria_state_dir = Path(output_dir).parent / ".aria2"
@@ -348,7 +364,7 @@ def parse_metadata_output(provider: str, url: str, output: str) -> dict[str, Any
         return metadata_from_media_raw(json.loads(output), url, provider)
     if provider == "gallery-dl":
         return metadata_from_media_raw(first_json_metadata(output), url, provider)
-    if provider == "aria2c":
+    if provider == "torrent":
         return metadata_from_media_raw({"title": torrent_title(url), "extractor": "Torrent", "webpage_url": url}, url, provider)
     raise SystemExit(f"Unknown provider `{provider}`.")
 
@@ -373,6 +389,10 @@ def friendly_error(message: str) -> str:
         return "The download stopped before it finished. Try again later or use another link."
     if "dht routing table" in lower:
         return "The download needs a retry before it can start."
+    if "qbittorrent" in lower:
+        return "Torrent support needs qBittorrent-nox or aria2c installed."
+    if "aria2c" in lower:
+        return "Torrent support needs qBittorrent-nox or aria2c installed."
     if "timed out" in lower:
         return "request timed out"
     return message.splitlines()[-1][:240] if message else "unknown error"
