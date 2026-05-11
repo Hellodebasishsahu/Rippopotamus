@@ -358,9 +358,10 @@ app.whenReady().then(() => {
   }));
 
   ipcMain.handle("engine:fetch", async (_event, url: string, provider?: string) => {
-    const selectedProvider = provider === "gallery-dl" ? "gallery-dl" : "yt-dlp";
+    const args = ["fetch", "--url", url];
+    if (provider) args.push("--provider", provider);
     try {
-      return await runEngine(["fetch", "--url", url, "--provider", selectedProvider]);
+      return await runEngine(args);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       return {

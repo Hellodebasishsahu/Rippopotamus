@@ -1,21 +1,10 @@
 import { Cookie, Download, ExternalLink, FolderOpen, FolderSearch, ImageOff, Link2, Loader2, RefreshCcw, RotateCcw, Settings, Trash2, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { BrowserInfo, DownloadEvent, EngineHealth, FetchResponse, ProviderId, YtDlpUpdateInfo } from "../../electron/types";
+import type { BrowserInfo, DownloadEvent, EngineHealth, FetchResponse, PresetOption, ProviderId, ProviderOption, YtDlpUpdateInfo } from "../../electron/types";
 import { extractUrls } from "./urlParser";
 
-const presets: { id: string; label: string; detail: string; provider: ProviderId }[] = [
-  { id: "mp4-best", label: "MP4", detail: "Best MP4", provider: "yt-dlp" },
-  { id: "audio-mp3", label: "MP3", detail: "Audio only", provider: "yt-dlp" },
-  { id: "thumbnail", label: "Thumb", detail: "JPG cover", provider: "yt-dlp" },
-  { id: "proxy", label: "Proxy", detail: "720p MP4", provider: "yt-dlp" },
-  { id: "gallery", label: "Images", detail: "Image gallery", provider: "gallery-dl" },
-];
-
+const DEFAULT_PROVIDER = "yt-dlp";
 const DEFAULT_PRESET = "mp4-best";
-const PROVIDER_OPTIONS: { id: ProviderId; label: string; preset: string }[] = [
-  { id: "yt-dlp", label: "Video", preset: DEFAULT_PRESET },
-  { id: "gallery-dl", label: "Images", preset: "gallery" },
-];
 
 type QueueItem = {
   localId: string;
@@ -54,16 +43,16 @@ function sourceUrl(item: QueueItem) {
   return item.metadata?.webpage_url || item.url;
 }
 
-function providerForItem(item: QueueItem): ProviderId {
-  return item.metadata?.provider || (item.preset === "gallery" ? "gallery-dl" : "yt-dlp");
+function providerForItem(item: QueueItem, presets: PresetOption[]): ProviderId {
+  return item.metadata?.provider || presets.find((preset) => preset.id === item.preset)?.provider || DEFAULT_PROVIDER;
 }
 
-function defaultPresetForProvider(provider: ProviderId): string {
-  return PROVIDER_OPTIONS.find((option) => option.id === provider)?.preset || DEFAULT_PRESET;
+function defaultPresetForProvider(provider: ProviderId, providers: ProviderOption[]): string {
+  return providers.find((option) => option.id === provider)?.defaultPreset || DEFAULT_PRESET;
 }
 
-function presetsForItem(item: QueueItem) {
-  const provider = providerForItem(item);
+function presetsForItem(item: QueueItem, presets: PresetOption[]) {
+  const provider = providerForItem(item, presets);
   return presets.filter((preset) => preset.provider === provider);
 }
 
@@ -171,7 +160,7 @@ export function App() {
   const [health, setHealth] = useState<EngineHealth | null>(null);
   const [healthError, setHealthError] = useState<string | null>(null);
   const [input, setInput] = useState("");
-  const [fetchProvider, setFetchProvider] = useState<ProviderId>("yt-dlp");
+  const [fetchProvider, setFetchProvider] = useState<ProviderId>(DEFAULT_PROVIDER);
   const [items, setItems] = useState<QueueItem[]>([]);
   const [outputRoot, setOutputRoot] = useState("");
   const [busy, setBusy] = useState(false);
@@ -276,6 +265,8 @@ export function App() {
   }, [input]);
 
   const detectedCount = useMemo(() => extractUrls(input).length, [input]);
+  const providerOptions = health?.providers || [];
+  const presetOptions = health?.presets || [];
 
   useEffect(() => {
     if (!rippo) {
@@ -289,6 +280,11 @@ export function App() {
       })
       .catch((error) => setHealthError(error.message || String(error)));
   }, [rippo]);
+
+  useEffect(() => {
+    if (!providerOptions.length) return;
+    setFetchProvider((current) => providerOptions.some((provider) => provider.id === current) ? current : providerOptions[0].id);
+  }, [providerOptions]);
 
   useEffect(() => {
     if (!rippo) return undefined;
@@ -324,13 +320,13 @@ export function App() {
 
   async function addAndFetch() {
     const urls = extractUrls(input);
-    if (!urls.length || !rippo) return;
+    if (!urls.length || !rippo || !providerOptions.length) return;
     const provider = fetchProvider;
 
     const existing = new Set(items.map((item) => item.url));
     const fresh = urls
       .filter((url) => !existing.has(url))
-      .map((url) => ({ localId: crypto.randomUUID().slice(0, 10), url, status: "queued" as const, preset: defaultPresetForProvider(provider) }));
+      .map((url) => ({ localId: crypto.randomUUID().slice(0, 10), url, status: "queued" as const, preset: defaultPresetForProvider(provider, providerOptions) }));
 
     setInput("");
     setItems((current) => [...fresh, ...current]);
@@ -340,7 +336,7 @@ export function App() {
       try {
         const result = await rippo.fetch(item.url, provider);
         if (result.ok) {
-          setItems((current) => current.map((candidate) => candidate.localId === item.localId ? { ...candidate, status: "ready", preset: defaultPresetForProvider(result.metadata.provider || provider), metadata: result.metadata, error: undefined } : candidate));
+          setItems((current) => current.map((candidate) => candidate.localId === item.localId ? { ...candidate, status: "ready", preset: defaultPresetForProvider(result.metadata.provider || provider, providerOptions), metadata: result.metadata, error: undefined } : candidate));
         } else {
           setItems((current) => current.map((candidate) => candidate.localId === item.localId ? { ...candidate, status: "failed", error: fetchErrorMessage(result.error) } : candidate));
         }
@@ -380,12 +376,12 @@ export function App() {
 
   async function refetch(item: QueueItem) {
     if (!rippo) return;
-    const provider = providerForItem(item);
+    const provider = providerForItem(item, presetOptions);
     setItems((current) => current.map((candidate) => candidate.localId === item.localId ? { ...candidate, status: "fetching", error: undefined, notices: [] } : candidate));
     try {
       const result = await rippo.fetch(item.url, provider);
       if (result.ok) {
-        setItems((current) => current.map((candidate) => candidate.localId === item.localId ? { ...candidate, status: "ready", preset: defaultPresetForProvider(result.metadata.provider || provider), metadata: result.metadata, error: undefined } : candidate));
+        setItems((current) => current.map((candidate) => candidate.localId === item.localId ? { ...candidate, status: "ready", preset: defaultPresetForProvider(result.metadata.provider || provider, providerOptions), metadata: result.metadata, error: undefined } : candidate));
       } else {
         setItems((current) => current.map((candidate) => candidate.localId === item.localId ? { ...candidate, status: "failed", error: fetchErrorMessage(result.error) } : candidate));
       }
@@ -451,15 +447,17 @@ export function App() {
                     className="provider-select"
                     value={fetchProvider}
                     onChange={(event) => setFetchProvider(event.target.value as ProviderId)}
+                    disabled={!providerOptions.length}
                     aria-label="Source type"
                   >
-                    {PROVIDER_OPTIONS.map((option) => (
+                    {providerOptions.length === 0 ? <option value={fetchProvider}>Loading</option> : null}
+                    {providerOptions.map((option) => (
                       <option key={option.id} value={option.id}>{option.label}</option>
                     ))}
                   </select>
                   {detectedCount > 1 ? <span className="link-count">{detectedCount} links</span> : <span className="composer-hint">⌘↵ to fetch</span>}
                 </div>
-                <button type="button" className="btn btn-primary btn-fetch" onClick={addAndFetch} disabled={!detectedCount || !rippo}>
+                <button type="button" className="btn btn-primary btn-fetch" onClick={addAndFetch} disabled={!detectedCount || !rippo || !providerOptions.length}>
                   Fetch{detectedCount > 1 ? ` ${detectedCount}` : ""}
                 </button>
               </div>
@@ -477,7 +475,7 @@ export function App() {
             <div className="empty">No URLs yet.</div>
           ) : (
             items.map((item) => {
-              const itemPresets = presetsForItem(item);
+              const itemPresets = presetsForItem(item, presetOptions);
               const progress = item.status === "downloading" ? Math.max(2, Math.round(item.progress || 0)) : null;
               let statusText: string;
               if (item.status === "downloading") {
@@ -514,7 +512,7 @@ export function App() {
                           onChange={(event) => setItemPreset(item.localId, event.target.value)}
                           disabled={item.status === "downloading" || item.status === "done"}
                           aria-label="Output format"
-                          title={presets.find((p) => p.id === item.preset)?.detail}
+                          title={presetOptions.find((p) => p.id === item.preset)?.detail}
                         >
                           {itemPresets.map((option) => (
                             <option key={option.id} value={option.id}>{option.label}</option>

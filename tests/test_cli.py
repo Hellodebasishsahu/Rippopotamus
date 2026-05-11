@@ -5,7 +5,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from rippopotamus.cli import PRESETS, first_json_metadata, friendly_error, main, metadata_from_media_raw, slugify
+from rippopotamus.cli import main, slugify
+from rippopotamus.providers import PRESETS, first_json_metadata, friendly_error, metadata_from_media_raw, provider_catalog
 
 
 class CliTests(unittest.TestCase):
@@ -17,6 +18,12 @@ class CliTests(unittest.TestCase):
         self.assertEqual(sorted(PRESETS), ["audio-mp3", "gallery", "mp4-best", "proxy", "thumbnail"])
         self.assertEqual(PRESETS["mp4-best"]["provider"], "yt-dlp")
         self.assertEqual(PRESETS["gallery"]["provider"], "gallery-dl")
+
+    def test_provider_catalog_is_ui_ready(self) -> None:
+        catalog = provider_catalog()
+        self.assertIn({"id": "yt-dlp", "label": "Video", "defaultPreset": "mp4-best"}, catalog["providers"])
+        self.assertIn({"id": "gallery-dl", "label": "Images", "defaultPreset": "gallery"}, catalog["providers"])
+        self.assertIn({"id": "gallery", "label": "Images", "detail": "Image gallery", "provider": "gallery-dl"}, catalog["presets"])
 
     def test_metadata_uses_best_thumbnail_candidate(self) -> None:
         metadata = metadata_from_media_raw({

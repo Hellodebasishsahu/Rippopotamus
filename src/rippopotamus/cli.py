@@ -5,7 +5,6 @@ import json
 import re
 import shutil
 import subprocess
-import sys
 import tempfile
 import zipfile
 import uuid
@@ -14,50 +13,19 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from rippopotamus.providers import (
+    PRESETS,
+    PROVIDERS,
+    download_command,
+    friendly_error,
+    metadata_command,
+    parse_metadata_output,
+)
+
 
 STATE_DIR = ".rippo"
 STATE_FILE = "project.json"
 MANIFEST_FILE = "manifest.json"
-
-PRESETS: dict[str, dict[str, Any]] = {
-    "mp4-best": {
-        "provider": "yt-dlp",
-        "folder": "Source",
-        "format": "bv*[ext=mp4]+ba[ext=m4a]/b[ext=mp4]",
-        "extra": ["--merge-output-format", "mp4"],
-        "extension": "mp4",
-    },
-    "audio-mp3": {
-        "provider": "yt-dlp",
-        "folder": "Audio",
-        "format": "bestaudio/best",
-        "extra": ["--extract-audio", "--audio-format", "mp3"],
-        "extension": "mp3",
-    },
-    "thumbnail": {
-        "provider": "yt-dlp",
-        "folder": "Thumbnails",
-        "format": None,
-        "extra": ["--skip-download", "--write-thumbnail", "--convert-thumbnails", "jpg"],
-        "extension": "jpg",
-    },
-    "proxy": {
-        "provider": "yt-dlp",
-        "folder": "Source",
-        "format": "bv*[height<=720][ext=mp4]+ba[ext=m4a]/b[height<=720][ext=mp4]",
-        "extra": ["--merge-output-format", "mp4"],
-        "extension": "mp4",
-    },
-    "gallery": {
-        "provider": "gallery-dl",
-        "folder": "Images",
-        "format": None,
-        "extra": [],
-        "extension": None,
-    },
-}
-
-PROVIDERS = {"yt-dlp", "gallery-dl"}
 
 
 @dataclass(frozen=True)
@@ -83,134 +51,6 @@ def run_checked(args: list[str], cwd: Path | None = None) -> subprocess.Complete
     except subprocess.CalledProcessError as exc:
         message = (exc.stderr or exc.stdout or str(exc)).strip()
         raise SystemExit(f"{args[0]} failed: {friendly_error(message)}") from exc
-
-
-def gallery_dl_base() -> list[str]:
-    try:
-        import gallery_dl  # noqa: F401
-
-        return [sys.executable, "-m", "gallery_dl"]
-    except Exception:
-        executable = shutil.which("gallery-dl")
-        if executable:
-            return [executable]
-        raise SystemExit("Missing gallery-dl. Install the Python package or place gallery-dl on PATH.")
-
-
-def thumbnail_candidates(raw: dict[str, Any]) -> list[str]:
-    candidates: list[tuple[int, str]] = []
-
-    primary = raw.get("thumbnail")
-    if isinstance(primary, str) and primary.strip():
-        candidates.append((10_000_000, primary.strip()))
-
-    for item in raw.get("thumbnails") or []:
-        if not isinstance(item, dict):
-            continue
-        url = item.get("url")
-        if not isinstance(url, str) or not url.strip():
-            continue
-
-        width = item.get("width")
-        height = item.get("height")
-        preference = item.get("preference")
-        area = width * height if isinstance(width, int) and isinstance(height, int) else 0
-        score = area + (preference * 1_000 if isinstance(preference, int) else 0)
-        candidates.append((score, url.strip()))
-
-    ordered: list[str] = []
-    seen: set[str] = set()
-    for _score, url in sorted(candidates, key=lambda entry: entry[0], reverse=True):
-        if url in seen:
-            continue
-        seen.add(url)
-        ordered.append(url)
-    return ordered
-
-
-def gallery_metadata_from_payload(payload: Any) -> dict[str, Any] | None:
-    if isinstance(payload, dict):
-        if "error" in payload and "message" in payload:
-            return None
-        return payload
-
-    if isinstance(payload, list):
-        if len(payload) >= 3 and payload[0] == 3 and isinstance(payload[2], dict):
-            metadata = dict(payload[2])
-            if isinstance(payload[1], str):
-                metadata.setdefault("url", payload[1])
-            return metadata
-        if len(payload) >= 2 and payload[0] == 2 and isinstance(payload[1], dict):
-            return payload[1]
-        preferred: dict[str, Any] | None = None
-        for item in payload:
-            metadata = gallery_metadata_from_payload(item)
-            if not metadata:
-                continue
-            if isinstance(item, list) and item and item[0] == 3:
-                return metadata
-            preferred = preferred or metadata
-        return preferred
-    return None
-
-
-def first_json_metadata(output: str) -> dict[str, Any]:
-    try:
-        metadata = gallery_metadata_from_payload(json.loads(output))
-        if metadata:
-            return metadata
-    except json.JSONDecodeError:
-        pass
-
-    for line in output.splitlines():
-        line = line.strip()
-        if not line or not line.startswith(("{", "[")):
-            continue
-        try:
-            metadata = gallery_metadata_from_payload(json.loads(line))
-        except json.JSONDecodeError:
-            continue
-        if metadata:
-            return metadata
-    raise SystemExit("No JSON metadata was returned.")
-
-
-def metadata_from_media_raw(raw: dict[str, Any], url: str, provider: str = "yt-dlp") -> dict[str, Any]:
-    thumbnails = thumbnail_candidates(raw)
-    uploader = raw.get("uploader") or raw.get("username") or raw.get("author") or raw.get("artist")
-    if isinstance(uploader, dict):
-        uploader = uploader.get("artistName") or uploader.get("name") or uploader.get("username")
-    return {
-        "id": raw.get("id") or raw.get("post_id") or raw.get("filename"),
-        "title": raw.get("title") or raw.get("filename") or raw.get("id"),
-        "extractor": raw.get("extractor_key") or raw.get("extractor") or raw.get("category") or provider,
-        "webpage_url": raw.get("webpage_url") or raw.get("source") or raw.get("url") or url,
-        "duration": raw.get("duration"),
-        "uploader": uploader,
-        "upload_date": raw.get("upload_date"),
-        "thumbnail": thumbnails[0] if thumbnails else raw.get("thumbnail") or raw.get("thumb") or raw.get("preview") or raw.get("image"),
-        "thumbnails": thumbnails,
-        "description": raw.get("description"),
-        "provider": provider,
-    }
-
-
-def friendly_error(message: str) -> str:
-    if "Unsupported URL" in message:
-        return "unsupported URL"
-    if "Video unavailable" in message:
-        return "video is unavailable or private"
-    if "Private video" in message:
-        return "private video"
-    if "HTTP Error 403" in message:
-        return "access denied by the platform"
-    if "HTTP Error 404" in message:
-        return "media not found"
-    if "Requested format is not available" in message:
-        return "selected format is not available for this link"
-    if "timed out" in message.lower():
-        return "request timed out"
-    return message.splitlines()[-1][:240] if message else "unknown error"
 
 
 def load_project(start: Path | None = None) -> RippoProject:
@@ -319,13 +159,8 @@ def command_add(args: argparse.Namespace) -> int:
 
 
 def fetch_metadata(url: str, provider: str = "yt-dlp") -> dict[str, Any]:
-    if provider == "yt-dlp":
-        result = run_checked(["yt-dlp", "--ignore-config", "--dump-single-json", "--skip-download", "--no-playlist", "--ignore-no-formats-error", url])
-        return metadata_from_media_raw(json.loads(result.stdout), url, provider)
-    if provider == "gallery-dl":
-        result = run_checked([*gallery_dl_base(), "--dump-json", url])
-        return metadata_from_media_raw(first_json_metadata(result.stdout), url, provider)
-    raise SystemExit(f"Unknown provider `{provider}`.")
+    result = run_checked(metadata_command(provider, url))
+    return parse_metadata_output(provider, url, result.stdout)
 
 
 def command_fetch(args: argparse.Namespace) -> int:
@@ -374,20 +209,12 @@ def command_download(args: argparse.Namespace) -> int:
             continue
 
         spec = PRESETS[args.preset]
-        if spec["provider"] == "gallery-dl":
-            cmd = [
-                *gallery_dl_base(),
-                "--dest",
-                str(project.root / spec["folder"]),
-                "--write-metadata",
-                item["url"],
-            ]
-        else:
-            cmd = ["yt-dlp", "--ignore-config", "--no-playlist", "-o", output_template(project, item, args.preset)]
-            if spec["format"]:
-                cmd += ["-f", spec["format"]]
-            cmd += spec["extra"]
-            cmd.append(item["url"])
+        cmd = download_command(
+            item["url"],
+            args.preset,
+            output_template=output_template(project, item, args.preset),
+            output_dir=project.root / spec["folder"],
+        )
 
         try:
             before = snapshot_files(project.root)

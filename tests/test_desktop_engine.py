@@ -11,6 +11,7 @@ from pathlib import Path
 from unittest import mock
 
 from rippopotamus import desktop_engine
+from rippopotamus.providers import ProviderContext, desktop_download_command
 
 
 class DesktopEngineTests(unittest.TestCase):
@@ -81,29 +82,28 @@ class DesktopEngineTests(unittest.TestCase):
         )
 
     def test_build_download_command_has_one_selected_format(self) -> None:
-        args = argparse.Namespace(url="https://www.youtube.com/watch?v=TQd2k1pEXp4")
-        spec = {"format": "bv*[ext=mp4]+ba[ext=m4a]/b[ext=mp4]", "extra": ["--merge-output-format", "mp4"]}
-
-        with mock.patch("rippopotamus.desktop_engine.yt_dlp_base", return_value=["yt-dlp"]):
-            with mock.patch("rippopotamus.desktop_engine.cookies_browser_args", return_value=[]):
-                with mock.patch("rippopotamus.desktop_engine.ffmpeg_path", return_value=None):
-                    command = desktop_engine.build_ytdlp_download_command(args, spec, "/tmp/out.%(ext)s")
+        command = desktop_download_command(
+            "https://www.youtube.com/watch?v=TQd2k1pEXp4",
+            "mp4-best",
+            output_template="/tmp/out.%(ext)s",
+            context=ProviderContext(yt_dlp_base=("yt-dlp",)),
+        )
 
         self.assertIn("--ignore-config", command)
+        self.assertIn("--newline", command)
         self.assertEqual(command.count("-f"), 1)
-        self.assertIn(spec["format"], command)
+        self.assertIn("bv*[ext=mp4]+ba[ext=m4a]/b[ext=mp4]", command)
         self.assertEqual(command[-1], "https://www.youtube.com/watch?v=TQd2k1pEXp4")
 
     def test_fetch_metadata_ignores_formats_and_external_config(self) -> None:
         args = argparse.Namespace(url="https://www.youtube.com/watch?v=TQd2k1pEXp4", provider="yt-dlp")
-        with mock.patch("rippopotamus.desktop_engine.yt_dlp_base", return_value=["yt-dlp"]):
-            with mock.patch("rippopotamus.desktop_engine.cookies_browser_args", return_value=[]):
-                with mock.patch("rippopotamus.desktop_engine.run_json", return_value={"id": "TQd2k1pEXp4", "title": "Video"}) as run_json:
-                    stream = io.StringIO()
-                    with redirect_stdout(stream):
-                        self.assertEqual(desktop_engine.command_fetch(args), 0)
+        with mock.patch("rippopotamus.desktop_engine.provider_context", return_value=ProviderContext(yt_dlp_base=("yt-dlp",))):
+            with mock.patch("rippopotamus.desktop_engine.run_text", return_value='{"id": "TQd2k1pEXp4", "title": "Video"}') as run_text:
+                stream = io.StringIO()
+                with redirect_stdout(stream):
+                    self.assertEqual(desktop_engine.command_fetch(args), 0)
 
-        command = run_json.call_args.args[0]
+        command = run_text.call_args.args[0]
         self.assertIn("--ignore-config", command)
         self.assertIn("--ignore-no-formats-error", command)
 
@@ -121,20 +121,19 @@ class DesktopEngineTests(unittest.TestCase):
         self.assertIn("--ignore-config", run.call_args.args[0])
 
     def test_build_download_command_keeps_cookies_explicit_after_config_ignore(self) -> None:
-        args = argparse.Namespace(url="https://www.youtube.com/watch?v=TQd2k1pEXp4")
-        spec = {"format": "bv*[ext=mp4]+ba[ext=m4a]/b[ext=mp4]", "extra": ["--merge-output-format", "mp4"]}
-
-        with mock.patch("rippopotamus.desktop_engine.yt_dlp_base", return_value=["yt-dlp"]):
-            with mock.patch("rippopotamus.desktop_engine.cookies_browser_args", return_value=["--cookies-from-browser", "chrome"]):
-                with mock.patch("rippopotamus.desktop_engine.ffmpeg_path", return_value=None):
-                    command = desktop_engine.build_ytdlp_download_command(args, spec, "/tmp/out.%(ext)s")
+        command = desktop_download_command(
+            "https://www.youtube.com/watch?v=TQd2k1pEXp4",
+            "mp4-best",
+            output_template="/tmp/out.%(ext)s",
+            context=ProviderContext(yt_dlp_base=("yt-dlp",), cookies_browser="chrome"),
+        )
 
         self.assertLess(command.index("--ignore-config"), command.index("--cookies-from-browser"))
 
     def test_fetch_uses_explicit_gallery_provider(self) -> None:
         args = argparse.Namespace(url="https://example.com/gallery", provider="gallery-dl")
-        with mock.patch("rippopotamus.desktop_engine.gallery_dl_base", return_value=["gallery-dl"]):
-            with mock.patch("rippopotamus.desktop_engine.run_json_lines", return_value={"filename": "asset", "url": "https://img.example/a.jpg"}):
+        with mock.patch("rippopotamus.providers.gallery_dl_base", return_value=["gallery-dl"]):
+            with mock.patch("rippopotamus.desktop_engine.run_text", return_value='[3, "https://img.example/a.jpg", {"filename": "asset"}]'):
                 stream = io.StringIO()
                 with redirect_stdout(stream):
                     self.assertEqual(desktop_engine.command_fetch(args), 0)
@@ -154,8 +153,9 @@ class DesktopEngineTests(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as tmp:
             args.output_root = tmp
-            with mock.patch("rippopotamus.desktop_engine.command_gallery_download", return_value=0) as gallery_download:
-                self.assertEqual(desktop_engine.command_download(args), 0)
+            with mock.patch("rippopotamus.providers.gallery_dl_base", return_value=["gallery-dl"]):
+                with mock.patch("rippopotamus.desktop_engine.command_gallery_download", return_value=0) as gallery_download:
+                    self.assertEqual(desktop_engine.command_download(args), 0)
 
         gallery_download.assert_called_once()
 
@@ -170,7 +170,7 @@ class DesktopEngineTests(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as tmp:
             args.output_root = tmp
-            with mock.patch("rippopotamus.desktop_engine.build_ytdlp_download_command", return_value=["yt-dlp"]):
+            with mock.patch("rippopotamus.desktop_engine.desktop_download_command", return_value=["yt-dlp"]):
                 with mock.patch(
                     "rippopotamus.desktop_engine.run_ytdlp_download_command",
                     return_value=(1, "ERROR: Requested format is not available", ["ERROR: Requested format is not available"]),

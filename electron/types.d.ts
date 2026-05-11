@@ -32,6 +32,8 @@ export type EngineHealth = {
   cookiesSupported?: boolean;
   cookiesBrowsers?: BrowserInfo[];
   cookies?: CookiesHealth;
+  providers?: ProviderOption[];
+  presets?: PresetOption[];
   outputRoot: string;
   packaged: boolean;
   error?: string;
@@ -39,7 +41,20 @@ export type EngineHealth = {
 
 export type BrowserInfo = { id: string; label: string; appPath: string };
 
-export type ProviderId = "yt-dlp" | "gallery-dl";
+export type ProviderId = string;
+
+export type ProviderOption = {
+  id: ProviderId;
+  label: string;
+  defaultPreset: string;
+};
+
+export type PresetOption = {
+  id: string;
+  label: string;
+  detail: string;
+  provider: ProviderId;
+};
 
 export type ThumbnailLoadResult = {
   src: string | null;
