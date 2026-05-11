@@ -2,13 +2,14 @@ import { contextBridge, ipcRenderer } from "electron";
 
 contextBridge.exposeInMainWorld("rippo", {
   health: () => ipcRenderer.invoke("engine:health"),
-  fetch: (url: string, provider?: string) => ipcRenderer.invoke("engine:fetch", url, provider),
-  download: (payload: { url: string; preset: string; outputRoot?: string; itemId?: string; title?: string }) =>
+  fetch: (url: string, provider?: string, cookieSource?: unknown) => ipcRenderer.invoke("engine:fetch", url, provider, cookieSource),
+  download: (payload: { url: string; preset: string; outputRoot?: string; itemId?: string; title?: string; cookieSource?: unknown }) =>
     ipcRenderer.invoke("engine:download", payload),
   openFolder: (folder: string) => ipcRenderer.invoke("shell:open-folder", folder),
   openExternal: (url: string) => ipcRenderer.invoke("shell:open-external", url),
   loadThumbnail: (urls: string[]) => ipcRenderer.invoke("thumbnail:load", urls),
   listBrowsers: () => ipcRenderer.invoke("cookies:list-browsers"),
+  setDefaultCookieSource: (source: unknown) => ipcRenderer.invoke("cookies:set-default-source", source),
   setCookiesBrowser: (browserId: string | null) => ipcRenderer.invoke("cookies:set-browser", browserId),
   checkYtDlpUpdate: () => ipcRenderer.invoke("ytdlp:check-update"),
   updateYtDlp: () => ipcRenderer.invoke("ytdlp:update"),

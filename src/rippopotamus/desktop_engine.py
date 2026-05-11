@@ -17,6 +17,7 @@ from rippopotamus.providers import (
     PRESETS,
     PROVIDERS,
     ProviderContext,
+    aria2c_base,
     desktop_download_command,
     friendly_error,
     gallery_dl_base,
@@ -45,6 +46,11 @@ def configured_yt_dlp_path() -> str | None:
     return str(path)
 
 
+def is_torrent_input(url: str) -> bool:
+    lower = url.lower()
+    return lower.startswith("magnet:") or lower.split("?", 1)[0].endswith(".torrent")
+
+
 def cookies_browser_args() -> list[str]:
     value = os.environ.get("RIPPO_COOKIES_FROM_BROWSER", "").strip()
     if not value:
@@ -69,8 +75,8 @@ def cookie_error_message(message: str) -> str:
     return "Browser cookies are unavailable. Choose another browser or turn cookies off."
 
 
-def verify_cookies_browser(base: list[str]) -> dict[str, Any]:
-    browser = os.environ.get("RIPPO_COOKIES_FROM_BROWSER", "").strip()
+def verify_cookies_browser(base: list[str], browser: str | None = None) -> dict[str, Any]:
+    browser = (browser or "").strip()
     if not browser:
         return {"status": "off", "browser": None, "ok": None, "message": None}
 
@@ -119,12 +125,16 @@ def ffmpeg_path() -> str | None:
     return shutil.which("ffmpeg")
 
 
-def provider_context() -> ProviderContext:
+def provider_context(cookies_browser: str | None = None) -> ProviderContext:
     return ProviderContext(
         yt_dlp_base=tuple(yt_dlp_base()),
-        cookies_browser=os.environ.get("RIPPO_COOKIES_FROM_BROWSER", "").strip() or None,
+        cookies_browser=(cookies_browser or "").strip() or None,
         ffmpeg_path=ffmpeg_path(),
     )
+
+
+def arg_cookies_browser(args: argparse.Namespace) -> str | None:
+    return (getattr(args, "cookies_browser", "") or "").strip() or None
 
 
 def gallery_dl_status() -> dict[str, Any]:
@@ -157,6 +167,21 @@ def gallery_dl_status() -> dict[str, Any]:
         }
 
 
+def aria2c_status() -> dict[str, Any]:
+    try:
+        base = aria2c_base()
+    except SystemExit as exc:
+        return {"ok": False, "version": None, "path": None, "error": friendly_error(str(exc))}
+
+    try:
+        result = subprocess.run([*base, "--version"], capture_output=True, text=True, check=True)
+        first = result.stdout.splitlines()[0] if result.stdout else "aria2c"
+        version_match = re.search(r"aria2 version\s+([^\s]+)", first)
+        return {"ok": True, "version": version_match.group(1) if version_match else first, "path": base[0], "error": None}
+    except Exception as exc:
+        return {"ok": False, "version": None, "path": base[0], "error": friendly_error(str(exc))}
+
+
 def run_text(args: list[str]) -> str:
     try:
         result = subprocess.run(args, capture_output=True, text=True, check=True)
@@ -172,8 +197,9 @@ def run_json(args: list[str]) -> dict[str, Any]:
     return json.loads(run_text(args))
 
 
-def command_health(_args: argparse.Namespace) -> int:
+def command_health(args: argparse.Namespace) -> int:
     base = yt_dlp_base()
+    cookies_browser = arg_cookies_browser(args)
     ffmpeg = ffmpeg_path()
     yt_dlp_version = "unknown"
     try:
@@ -195,6 +221,7 @@ def command_health(_args: argparse.Namespace) -> int:
 
     catalog = provider_catalog()
     gallery = gallery_dl_status()
+    aria = aria2c_status()
     emit({
         "ok": True,
         "python": sys.executable,
@@ -204,11 +231,15 @@ def command_health(_args: argparse.Namespace) -> int:
         "galleryDlPath": gallery["path"],
         "galleryDlOk": gallery["ok"],
         "galleryDlError": gallery["error"],
+        "aria2c": aria["version"],
+        "aria2cPath": aria["path"],
+        "aria2cOk": aria["ok"],
+        "aria2cError": aria["error"],
         "ffmpeg": ffmpeg,
         "ffmpegOk": ffmpeg_ok,
         "ffmpegVersion": ffmpeg_version,
-        "cookiesBrowser": os.environ.get("RIPPO_COOKIES_FROM_BROWSER", "") or None,
-        "cookies": verify_cookies_browser(base),
+        "cookiesBrowser": cookies_browser,
+        "cookies": verify_cookies_browser(base, cookies_browser),
         "providers": catalog["providers"],
         "presets": catalog["presets"],
     })
@@ -216,14 +247,45 @@ def command_health(_args: argparse.Namespace) -> int:
 
 
 def command_fetch(args: argparse.Namespace) -> int:
-    output = run_text(metadata_command(args.provider, args.url, provider_context()))
-    metadata = parse_metadata_output(args.provider, args.url, output)
+    provider = args.provider
+    cookies_browser = arg_cookies_browser(args)
+    if provider == "auto":
+        if is_torrent_input(args.url):
+            provider = "aria2c"
+            output = ""
+        else:
+            try:
+                output = run_text(metadata_command("yt-dlp", args.url, provider_context(cookies_browser)))
+                provider = "yt-dlp"
+            except SystemExit as exc:
+                if friendly_error(str(exc)) != "unsupported URL":
+                    raise
+                output = run_text(metadata_command("gallery-dl", args.url, provider_context(cookies_browser)))
+                provider = "gallery-dl"
+    elif provider == "aria2c":
+        output = ""
+    else:
+        output = run_text(metadata_command(provider, args.url, provider_context(cookies_browser)))
+    metadata = parse_metadata_output(provider, args.url, output)
     emit({"ok": True, "url": args.url, "metadata": metadata})
     return 0
 
 
+def parse_aria2_progress(line: str) -> dict[str, Any] | None:
+    percent_match = re.search(r"\((\d+)%\)", line)
+    if not percent_match:
+        return None
+    speed_match = re.search(r"DL:([^\s\]]+)", line)
+    eta_match = re.search(r"ETA:([^\s\]]+)", line)
+    return {
+        "percent": float(percent_match.group(1)),
+        "speed": speed_match.group(1) if speed_match else None,
+        "eta": eta_match.group(1) if eta_match else None,
+    }
+
+
 def snapshot_files(root: Path) -> set[Path]:
-    return {path for path in root.rglob("*") if path.is_file()}
+    return {path for path in root.rglob("*") if path.is_file() and not any(part.startswith(".") for part in path.relative_to(root).parts)}
 
 
 def parse_progress(line: str) -> dict[str, Any] | None:
@@ -293,11 +355,12 @@ def command_download(args: argparse.Namespace) -> int:
         raise SystemExit(f"Unknown preset `{args.preset}`.")
 
     root = Path(args.output_root).expanduser().resolve()
-    for folder in ["Source", "Audio", "Images", "Thumbnails", "Clips", "Exports"]:
+    for folder in ["Source", "Audio", "Images", "Files", "Thumbnails", "Clips", "Exports"]:
         (root / folder).mkdir(parents=True, exist_ok=True)
 
     item_id = args.item_id or uuid.uuid4().hex[:10]
     spec = PRESETS[args.preset]
+    cookies_browser = arg_cookies_browser(args)
     title = slugify(args.title or item_id)
     output_template = str(root / spec["folder"] / f"{title}--{item_id}.%(ext)s")
     cmd = desktop_download_command(
@@ -305,11 +368,13 @@ def command_download(args: argparse.Namespace) -> int:
         args.preset,
         output_template=output_template,
         output_dir=root / spec["folder"],
-        context=provider_context(),
+        context=provider_context(cookies_browser),
     )
 
     if spec["provider"] == "gallery-dl":
         return command_gallery_download(args, root, cmd)
+    if spec["provider"] == "aria2c":
+        return command_aria2_download(args, root, cmd)
 
     before = snapshot_files(root)
     emit({"type": "started", "url": args.url, "preset": args.preset})
@@ -321,6 +386,60 @@ def command_download(args: argparse.Namespace) -> int:
         emit({"type": "error", "error": cookie_error_message(detail)})
         return code
 
+    return 0
+
+
+def command_aria2_download(args: argparse.Namespace, root: Path, cmd: list[str]) -> int:
+    before = snapshot_files(root)
+    emit({"type": "started", "url": args.url, "preset": args.preset})
+    emit({"type": "stage", "message": "Downloading torrent", "finalizing": False})
+
+    process = subprocess.Popen(
+        cmd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        bufsize=1,
+    )
+
+    last_line = ""
+    notices: list[str] = []
+    reported_retry_notice = False
+    reported_dht_notice = False
+    assert process.stdout is not None
+    for line in process.stdout:
+        line = line.strip()
+        if not line:
+            continue
+        last_line = line
+        lower = line.lower()
+        if "dht routing table" in lower:
+            if not reported_dht_notice:
+                reported_dht_notice = True
+                emit({"type": "notice", "level": "warning", "message": "Using a fresh torrent routing cache."})
+            continue
+        if "error" in lower or "failed" in lower or "download aborted" in lower:
+            notices.append(line)
+            if not reported_retry_notice:
+                reported_retry_notice = True
+                emit({"type": "notice", "level": "warning", "message": "Torrent source returned an error. Retrying if possible."})
+            continue
+        if "download complete" in lower:
+            emit({"type": "stage", "message": "Downloaded file", "finalizing": False})
+            continue
+        progress = parse_aria2_progress(line)
+        if progress:
+            emit({"type": "progress", **progress})
+
+    code = process.wait()
+    if code != 0:
+        detail = next((n for n in reversed(notices) if "status=500" in n.lower()), notices[-1] if notices else last_line)
+        emit({"type": "error", "error": friendly_error(detail)})
+        return code
+
+    after = snapshot_files(root)
+    files = sorted(str(path.relative_to(root)) for path in after - before)
+    emit({"type": "success", "files": files, "outputRoot": str(root), "warnings": []})
     return 0
 
 
@@ -371,11 +490,13 @@ def build_parser() -> argparse.ArgumentParser:
     sub = parser.add_subparsers(dest="command", required=True)
 
     health = sub.add_parser("health")
+    health.add_argument("--cookies-browser", default="")
     health.set_defaults(func=command_health)
 
     fetch = sub.add_parser("fetch")
     fetch.add_argument("--url", required=True)
-    fetch.add_argument("--provider", choices=sorted(PROVIDERS), default=DEFAULT_PROVIDER)
+    fetch.add_argument("--provider", choices=["auto", *sorted(PROVIDERS)], default="auto")
+    fetch.add_argument("--cookies-browser", default="")
     fetch.set_defaults(func=command_fetch)
 
     download = sub.add_parser("download")
@@ -384,6 +505,7 @@ def build_parser() -> argparse.ArgumentParser:
     download.add_argument("--output-root", required=True)
     download.add_argument("--item-id")
     download.add_argument("--title")
+    download.add_argument("--cookies-browser", default="")
     download.set_defaults(func=command_download)
     return parser
 

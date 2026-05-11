@@ -40,7 +40,8 @@ body {
 }
 
 button,
-textarea {
+textarea,
+select {
   font: inherit;
 }
 
@@ -50,7 +51,8 @@ button {
 }
 
 button:focus-visible,
-textarea:focus-visible {
+textarea:focus-visible,
+select:focus-visible {
   outline: 2px solid rgba(255, 255, 255, 0.45);
   outline-offset: 2px;
 }
@@ -514,7 +516,8 @@ button:disabled {
   grid-area: preset;
 }
 
-.preset-chip select {
+.preset-chip select,
+.access-chip select {
   appearance: none;
   -webkit-appearance: none;
   border: 1px solid var(--border-strong);
@@ -531,7 +534,20 @@ button:disabled {
   transition: color 0.12s ease, background 0.12s ease, border-color 0.12s ease;
 }
 
-.preset-chip::after {
+.access-chip {
+  position: relative;
+  display: inline-flex;
+}
+
+.access-chip select {
+  color: var(--text-muted);
+  letter-spacing: 0.01em;
+  text-transform: none;
+  max-width: 132px;
+}
+
+.preset-chip::after,
+.access-chip::after {
   content: "";
   position: absolute;
   right: 11px;
@@ -544,13 +560,15 @@ button:disabled {
   pointer-events: none;
 }
 
-.preset-chip select:hover:not(:disabled) {
+.preset-chip select:hover:not(:disabled),
+.access-chip select:hover:not(:disabled) {
   color: var(--text);
   background: var(--fill-tertiary);
   border-color: var(--border-strong);
 }
 
-.preset-chip select:disabled {
+.preset-chip select:disabled,
+.access-chip select:disabled {
   opacity: 0.5;
   cursor: not-allowed;
 }

@@ -1,4 +1,4 @@
-const URL_PATTERN = /(?<![a-z0-9._%+-])(?:https?:\/\/|www\.)[^\s<>"'`]+|(?<![@a-z0-9._%+-])\b[a-z0-9][a-z0-9-]*(?:\.[a-z0-9][a-z0-9-]*)+(?:\/[^\s<>"'`]*)?/gi;
+const URL_PATTERN = /(?<![a-z0-9._%+-])magnet:\?[^\s<>"'`]+|(?<![a-z0-9._%+-])(?:https?:\/\/|www\.)[^\s<>"'`]+|(?<![@a-z0-9._%+-])\b[a-z0-9][a-z0-9-]*(?:\.[a-z0-9][a-z0-9-]*)+(?:\/[^\s<>"'`]*)?/gi;
 
 const TRAILING_PUNCTUATION = /[)\]}.,!?;:]+$/;
 const LEADING_PUNCTUATION = /^[([{<>"'`]+/;
@@ -34,6 +34,15 @@ function stripWrappingPunctuation(value: string): string {
 export function normalizeUrlCandidate(value: string): string | null {
   const trimmed = stripWrappingPunctuation(value);
   if (!trimmed) return null;
+
+  if (/^magnet:\?/i.test(trimmed)) {
+    try {
+      const parsed = new URL(trimmed);
+      return parsed.protocol === "magnet:" && parsed.searchParams.has("xt") ? parsed.toString() : null;
+    } catch {
+      return null;
+    }
+  }
 
   const hasExplicitProtocol = /^https?:\/\//i.test(trimmed);
   const candidate = hasExplicitProtocol ? trimmed : `https://${trimmed}`;

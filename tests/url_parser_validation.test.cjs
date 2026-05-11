@@ -90,6 +90,20 @@ test("extractUrls still accepts supported bare domains after punctuation", () =>
   );
 });
 
+test("extractUrls accepts magnet links", () => {
+  assert.deepEqual(
+    Array.from(extractUrls("magnet:?xt=urn:btih:0123456789abcdef0123456789abcdef01234567&dn=Example")),
+    ["magnet:?xt=urn:btih:0123456789abcdef0123456789abcdef01234567&dn=Example"],
+  );
+});
+
+test("extractUrls accepts torrent URLs", () => {
+  assert.deepEqual(
+    Array.from(extractUrls("https://example.com/file.torrent")),
+    ["https://example.com/file.torrent"],
+  );
+});
+
 test("normalizeUrlCandidate rejects non-web protocols", () => {
   assert.equal(normalizeUrlCandidate("file:///tmp/a.png"), null);
 });

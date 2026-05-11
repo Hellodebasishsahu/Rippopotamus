@@ -161,6 +161,8 @@ def command_add(args: argparse.Namespace) -> int:
 
 
 def fetch_metadata(url: str, provider: str = DEFAULT_PROVIDER) -> dict[str, Any]:
+    if provider == "aria2c":
+        return parse_metadata_output(provider, url, "")
     result = run_checked(metadata_command(provider, url))
     return parse_metadata_output(provider, url, result.stdout)
 

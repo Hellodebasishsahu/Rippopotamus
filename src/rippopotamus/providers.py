@@ -54,11 +54,21 @@ PRESETS: dict[str, dict[str, Any]] = {
         "extra": [],
         "extension": None,
     },
+    "torrent": {
+        "provider": "aria2c",
+        "label": "Torrent",
+        "detail": "Magnet or torrent file",
+        "folder": "Files",
+        "format": None,
+        "extra": [],
+        "extension": None,
+    },
 }
 
 PROVIDER_CATALOG: dict[str, dict[str, str]] = {
     "yt-dlp": {"id": "yt-dlp", "label": "Video", "defaultPreset": "mp4-best"},
     "gallery-dl": {"id": "gallery-dl", "label": "Images", "defaultPreset": "gallery"},
+    "aria2c": {"id": "aria2c", "label": "Torrent", "defaultPreset": "torrent"},
 }
 
 PROVIDERS = set(PROVIDER_CATALOG)
@@ -98,6 +108,29 @@ def gallery_dl_base() -> list[str]:
         if executable:
             return [executable]
         raise SystemExit("Missing gallery-dl. Install the Python package or place gallery-dl on PATH.")
+
+
+def aria2c_base() -> list[str]:
+    executable = shutil.which("aria2c")
+    if executable:
+        return [executable]
+    raise SystemExit("Missing aria2c. Install aria2c or place aria2c on PATH.")
+
+
+def torrent_title(url: str) -> str:
+    if url.startswith("magnet:"):
+        from urllib.parse import parse_qs, unquote, urlsplit
+
+        params = parse_qs(urlsplit(url).query)
+        dn = params.get("dn", [""])[0]
+        return unquote(dn).strip() or "Magnet download"
+    try:
+        from urllib.parse import unquote, urlsplit
+
+        name = Path(unquote(urlsplit(url).path)).name
+        return name or "Torrent download"
+    except Exception:
+        return "Torrent download"
 
 
 def yt_dlp_base(context: ProviderContext | None = None) -> list[str]:
@@ -141,6 +174,8 @@ def metadata_command(provider: str, url: str, context: ProviderContext | None = 
         return [*yt_dlp_run(context), "--dump-single-json", "--skip-download", "--no-playlist", "--ignore-no-formats-error", url]
     if provider == "gallery-dl":
         return [*gallery_dl_base(), "--dump-json", url]
+    if provider == "aria2c":
+        return []
     raise SystemExit(f"Unknown provider `{provider}`.")
 
 
@@ -156,6 +191,28 @@ def download_command(
         raise SystemExit(f"Unknown preset `{preset}`.")
 
     spec = PRESETS[preset]
+    if spec["provider"] == "aria2c":
+        if output_dir is None:
+            raise SystemExit("Torrent downloads need an output directory.")
+        aria_state_dir = Path(output_dir).parent / ".aria2"
+        aria_state_dir.mkdir(parents=True, exist_ok=True)
+        return [
+            *aria2c_base(),
+            "--dir",
+            str(output_dir),
+            "--follow-torrent=mem",
+            "--seed-time=0",
+            "--dht-file-path",
+            str(aria_state_dir / "dht.dat"),
+            "--dht-file-path6",
+            str(aria_state_dir / "dht6.dat"),
+            "--max-tries=3",
+            "--retry-wait=3",
+            "--summary-interval=1",
+            "--console-log-level=notice",
+            "--enable-color=false",
+            url,
+        ]
     if spec["provider"] == "gallery-dl":
         if output_dir is None:
             raise SystemExit("Gallery downloads need an output directory.")
@@ -291,10 +348,13 @@ def parse_metadata_output(provider: str, url: str, output: str) -> dict[str, Any
         return metadata_from_media_raw(json.loads(output), url, provider)
     if provider == "gallery-dl":
         return metadata_from_media_raw(first_json_metadata(output), url, provider)
+    if provider == "aria2c":
+        return metadata_from_media_raw({"title": torrent_title(url), "extractor": "Torrent", "webpage_url": url}, url, provider)
     raise SystemExit(f"Unknown provider `{provider}`.")
 
 
 def friendly_error(message: str) -> str:
+    lower = message.lower()
     if "Unsupported URL" in message:
         return "unsupported URL"
     if "Video unavailable" in message:
@@ -307,6 +367,12 @@ def friendly_error(message: str) -> str:
         return "media not found"
     if "Requested format is not available" in message:
         return "selected format is not available for this link"
-    if "timed out" in message.lower():
+    if "status=500" in lower or "response status is not successful" in lower:
+        return "source server returned 500 while downloading. retry later or use another source."
+    if "download aborted" in lower:
+        return "torrent download aborted. retry later or use another source."
+    if "dht routing table" in lower:
+        return "torrent routing cache was unreadable. retry the download."
+    if "timed out" in lower:
         return "request timed out"
     return message.splitlines()[-1][:240] if message else "unknown error"

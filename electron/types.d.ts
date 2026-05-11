@@ -4,12 +4,13 @@ declare global {
   interface Window {
     rippo: {
       health: () => Promise<EngineHealth>;
-      fetch: (url: string, provider?: ProviderId) => Promise<FetchResponse>;
+      fetch: (url: string, provider?: ProviderId | "auto", cookieSource?: CookieSource) => Promise<FetchResponse>;
       download: (payload: DownloadRequest) => Promise<DownloadResponse>;
       openFolder: (folder: string) => Promise<void>;
       openExternal: (url: string) => Promise<void>;
       loadThumbnail: (urls: string[]) => Promise<ThumbnailLoadResult>;
       listBrowsers: () => Promise<CookiesBrowserResponse>;
+      setDefaultCookieSource: (source: CookieSource) => Promise<CookiesBrowserResponse>;
       setCookiesBrowser: (browserId: string | null) => Promise<CookiesBrowserResponse>;
       checkYtDlpUpdate: () => Promise<YtDlpUpdateInfo>;
       updateYtDlp: () => Promise<YtDlpUpdateResult>;
@@ -31,12 +32,17 @@ export type EngineHealth = {
   galleryDlPath?: string | null;
   galleryDlOk?: boolean;
   galleryDlError?: string | null;
+  aria2c?: string | null;
+  aria2cPath?: string | null;
+  aria2cOk?: boolean;
+  aria2cError?: string | null;
   ffmpeg?: string | null;
   ffmpegOk?: boolean;
   ffmpegVersion?: string | null;
   cookiesBrowser?: string | null;
   cookiesSupported?: boolean;
   cookiesBrowsers?: BrowserInfo[];
+  cookieSource?: CookieSource;
   cookies?: CookiesHealth;
   providers?: ProviderOption[];
   presets?: PresetOption[];
@@ -46,6 +52,13 @@ export type EngineHealth = {
 };
 
 export type BrowserInfo = { id: string; label: string; appPath: string };
+
+export type CookieSource = {
+  mode: "off";
+} | {
+  mode: "browser";
+  browserId: string;
+};
 
 export type ProviderId = string;
 
@@ -77,6 +90,7 @@ export type CookiesHealth = {
 export type CookiesBrowserResponse = {
   browsers: BrowserInfo[];
   selected: string | null;
+  source: CookieSource;
   supported: boolean;
 };
 
@@ -128,6 +142,7 @@ export type DownloadRequest = {
   outputRoot?: string;
   itemId?: string;
   title?: string;
+  cookieSource?: CookieSource;
 };
 
 export type DownloadResponse = {

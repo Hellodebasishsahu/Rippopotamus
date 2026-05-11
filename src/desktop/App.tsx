@@ -1,6 +1,6 @@
 import { Cookie, Download, ExternalLink, FolderOpen, FolderSearch, ImageOff, Link2, Loader2, RefreshCcw, RotateCcw, Settings, Trash2, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { BrowserInfo, DownloadEvent, EngineHealth, FetchResponse, GalleryDlUpdateInfo, PresetOption, ProviderId, ProviderOption, YtDlpUpdateInfo } from "../../electron/types";
+import type { BrowserInfo, CookieSource, DownloadEvent, EngineHealth, FetchResponse, GalleryDlUpdateInfo, PresetOption, ProviderId, ProviderOption, YtDlpUpdateInfo } from "../../electron/types";
 import { extractUrls } from "./urlParser";
 
 type QueueItem = {
@@ -18,7 +18,11 @@ type QueueItem = {
   files?: string[];
   jobId?: string;
   notices?: { level: "warning" | "error"; message: string }[];
+  cookieSource: CookieSource;
 };
+
+const AUTO_PROVIDER = "auto";
+const COOKIE_OFF: CookieSource = { mode: "off" };
 
 function formatDuration(seconds?: number) {
   if (!seconds) return "Unknown length";
@@ -42,6 +46,10 @@ function sourceUrl(item: QueueItem) {
 
 function providerForItem(item: QueueItem, presets: PresetOption[], providers: ProviderOption[]): ProviderId {
   return item.metadata?.provider || presets.find((preset) => preset.id === item.preset)?.provider || providers[0]?.id || "";
+}
+
+function itemSupportsBrowserAccess(item: QueueItem, presets: PresetOption[], providers: ProviderOption[]): boolean {
+  return item.status === "queued" || item.status === "fetching" || item.status === "failed" || providerForItem(item, presets, providers) === "yt-dlp";
 }
 
 function defaultPresetForProvider(provider: ProviderId, providers: ProviderOption[]): string {
@@ -77,6 +85,26 @@ function updaterErrorMessage(error: unknown, tool: "yt-dlp" | "gallery-dl"): str
     return `Restart Rippopotamus to load the ${tool} updater.`;
   }
   return message;
+}
+
+function cookieSourceValue(source: CookieSource | null | undefined): string {
+  return source?.mode === "browser" ? `browser:${source.browserId}` : "off";
+}
+
+function cookieSourceFromValue(value: string): CookieSource {
+  if (value.startsWith("browser:")) return { mode: "browser", browserId: value.slice("browser:".length) };
+  return COOKIE_OFF;
+}
+
+function cookieSourceFromResponse(source: CookieSource | undefined, selected: string | null | undefined): CookieSource {
+  if (source) return source;
+  return selected ? { mode: "browser", browserId: selected } : COOKIE_OFF;
+}
+
+function browserAccessLabel(source: CookieSource, browsers: BrowserInfo[]): string {
+  if (source.mode === "off") return "No login";
+  const browser = browsers.find((candidate) => candidate.id === source.browserId);
+  return browser ? `${browser.label} login` : "Browser login";
 }
 
 function fetchErrorMessage(error: unknown): string {
@@ -116,6 +144,18 @@ function galleryDlPathText(update: GalleryDlUpdateInfo | null, health: EngineHea
   if (health?.galleryDlPath) return health.galleryDlPath;
   if (health?.galleryDl) return "Using the bundled Python gallery-dl package.";
   return "Rippopotamus will use its managed gallery-dl when installed.";
+}
+
+function aria2cStatusText(health: EngineHealth | null, healthError: string | null): string {
+  if (health?.aria2c) return `Installed: ${health.aria2c}`;
+  if (health?.aria2cOk === false) return "Missing";
+  if (healthError) return "Engine unavailable";
+  return "Checking...";
+}
+
+function aria2cPathText(health: EngineHealth | null): string {
+  if (health?.aria2cPath) return health.aria2cPath;
+  return "Install aria2c to save magnet links and torrent files.";
 }
 
 function thumbnailUrls(item: QueueItem): string[] {
@@ -184,12 +224,12 @@ export function App() {
   const [health, setHealth] = useState<EngineHealth | null>(null);
   const [healthError, setHealthError] = useState<string | null>(null);
   const [input, setInput] = useState("");
-  const [fetchProvider, setFetchProvider] = useState<ProviderId>("");
+  const [fetchProvider, setFetchProvider] = useState<ProviderId | typeof AUTO_PROVIDER>(AUTO_PROVIDER);
   const [items, setItems] = useState<QueueItem[]>([]);
   const [outputRoot, setOutputRoot] = useState("");
   const [busy, setBusy] = useState(false);
   const [browsers, setBrowsers] = useState<BrowserInfo[]>([]);
-  const [cookiesBrowser, setCookiesBrowser] = useState<string | null>(null);
+  const [cookieSource, setCookieSource] = useState<CookieSource>(COOKIE_OFF);
   const [ytDlpUpdate, setYtDlpUpdate] = useState<YtDlpUpdateInfo | null>(null);
   const [ytDlpStatus, setYtDlpStatus] = useState<"idle" | "checking" | "updating">("idle");
   const [ytDlpError, setYtDlpError] = useState<string | null>(null);
@@ -210,15 +250,17 @@ export function App() {
     if (!rippo) return;
     rippo.listBrowsers().then((result) => {
       setBrowsers(result.browsers);
-      setCookiesBrowser(result.selected);
+      setCookieSource(cookieSourceFromResponse(result.source, result.selected));
     }).catch(() => undefined);
   }, [rippo]);
 
-  async function changeCookiesBrowser(value: string) {
+  async function changeDefaultCookieSource(value: string) {
     if (!rippo) return;
-    const next = value === "none" ? null : value;
-    const result = await rippo.setCookiesBrowser(next);
-    setCookiesBrowser(result.selected);
+    const next = cookieSourceFromValue(value);
+    const result = typeof rippo.setDefaultCookieSource === "function"
+      ? await rippo.setDefaultCookieSource(next)
+      : await rippo.setCookiesBrowser(next.mode === "browser" ? next.browserId : null);
+    setCookieSource(cookieSourceFromResponse(result.source, result.selected));
     try {
       const nextHealth = await rippo.health();
       setHealth(nextHealth);
@@ -331,7 +373,7 @@ export function App() {
   const detectedCount = useMemo(() => extractUrls(input).length, [input]);
   const providerOptions = health?.providers || [];
   const presetOptions = health?.presets || [];
-  const selectedFetchProvider = fetchProvider || providerOptions[0]?.id || "";
+  const selectedFetchProvider = fetchProvider || AUTO_PROVIDER;
 
   useEffect(() => {
     if (!rippo) {
@@ -348,7 +390,7 @@ export function App() {
 
   useEffect(() => {
     if (!providerOptions.length) return;
-    setFetchProvider((current) => providerOptions.some((provider) => provider.id === current) ? current : providerOptions[0].id);
+    setFetchProvider((current) => current === AUTO_PROVIDER || providerOptions.some((provider) => provider.id === current) ? current : AUTO_PROVIDER);
   }, [providerOptions]);
 
   useEffect(() => {
@@ -358,7 +400,8 @@ export function App() {
         if (item.jobId !== event.jobId) return item;
         if (event.type === "notice") {
           const notice = { level: event.level || "warning", message: event.message || "" };
-          return { ...item, notices: [...(item.notices || []), notice] };
+          const notices = [...(item.notices || []), notice];
+          return { ...item, notices, finalizing: notice.level === "error" ? false : item.finalizing };
         }
         if (event.type === "phase") {
           return { ...item, phase: event.kind, phaseIndex: (item.phaseIndex || 0) + 1, progress: 0, finalizing: false };
@@ -387,11 +430,13 @@ export function App() {
     const urls = extractUrls(input);
     if (!urls.length || !rippo || !selectedFetchProvider) return;
     const provider = selectedFetchProvider;
+    const initialPreset = provider === AUTO_PROVIDER ? "" : defaultPresetForProvider(provider, providerOptions);
+    const initialCookieSource = cookieSource;
 
     const existing = new Set(items.map((item) => item.url));
     const fresh = urls
       .filter((url) => !existing.has(url))
-      .map((url) => ({ localId: crypto.randomUUID().slice(0, 10), url, status: "queued" as const, preset: defaultPresetForProvider(provider, providerOptions) }));
+      .map((url) => ({ localId: crypto.randomUUID().slice(0, 10), url, status: "queued" as const, preset: initialPreset, cookieSource: initialCookieSource }));
 
     setInput("");
     setItems((current) => [...fresh, ...current]);
@@ -399,9 +444,10 @@ export function App() {
     for (const item of fresh) {
       setItems((current) => current.map((candidate) => candidate.localId === item.localId ? { ...candidate, status: "fetching" } : candidate));
       try {
-        const result = await rippo.fetch(item.url, provider);
+        const result = await rippo.fetch(item.url, provider, item.cookieSource);
         if (result.ok) {
-          setItems((current) => current.map((candidate) => candidate.localId === item.localId ? { ...candidate, status: "ready", preset: defaultPresetForProvider(result.metadata.provider || provider, providerOptions), metadata: result.metadata, error: undefined } : candidate));
+          const resolvedProvider = result.metadata.provider || (provider === AUTO_PROVIDER ? providerOptions[0]?.id : provider) || "";
+          setItems((current) => current.map((candidate) => candidate.localId === item.localId ? { ...candidate, status: "ready", preset: defaultPresetForProvider(resolvedProvider, providerOptions), metadata: result.metadata, error: undefined } : candidate));
         } else {
           setItems((current) => current.map((candidate) => candidate.localId === item.localId ? { ...candidate, status: "failed", error: fetchErrorMessage(result.error) } : candidate));
         }
@@ -425,6 +471,7 @@ export function App() {
           outputRoot,
           itemId: item.localId,
           title: item.metadata?.title || item.localId,
+          cookieSource: item.cookieSource,
         });
         const result = response.result as { type?: string; files?: string[] } | undefined;
         if (result?.type === "success") {
@@ -445,7 +492,7 @@ export function App() {
     if (!provider) return;
     setItems((current) => current.map((candidate) => candidate.localId === item.localId ? { ...candidate, status: "fetching", error: undefined, notices: [] } : candidate));
     try {
-      const result = await rippo.fetch(item.url, provider);
+      const result = await rippo.fetch(item.url, provider, item.cookieSource);
       if (result.ok) {
         setItems((current) => current.map((candidate) => candidate.localId === item.localId ? { ...candidate, status: "ready", preset: defaultPresetForProvider(result.metadata.provider || provider, providerOptions), metadata: result.metadata, error: undefined } : candidate));
       } else {
@@ -462,6 +509,10 @@ export function App() {
 
   function setItemPreset(id: string, preset: string) {
     setItems((current) => current.map((item) => item.localId === id ? { ...item, preset } : item));
+  }
+
+  function setItemCookieSource(id: string, source: CookieSource) {
+    setItems((current) => current.map((item) => item.localId === id ? { ...item, cookieSource: source } : item));
   }
 
   function openSource(item: QueueItem) {
@@ -512,11 +563,12 @@ export function App() {
                   <select
                     className="provider-select"
                     value={selectedFetchProvider}
-                    onChange={(event) => setFetchProvider(event.target.value as ProviderId)}
+                    onChange={(event) => setFetchProvider(event.target.value as ProviderId | typeof AUTO_PROVIDER)}
                     disabled={!providerOptions.length}
                     aria-label="Source type"
                   >
                     {providerOptions.length === 0 ? <option value="">Loading</option> : null}
+                    {providerOptions.length > 0 ? <option value={AUTO_PROVIDER}>Auto</option> : null}
                     {providerOptions.map((option) => (
                       <option key={option.id} value={option.id}>{option.label}</option>
                     ))}
@@ -551,6 +603,7 @@ export function App() {
               } else {
                 statusText = statusLabels[item.status];
               }
+              const showBrowserAccess = browsers.length > 0 && itemSupportsBrowserAccess(item, presetOptions, providerOptions);
               return (
                 <article key={item.localId} className={`queue-item ${item.status}`}>
                   <button type="button" className="thumb" onClick={() => openSource(item)} aria-label="Open source page" title="Open source page">
@@ -585,6 +638,21 @@ export function App() {
                           ))}
                         </select>
                       </div>
+                      {showBrowserAccess ? (
+                        <div className="access-chip" title={browserAccessLabel(item.cookieSource, browsers)}>
+                          <select
+                            value={cookieSourceValue(item.cookieSource)}
+                            onChange={(event) => setItemCookieSource(item.localId, cookieSourceFromValue(event.target.value))}
+                            disabled={item.status === "downloading" || item.status === "done"}
+                            aria-label="Private-site access"
+                          >
+                            <option value="off">No login</option>
+                            {browsers.map((browser) => (
+                              <option key={browser.id} value={`browser:${browser.id}`}>{browser.label} login</option>
+                            ))}
+                          </select>
+                        </div>
+                      ) : null}
                       <span className="foot-spacer" />
                       <button type="button" className="icon-btn" onClick={() => refetch(item)} disabled={item.status === "fetching" || item.status === "downloading"} title="Refetch" aria-label="Refetch">
                         <RefreshCcw size={16} strokeWidth={2} aria-hidden />
@@ -647,23 +715,24 @@ export function App() {
             <section className="settings-section">
               <div className="settings-row-head">
                 <Cookie size={14} strokeWidth={2} aria-hidden />
-                <h3 className="settings-row-title">Cookies</h3>
+                <h3 className="settings-row-title">Private sites</h3>
               </div>
-              <p className="settings-hint">Use local browser cookies through yt-dlp. Cookies stay on this Mac and are not uploaded.</p>
+              <p className="settings-hint">Choose a browser only for links that need your signed-in access. Cookies stay on this Mac.</p>
               <select
                 className="settings-select"
-                value={cookiesBrowser || "none"}
-                onChange={(event) => changeCookiesBrowser(event.target.value)}
-                disabled={!rippo || browsers.length === 0}
-                aria-label="Cookies source browser"
+                value={cookieSourceValue(cookieSource)}
+                onChange={(event) => changeDefaultCookieSource(event.target.value)}
+                disabled={!rippo}
+                aria-label="Default private-site access"
               >
-                <option value="none">Off</option>
+                <option value="off">No login</option>
                 {browsers.map((browser) => (
-                  <option key={browser.id} value={browser.id}>{browser.label}</option>
+                  <option key={browser.id} value={`browser:${browser.id}`}>Use {browser.label} login</option>
                 ))}
               </select>
+              {!browsers.length ? <p className="settings-hint">No supported browser was found.</p> : null}
               {health?.cookies?.status === "error" ? (
-                <p className="settings-warning" title={health.cookies.message || undefined}>Cookie access failed — {health.cookies.message}</p>
+                <p className="settings-warning" title={health.cookies.message || undefined}>Browser login failed — {health.cookies.message}</p>
               ) : null}
             </section>
 
@@ -728,6 +797,17 @@ export function App() {
                 {galleryDlUpdate && !galleryDlUpdate.updateAvailable && !galleryDlError ? (
                   <p className="settings-hint">gallery-dl is current{galleryDlUpdate.latestVersion ? ` (${galleryDlUpdate.latestVersion})` : ""}.</p>
                 ) : null}
+                <div className="settings-engine-row settings-engine-row-spaced">
+                  <div className="settings-engine-copy">
+                    <p className="settings-engine-name">Torrents</p>
+                    <p className="settings-hint">aria2c</p>
+                  </div>
+                  <span className="settings-version">{aria2cStatusText(health, healthError)}</span>
+                </div>
+                <p className="settings-hint" title={health?.aria2cPath || undefined}>
+                  {aria2cPathText(health)}
+                </p>
+                {health?.aria2cError ? <p className="settings-warning">{health.aria2cError}</p> : null}
               </div>
             </section>
           </div>

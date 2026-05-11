@@ -3,7 +3,14 @@ import path from "node:path";
 import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import fs from "node:fs";
-import { validateCookiesBrowserId, type BrowserInfo } from "./cookies";
+import {
+  cookieSourceBrowserId,
+  cookieSourceFromBrowserId,
+  validateCookieSource,
+  validateCookiesBrowserId,
+  type BrowserInfo,
+  type CookieSource,
+} from "./cookies";
 import { loadThumbnail } from "./thumbnails";
 
 let mainWindow: BrowserWindow | null = null;
@@ -34,6 +41,7 @@ function appManagedGalleryDlRoot(): string {
 }
 
 type Settings = {
+  cookieSource?: CookieSource;
   cookiesBrowser?: string;
   outputRoot?: string;
 };
@@ -114,14 +122,30 @@ function cookiesSupported(): boolean {
   return process.platform === "darwin";
 }
 
-function selectedCookiesBrowser(): string | null {
-  const selected = readSettings().cookiesBrowser;
-  if (!selected) return null;
+function defaultCookieSource(browsers: BrowserInfo[] = detectBrowsers()): CookieSource {
+  const settings = readSettings();
   try {
-    return validateCookiesBrowserId(selected, detectBrowsers());
+    if (settings.cookieSource) return validateCookieSource(settings.cookieSource, browsers);
+    if (settings.cookiesBrowser) return cookieSourceFromBrowserId(settings.cookiesBrowser, browsers);
   } catch {
-    return null;
+    return { mode: "off" };
   }
+  return { mode: "off" };
+}
+
+function cookieSourceArgs(source: CookieSource): string[] {
+  if (source.mode !== "browser") return [];
+  return ["--cookies-browser", source.browserId];
+}
+
+function cookiesResponse(browsers: BrowserInfo[] = detectBrowsers()) {
+  const source = defaultCookieSource(browsers);
+  return {
+    browsers,
+    selected: cookieSourceBrowserId(source),
+    source,
+    supported: cookiesSupported(),
+  };
 }
 
 function normalizeVersion(value: string | null | undefined): string | null {
@@ -336,14 +360,12 @@ function engineEnv(): NodeJS.ProcessEnv {
   const managedGalleryDlRoot = appManagedGalleryDlRoot();
   const bundledFfmpeg = ffmpegPath();
   fs.mkdirSync(path.dirname(appManagedYtDlpPath()), { recursive: true });
-  const selectedBrowser = selectedCookiesBrowser();
   return {
     ...process.env,
     PYTHONPATH: [fs.existsSync(managedGalleryDlRoot) ? managedGalleryDlRoot : null, pythonPath, process.env.PYTHONPATH].filter(Boolean).join(path.delimiter),
     RIPPO_FFMPEG_PATH: bundledFfmpeg || process.env.RIPPO_FFMPEG_PATH || "",
     RIPPO_YTDLP_PATH: process.env.RIPPO_YTDLP_PATH || appManagedYtDlpPath(),
     RIPPO_GALLERYDL_ROOT: fs.existsSync(managedGalleryDlRoot) ? managedGalleryDlRoot : "",
-    RIPPO_COOKIES_FROM_BROWSER: selectedBrowser || process.env.RIPPO_COOKIES_FROM_BROWSER || "",
   };
 }
 
@@ -440,6 +462,20 @@ function currentOutputRoot(): string {
   return defaultOutputRoot();
 }
 
+async function engineHealthPayload(): Promise<Record<string, unknown>> {
+  const browsers = detectBrowsers();
+  const source = defaultCookieSource(browsers);
+  return {
+    ...((await runEngine(["health", ...cookieSourceArgs(source)])) as Record<string, unknown>),
+    cookiesSupported: cookiesSupported(),
+    cookiesBrowsers: browsers,
+    cookiesBrowser: cookieSourceBrowserId(source),
+    cookieSource: source,
+    outputRoot: currentOutputRoot(),
+    packaged: app.isPackaged,
+  };
+}
+
 function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1180,
@@ -466,18 +502,13 @@ function createWindow() {
 }
 
 app.whenReady().then(() => {
-  ipcMain.handle("engine:health", async () => ({
-    ...((await runEngine(["health"])) as Record<string, unknown>),
-    cookiesSupported: cookiesSupported(),
-    cookiesBrowsers: detectBrowsers(),
-    cookiesBrowser: selectedCookiesBrowser(),
-    outputRoot: currentOutputRoot(),
-    packaged: app.isPackaged,
-  }));
+  ipcMain.handle("engine:health", async () => engineHealthPayload());
 
-  ipcMain.handle("engine:fetch", async (_event, url: string, provider?: string) => {
+  ipcMain.handle("engine:fetch", async (_event, url: string, provider?: string, cookieSourceInput?: unknown) => {
+    const cookieSource = validateCookieSource(cookieSourceInput, detectBrowsers());
     const args = ["fetch", "--url", url];
     if (provider) args.push("--provider", provider);
+    args.push(...cookieSourceArgs(cookieSource));
     try {
       return await runEngine(args);
     } catch (error) {
@@ -490,7 +521,8 @@ app.whenReady().then(() => {
     }
   });
 
-  ipcMain.handle("engine:download", async (event, payload: { url: string; preset: string; outputRoot?: string; itemId?: string; title?: string }) => {
+  ipcMain.handle("engine:download", async (event, payload: { url: string; preset: string; outputRoot?: string; itemId?: string; title?: string; cookieSource?: unknown }) => {
+    const cookieSource = validateCookieSource(payload.cookieSource, detectBrowsers());
     const jobId = payload.itemId || randomUUID();
     const outputRoot = payload.outputRoot || currentOutputRoot();
     fs.mkdirSync(outputRoot, { recursive: true });
@@ -506,6 +538,7 @@ app.whenReady().then(() => {
       payload.itemId || jobId.slice(0, 10),
       "--title",
       payload.title || "",
+      ...cookieSourceArgs(cookieSource),
     ];
     const result = await runEngine(args, (engineEvent) => {
       event.sender.send("engine:download-event", { jobId, ...engineEvent as Record<string, unknown> });
@@ -543,17 +576,27 @@ app.whenReady().then(() => {
   });
 
   ipcMain.handle("cookies:list-browsers", async () => {
-    return { browsers: detectBrowsers(), selected: selectedCookiesBrowser(), supported: cookiesSupported() };
+    return cookiesResponse();
+  });
+
+  ipcMain.handle("cookies:set-default-source", async (_event, sourceInput: unknown) => {
+    const browsers = detectBrowsers();
+    const source = validateCookieSource(sourceInput, browsers);
+    const settings = readSettings();
+    settings.cookieSource = source;
+    delete settings.cookiesBrowser;
+    writeSettings(settings);
+    return cookiesResponse(browsers);
   });
 
   ipcMain.handle("cookies:set-browser", async (_event, browserId: string | null) => {
     const browsers = detectBrowsers();
     const selected = validateCookiesBrowserId(browserId, browsers);
     const settings = readSettings();
-    if (selected) settings.cookiesBrowser = selected;
-    else delete settings.cookiesBrowser;
+    settings.cookieSource = selected ? { mode: "browser", browserId: selected } : { mode: "off" };
+    delete settings.cookiesBrowser;
     writeSettings(settings);
-    return { selected: selectedCookiesBrowser(), supported: cookiesSupported(), browsers };
+    return cookiesResponse(browsers);
   });
 
   ipcMain.handle("thumbnail:load", async (_event, urls: unknown) => {
@@ -568,11 +611,7 @@ app.whenReady().then(() => {
     const update = await checkYtDlpUpdate();
     if (!update.downloadUrl) throw new Error("No yt-dlp download URL is available.");
     await installYtDlpUpdate(update.downloadUrl);
-    const health = {
-      ...((await runEngine(["health"])) as Record<string, unknown>),
-      outputRoot: currentOutputRoot(),
-      packaged: app.isPackaged,
-    };
+    const health = await engineHealthPayload();
     return {
       ...(await checkYtDlpUpdate()),
       health,
@@ -587,11 +626,7 @@ app.whenReady().then(() => {
     const update = await checkGalleryDlUpdate();
     if (!update.latestVersion) throw new Error("No gallery-dl version is available.");
     await installGalleryDlUpdate(update.latestVersion);
-    const health = {
-      ...((await runEngine(["health"])) as Record<string, unknown>),
-      outputRoot: currentOutputRoot(),
-      packaged: app.isPackaged,
-    };
+    const health = await engineHealthPayload();
     return {
       ...(await checkGalleryDlUpdate()),
       health,
