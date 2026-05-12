@@ -5,12 +5,20 @@ node_modules/
 .venv/
 .build-venv/
 .prototype/
+.playwright-mcp/
+.pytest_cache/
 dist/
 dist-electron/
 release/
 build/
 downloads/
+scratch/
+coverage/
+*.log
 *.pyc
 __pycache__/
+*.sqlite3
+experiments/out/
+experiments/**/runs/
 
 *.egg-info/
