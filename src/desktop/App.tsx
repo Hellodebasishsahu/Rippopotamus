@@ -1,6 +1,9 @@
-import { Cookie, Download, ExternalLink, FolderOpen, FolderSearch, ImageOff, Link2, Loader2, Radar as RadarIcon, RefreshCcw, RotateCcw, Search, Settings, Trash2, X } from "lucide-react";
+import { Cookie, Download, ExternalLink, FileAudio, Film, FolderOpen, FolderSearch, Image as ImageIcon, Loader2, Monitor, Play, Radar as RadarIcon, RefreshCcw, RotateCcw, Search, Trash2, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { BrowserInfo, CookieSource, DownloadEvent, EngineHealth, FetchResponse, GalleryDlUpdateInfo, IndexSearchResponse, IndexSearchResult, IndexStatusResponse, OpenRouterModelCatalog, PresetOption, ProviderId, ProviderOption, SourceSearchPack, SourceSearchResponse, SourceSearchResult, YtDlpUpdateInfo } from "../../electron/types";
+import type { BrowserInfo, CookieSource, DownloadEvent, EngineHealth, FetchResponse, GalleryDlUpdateInfo, IndexIngestLimits, IndexIngestSettings, IndexSearchResponse, IndexSearchResult, IndexStatusResponse, OpenRouterModelCatalog, PresetOption, ProviderId, ProviderOption, SourceSearchPack, SourceSearchResponse, SourceSearchResult, YtDlpUpdateInfo } from "../../electron/types";
+import { AppHeader } from "./components/AppHeader";
+import { QueueCard } from "./components/QueueCard";
+import { SourceSearchPanel } from "./components/SourceSearchPanel";
 import { extractUrls } from "./urlParser";
 
 type QueueItem = {
@@ -31,8 +34,87 @@ type ComposerAction = {
   countSuffix?: string;
 };
 
+type SearchScope = "library" | "web";
+
 const AUTO_PROVIDER = "auto";
 const COOKIE_OFF: CookieSource = { mode: "off" };
+const DEFAULT_INDEX_INGEST_LIMITS: IndexIngestLimits = {
+  provider: "gemini",
+  label: "Gemini Embedding 2",
+  model: "gemini-embedding-2",
+  videoSeconds: 120,
+  recommendedDimensions: [768, 1536, 3072],
+  chunkDuration: { min: 5, max: 120, step: 5, default: 30 },
+  overlap: { min: 0, max: 29, step: 1, default: 5 },
+  targetResolution: { min: 144, max: 1080, step: 16, default: 480 },
+  targetFps: { min: 1, max: 15, step: 1, default: 5 },
+};
+const DEFAULT_INDEX_INGEST_SETTINGS: IndexIngestSettings = {
+  provider: "gemini",
+  chunkDuration: 30,
+  overlap: 5,
+  preprocess: true,
+  skipStill: true,
+  targetResolution: 480,
+  targetFps: 5,
+};
+const GEMINI_VIDEO_EMBED_USD_PER_FRAME = 0.00079;
+const USD_TO_INR_ESTIMATE = 94.4;
+
+function estimateIngestCostPerHour(settings: Pick<IndexIngestSettings, "chunkDuration" | "overlap" | "targetFps">): number {
+  const step = Math.max(1, settings.chunkDuration - settings.overlap);
+  const overlapMultiplier = settings.chunkDuration / step;
+  return 3600 * settings.targetFps * GEMINI_VIDEO_EMBED_USD_PER_FRAME * overlapMultiplier;
+}
+
+function formatCostPerHour(value: number): string {
+  if (!Number.isFinite(value) || value <= 0) return "unknown";
+  const inr = value * USD_TO_INR_ESTIMATE;
+  if (inr >= 1000) return `~₹${(inr / 1000).toFixed(1)}k/hr`;
+  if (inr < 100) return `~₹${Math.round(inr)}/hr`;
+  return `~₹${Math.round(inr / 10) * 10}/hr`;
+}
+
+function formatUsdPerHour(value: number): string {
+  if (!Number.isFinite(value) || value <= 0) return "";
+  return `$${value.toFixed(value >= 10 ? 0 : 2)}/hr`;
+}
+
+function presetDetail(settings: Pick<IndexIngestSettings, "chunkDuration" | "overlap" | "targetResolution" | "targetFps">): string {
+  return `${formatCostPerHour(estimateIngestCostPerHour(settings))} · ${settings.targetResolution}p/${settings.targetFps}fps`;
+}
+
+const INGEST_PRESETS: Array<{
+  id: string;
+  name: string;
+  description: string;
+  settings: Pick<IndexIngestSettings, "chunkDuration" | "overlap" | "targetResolution" | "targetFps" | "preprocess" | "skipStill">;
+}> = [
+  {
+    id: "quick",
+    name: "Quick scan",
+    description: "Good for rough search across lots of footage.",
+    settings: { chunkDuration: 60, overlap: 5, targetResolution: 360, targetFps: 3, preprocess: true, skipStill: true },
+  },
+  {
+    id: "balanced",
+    name: "Balanced",
+    description: "Best default for normal clips and saved downloads.",
+    settings: { chunkDuration: 30, overlap: 5, targetResolution: 480, targetFps: 5, preprocess: true, skipStill: true },
+  },
+  {
+    id: "detail",
+    name: "Detail search",
+    description: "Better for faces, signs, text, and small objects.",
+    settings: { chunkDuration: 15, overlap: 5, targetResolution: 720, targetFps: 8, preprocess: true, skipStill: true },
+  },
+  {
+    id: "motion",
+    name: "Fast action",
+    description: "Use when quick cuts or gestures matter.",
+    settings: { chunkDuration: 10, overlap: 4, targetResolution: 720, targetFps: 12, preprocess: true, skipStill: false },
+  },
+];
 const DEFAULT_SOURCE_PACKS: SourceSearchPack[] = [
   { id: "all", label: "All" },
   { id: "movies", label: "Movies and shows" },
@@ -91,9 +173,17 @@ function folderForPath(filePath: string): string {
 }
 
 function indexStatusLine(status: IndexStatusResponse | null): string {
-  if (!status) return "Not indexed yet";
-  if (!status.assetCount && !status.momentCount) return "No footage indexed";
+  if (!status) return "Not scanned yet";
+  if (!status.assetCount && !status.momentCount) return "No saved footage scanned";
+  if (status.momentCount && !status.embeddedMomentCount) return `${status.assetCount} files · scan needed`;
   return `${status.assetCount} files · ${status.momentCount} moments`;
+}
+
+function savedFootageBadge(status: IndexStatusResponse | null): string {
+  if (!status || !status.assetCount) return "No saved footage";
+  if (status.momentCount && !status.embeddedMomentCount) return "Scan needed";
+  if (status.momentCount) return `${status.momentCount} moments`;
+  return "No moments";
 }
 
 function shortUrl(url: string) {
@@ -208,10 +298,50 @@ function cookieSourceFromResponse(source: CookieSource | undefined, selected: st
   return selected ? { mode: "browser", browserId: selected } : COOKIE_OFF;
 }
 
-function browserAccessLabel(source: CookieSource, browsers: BrowserInfo[]): string {
-  if (source.mode === "off") return "No login";
+function cookieAccessLabel(source: CookieSource, browsers: BrowserInfo[]): string {
+  if (source.mode === "off") return "Public links only";
   const browser = browsers.find((candidate) => candidate.id === source.browserId);
-  return browser ? `${browser.label} login` : "Browser login";
+  return browser ? browser.label : "Browser";
+}
+
+function siteAccessStatus(source: CookieSource, browsers: BrowserInfo[], health: EngineHealth | null): { state: "off" | "checking" | "ok" | "error"; label: string; detail: string } {
+  if (source.mode === "off") {
+    return {
+      state: "off",
+      label: "Public only",
+      detail: "Rippo will not use a signed-in browser session.",
+    };
+  }
+
+  const browser = browsers.find((candidate) => candidate.id === source.browserId);
+  const browserName = browser?.label || "Browser";
+  const current = health?.cookies;
+  if (!current || current.browser !== source.browserId) {
+    return {
+      state: "checking",
+      label: "Not checked yet",
+      detail: `${browserName} is selected, but Rippo has not proved it can read that session yet.`,
+    };
+  }
+  if (current.status === "ok") {
+    return {
+      state: "ok",
+      label: "Readable",
+      detail: `${browserName} session is readable for yt-dlp video/audio links.`,
+    };
+  }
+  if (current.status === "error") {
+    return {
+      state: "error",
+      label: "Not readable",
+      detail: "Selected is not the same as working. Try Chrome, close the browser, or grant access.",
+    };
+  }
+  return {
+    state: "checking",
+    label: "Not checked yet",
+    detail: `${browserName} is selected, but access has not been checked yet.`,
+  };
 }
 
 function fetchErrorMessage(error: unknown): string {
@@ -281,6 +411,9 @@ function consumerErrorMessage(message: string, fallback = "Download failed. Try 
   if (lower.includes("missing") && lower.includes("yt-dlp")) {
     return "Video support is not installed yet.";
   }
+  if (lower.includes("gemini_api_key") || lower.includes("google_api_key") || lower.includes("gemini semantic ingestion")) {
+    return "Video indexing needs an API key before it can scan saved clips.";
+  }
   if (!cleaned || TECHNICAL_MESSAGE_PATTERNS.some((pattern) => pattern.test(cleaned))) {
     return fallback;
   }
@@ -328,17 +461,44 @@ function galleryDlPathText(update: GalleryDlUpdateInfo | null, health: EngineHea
   return "Install image support from here.";
 }
 
-function aria2cStatusText(health: EngineHealth | null, healthError: string | null): string {
-  if (health?.torrentOk) return "Ready";
-  if (health?.torrentOk === false) return "Missing";
+function binaryStatusText(ok: boolean | null | undefined, healthError: string | null): string {
+  if (ok === true) return "Ready";
+  if (ok === false) return "Missing";
   if (healthError) return "Unavailable";
   return "Checking...";
 }
 
+function pythonStatusText(health: EngineHealth | null, healthError: string | null): string {
+  if (health?.python) return "Ready";
+  if (healthError) return "Unavailable";
+  return "Checking...";
+}
+
+function pythonPathText(health: EngineHealth | null): string {
+  if (health?.python) return "Runs Rippo's local engine.";
+  return "Python runtime was not reported by the engine.";
+}
+
 function aria2cPathText(health: EngineHealth | null): string {
-  if (health?.torrentEngine === "qbittorrent") return "Ready with enhanced torrent support.";
-  if (health?.torrentEngine === "aria2c") return "Ready to save magnet links and torrent files.";
-  return "Install torrent support to save magnet links and torrent files.";
+  if (health?.aria2cOk) return health.torrentEngine === "aria2c" ? "Active torrent engine." : "Installed torrent fallback.";
+  return "Install aria2c to use it as a torrent fallback.";
+}
+
+function qbittorrentPathText(health: EngineHealth | null): string {
+  if (health?.qBittorrentOk) return health.torrentEngine === "qbittorrent" ? "Active torrent engine." : "Installed torrent engine.";
+  return "Install qBittorrent-nox for enhanced torrent support.";
+}
+
+function ffmpegStatusText(health: EngineHealth | null, healthError: string | null): string {
+  if (health?.ffmpegOk) return "Ready";
+  if (health?.ffmpegOk === false) return "Missing";
+  if (healthError) return "Unavailable";
+  return "Checking...";
+}
+
+function ffmpegPathText(health: EngineHealth | null): string {
+  if (health?.ffmpegOk) return "Ready to merge, convert, and prepare media files.";
+  return "Bundled media processing is not available.";
 }
 
 function openRouterModelText(catalog: OpenRouterModelCatalog | null, health: EngineHealth | null): string {
@@ -405,57 +565,38 @@ function thumbnailUrls(item: QueueItem): string[] {
   return Array.from(new Set(candidates));
 }
 
-function ThumbnailImage({ urls }: { urls: string[] }) {
-  const [src, setSrc] = useState<string | null>(null);
-  const [failed, setFailed] = useState(false);
-  const [loading, setLoading] = useState(false);
-  const [orientation, setOrientation] = useState<"landscape" | "portrait">("landscape");
+function currentIngestPreset(settings: IndexIngestSettings): string {
+  const match = INGEST_PRESETS.find((preset) => (
+    preset.settings.chunkDuration === settings.chunkDuration &&
+    preset.settings.overlap === settings.overlap &&
+    preset.settings.targetResolution === settings.targetResolution &&
+    preset.settings.targetFps === settings.targetFps &&
+    preset.settings.preprocess === settings.preprocess &&
+    preset.settings.skipStill === settings.skipStill
+  ));
+  return match?.id || "custom";
+}
 
-  useEffect(() => {
-    let cancelled = false;
-    setSrc(null);
-    setFailed(false);
-    setLoading(true);
-    setOrientation("landscape");
-
-    window.rippo.loadThumbnail(urls).then((result) => {
-      if (cancelled) return;
-      if (result.src) setSrc(result.src);
-      else setFailed(true);
-    }).catch(() => {
-      if (!cancelled) setFailed(true);
-    }).finally(() => {
-      if (!cancelled) setLoading(false);
-    });
-
-    return () => {
-      cancelled = true;
+function indexEmptyState(indexBusy: "idle" | "ingesting" | "searching", indexSearch: IndexSearchResponse, indexStatus: IndexStatusResponse | null, hasComposerText: boolean): { title: string; detail: string } {
+  if (indexBusy === "searching") {
+    return { title: "Searching saved footage...", detail: "Looking through the saved folder." };
+  }
+  if (indexStatus?.momentCount && !indexStatus.embeddedMomentCount) {
+    return {
+      title: "Scan needed to search inside videos",
+      detail: indexSearch.query ? `Right now Rippo only knows file names. Use Settings > Ingest to search for "${indexSearch.query}" visually.` : "Right now Rippo only knows file names. Use Settings > Ingest to search scenes and speech.",
     };
-  }, [urls.join("\n")]);
-
-  if (loading) {
-    return <Loader2 className="thumb-spinner" size={26} strokeWidth={1.8} aria-hidden />;
   }
-
-  if (failed || !src) {
-    return <ImageOff size={28} strokeWidth={1.5} aria-hidden />;
+  if (indexSearch.query) {
+    return { title: `No matches for "${indexSearch.query}"`, detail: "Try a simpler scene, object, person, or spoken phrase." };
   }
-
-  return (
-    <img
-      className={`thumb-image ${orientation}`}
-      src={src}
-      alt=""
-      onLoad={(event) => {
-        const image = event.currentTarget;
-        setOrientation(image.naturalHeight > image.naturalWidth ? "portrait" : "landscape");
-      }}
-      onError={() => {
-        setSrc(null);
-        setFailed(true);
-      }}
-    />
-  );
+  if (hasComposerText) {
+    return { title: "Ready to search saved footage", detail: "Hit Search to look inside your saved folder." };
+  }
+  if (indexStatus?.momentCount) {
+    return { title: "Search saved footage", detail: "Try a scene, object, person, or spoken words." };
+  }
+  return { title: "No saved footage scanned yet", detail: "Use Settings > Ingest when you want to add saved videos." };
 }
 
 export function App() {
@@ -463,6 +604,7 @@ export function App() {
   const [health, setHealth] = useState<EngineHealth | null>(null);
   const [healthError, setHealthError] = useState<string | null>(null);
   const [input, setInput] = useState("");
+  const [searchScope, setSearchScope] = useState<SearchScope>("library");
   const [activeSourcePack, setActiveSourcePack] = useState("all");
   const [sourceSearch, setSourceSearch] = useState<SourceSearchResponse>(EMPTY_SOURCE_SEARCH);
   const [sourceSearchBusy, setSourceSearchBusy] = useState(false);
@@ -470,6 +612,9 @@ export function App() {
   const [indexSearch, setIndexSearch] = useState<IndexSearchResponse>(EMPTY_INDEX_SEARCH);
   const [indexBusy, setIndexBusy] = useState<"idle" | "ingesting" | "searching">("idle");
   const [indexError, setIndexError] = useState<string | null>(null);
+  const [libraryThumbs, setLibraryThumbs] = useState<Record<string, string | null>>({});
+  const [expandedLibraryId, setExpandedLibraryId] = useState<string | null>(null);
+  const [libraryMediaUrls, setLibraryMediaUrls] = useState<Record<string, string | null>>({});
   const [fetchProvider, setFetchProvider] = useState<ProviderId | typeof AUTO_PROVIDER>(AUTO_PROVIDER);
   const [items, setItems] = useState<QueueItem[]>([]);
   const [outputRoot, setOutputRoot] = useState("");
@@ -482,12 +627,25 @@ export function App() {
   const [galleryDlUpdate, setGalleryDlUpdate] = useState<GalleryDlUpdateInfo | null>(null);
   const [galleryDlStatus, setGalleryDlStatus] = useState<"idle" | "checking" | "updating">("idle");
   const [galleryDlError, setGalleryDlError] = useState<string | null>(null);
+  const [qbittorrentStatus, setQbittorrentStatus] = useState<"idle" | "checking" | "updating">("idle");
+  const [aria2cStatus, setAria2cStatus] = useState<"idle" | "checking" | "updating">("idle");
+  const [ffmpegStatus, setFfmpegStatus] = useState<"idle" | "checking" | "updating">("idle");
   const [aiCatalog, setAiCatalog] = useState<OpenRouterModelCatalog | null>(null);
   const [aiStatus, setAiStatus] = useState<"idle" | "loading" | "saving">("idle");
   const [aiError, setAiError] = useState<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [settingsSection, setSettingsSection] = useState<"general" | "search" | "watch" | "access" | "tools">("general");
+  const [settingsSection, setSettingsSection] = useState<"general" | "search" | "ingest" | "watch" | "access" | "tools" | "appearance">("general");
+  const [fontSmoothing, setFontSmoothing] = useState(() => localStorage.getItem("rippo:appearance:fontSmoothing") !== "false");
+  const [indexIngestSettings, setIndexIngestSettings] = useState<IndexIngestSettings>(DEFAULT_INDEX_INGEST_SETTINGS);
+  const [indexIngestLimits, setIndexIngestLimits] = useState<IndexIngestLimits>(DEFAULT_INDEX_INGEST_LIMITS);
+  const [indexSettingsStatus, setIndexSettingsStatus] = useState<"idle" | "saving">("idle");
+  const [indexSettingsError, setIndexSettingsError] = useState<string | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+
+  useEffect(() => {
+    document.documentElement.classList.toggle("no-font-smoothing", !fontSmoothing);
+    localStorage.setItem("rippo:appearance:fontSmoothing", String(fontSmoothing));
+  }, [fontSmoothing]);
 
   useEffect(() => {
     if (!settingsOpen) return;
@@ -502,12 +660,75 @@ export function App() {
   }, [settingsOpen, rippo, aiCatalog]);
 
   useEffect(() => {
+    if (!rippo || typeof rippo.getIndexIngestSettings !== "function") return;
+    rippo.getIndexIngestSettings().then((result) => {
+      setIndexIngestSettings({ ...DEFAULT_INDEX_INGEST_SETTINGS, ...result });
+      setIndexIngestLimits(result.limits || DEFAULT_INDEX_INGEST_LIMITS);
+    }).catch(() => undefined);
+  }, [rippo]);
+
+  useEffect(() => {
     if (!rippo) return;
     rippo.listBrowsers().then((result) => {
       setBrowsers(result.browsers);
       setCookieSource(cookieSourceFromResponse(result.source, result.selected));
     }).catch(() => undefined);
   }, [rippo]);
+
+  useEffect(() => {
+    if (!rippo || typeof rippo.libraryThumbnail !== "function") return;
+    let cancelled = false;
+    const pending = indexSearch.results.filter((r) => !(r.id in libraryThumbs));
+    if (pending.length === 0) return;
+    (async () => {
+      for (const result of pending) {
+        if (cancelled) return;
+        try {
+          const res = await rippo.libraryThumbnail({ path: result.path, time: result.start ?? 0 });
+          if (cancelled) return;
+          setLibraryThumbs((prev) => ({ ...prev, [result.id]: res?.url || null }));
+        } catch {
+          if (!cancelled) setLibraryThumbs((prev) => ({ ...prev, [result.id]: null }));
+        }
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [indexSearch.results, rippo, libraryThumbs]);
+
+  useEffect(() => {
+    if (!expandedLibraryId || !rippo || typeof rippo.libraryMediaUrl !== "function") return;
+    if (expandedLibraryId in libraryMediaUrls) return;
+    const result = indexSearch.results.find((r) => r.id === expandedLibraryId);
+    if (!result) return;
+    let cancelled = false;
+    rippo.libraryMediaUrl({ path: result.path }).then((res) => {
+      if (cancelled) return;
+      setLibraryMediaUrls((prev) => ({ ...prev, [expandedLibraryId]: res?.url || null }));
+    }).catch(() => {
+      if (!cancelled) setLibraryMediaUrls((prev) => ({ ...prev, [expandedLibraryId]: null }));
+    });
+    return () => { cancelled = true; };
+  }, [expandedLibraryId, rippo, indexSearch.results, libraryMediaUrls]);
+
+  useEffect(() => {
+    setLibraryThumbs({});
+    setLibraryMediaUrls({});
+    setExpandedLibraryId(null);
+  }, [indexSearch.query, indexSearch.indexRoot]);
+
+  async function refreshHealth() {
+    if (!rippo) return null;
+    try {
+      const nextHealth = await rippo.health();
+      setHealth(nextHealth);
+      if (nextHealth.outputRoot) setOutputRoot(nextHealth.outputRoot);
+      setHealthError(null);
+      return nextHealth;
+    } catch (error) {
+      setHealthError(error instanceof Error ? error.message : String(error));
+      return null;
+    }
+  }
 
   async function changeDefaultCookieSource(value: string) {
     if (!rippo) return;
@@ -516,11 +737,38 @@ export function App() {
       ? await rippo.setDefaultCookieSource(next)
       : await rippo.setCookiesBrowser(next.mode === "browser" ? next.browserId : null);
     setCookieSource(cookieSourceFromResponse(result.source, result.selected));
+    await refreshHealth();
+  }
+
+  async function saveIndexIngestSettings(patch: Partial<IndexIngestSettings>) {
+    const optimistic = { ...indexIngestSettings, ...patch };
+    setIndexIngestSettings(optimistic);
+    if (!rippo || typeof rippo.setIndexIngestSettings !== "function") return;
+    setIndexSettingsStatus("saving");
+    setIndexSettingsError(null);
     try {
-      const nextHealth = await rippo.health();
-      setHealth(nextHealth);
-    } catch {
-      undefined;
+      const saved = await rippo.setIndexIngestSettings(patch);
+      setIndexIngestSettings({ ...DEFAULT_INDEX_INGEST_SETTINGS, ...saved });
+      setIndexIngestLimits(saved.limits || DEFAULT_INDEX_INGEST_LIMITS);
+    } catch (error) {
+      setIndexSettingsError(consumerErrorMessage(error instanceof Error ? error.message : String(error), "Could not save ingest settings."));
+    } finally {
+      setIndexSettingsStatus("idle");
+    }
+  }
+
+  function chooseIngestPreset(presetId: string) {
+    const preset = INGEST_PRESETS.find((item) => item.id === presetId);
+    if (!preset) return;
+    void saveIndexIngestSettings(preset.settings);
+  }
+
+  function chooseSearchScope(scope: SearchScope) {
+    setSearchScope(scope);
+    if (scope === "library") setSourceSearch(EMPTY_SOURCE_SEARCH);
+    else {
+      setIndexSearch(EMPTY_INDEX_SEARCH);
+      setIndexError(null);
     }
   }
 
@@ -649,6 +897,36 @@ export function App() {
     }
   }
 
+  async function checkQbittorrentUpdate() {
+    if (!rippo || qbittorrentStatus !== "idle") return;
+    setQbittorrentStatus("checking");
+    try {
+      await refreshHealth();
+    } finally {
+      setQbittorrentStatus("idle");
+    }
+  }
+
+  async function checkAria2cUpdate() {
+    if (!rippo || aria2cStatus !== "idle") return;
+    setAria2cStatus("checking");
+    try {
+      await refreshHealth();
+    } finally {
+      setAria2cStatus("idle");
+    }
+  }
+
+  async function checkFfmpegUpdate() {
+    if (!rippo || ffmpegStatus !== "idle") return;
+    setFfmpegStatus("checking");
+    try {
+      await refreshHealth();
+    } finally {
+      setFfmpegStatus("idle");
+    }
+  }
+
   useEffect(() => {
     const el = textareaRef.current;
     if (!el) return;
@@ -665,26 +943,23 @@ export function App() {
   }, [sourceSearch.packs]);
   const providerOptions = health?.providers || [];
   const presetOptions = health?.presets || [];
+  const defaultSiteAccess = siteAccessStatus(cookieSource, browsers, health);
   const selectedFetchProvider = fetchProvider || AUTO_PROVIDER;
   const composerAction = useMemo(() => resolveComposerAction({
       hasText: hasComposerText,
       urlCount: detectedCount,
       canUseDesktop: Boolean(rippo),
       hasProvider: Boolean(selectedFetchProvider),
-      searchBusy: sourceSearchBusy || indexBusy === "searching",
-    }), [detectedCount, hasComposerText, indexBusy, rippo, selectedFetchProvider, sourceSearchBusy]);
+      searchBusy: searchScope === "library" ? indexBusy === "searching" : sourceSearchBusy,
+    }), [detectedCount, hasComposerText, indexBusy, rippo, searchScope, selectedFetchProvider, sourceSearchBusy]);
+  const activeSearchBusy = composerAction.id === "search" && (searchScope === "library" ? indexBusy === "searching" : sourceSearchBusy);
 
   useEffect(() => {
     if (!rippo) {
       setHealthError("Desktop engine IPC is not available.");
       return;
     }
-    rippo.health()
-      .then((result) => {
-        setHealth(result);
-        setOutputRoot(result.outputRoot);
-      })
-      .catch((error) => setHealthError(error.message || String(error)));
+    void refreshHealth();
   }, [rippo]);
 
   useEffect(() => {
@@ -802,7 +1077,6 @@ export function App() {
     }
 
     setSourceSearchBusy(true);
-    void searchSavedFootage(query);
     try {
       const result = await rippo.searchSources(query, activeSourcePack);
       setSourceSearch(result);
@@ -819,7 +1093,7 @@ export function App() {
   }
 
   async function indexSavedFolder() {
-    if (!rippo || typeof rippo.indexIngest !== "function" || !outputRoot) {
+    if (!rippo || !outputRoot) {
       setIndexError("Index runs inside the desktop app.");
       return;
     }
@@ -827,9 +1101,21 @@ export function App() {
     setIndexBusy("ingesting");
     setIndexError(null);
     try {
-      const result = await rippo.indexIngest({ indexRoot: outputRoot, paths: [outputRoot] });
+      const result = typeof rippo.indexSemanticIngest === "function"
+        ? await rippo.indexSemanticIngest({
+            indexRoot: outputRoot,
+            paths: [outputRoot],
+            provider: indexIngestSettings.provider,
+            chunkDuration: indexIngestSettings.chunkDuration,
+            overlap: indexIngestSettings.overlap,
+            preprocess: indexIngestSettings.preprocess,
+            skipStill: indexIngestSettings.skipStill,
+            targetResolution: indexIngestSettings.targetResolution,
+            targetFps: indexIngestSettings.targetFps,
+          })
+        : await rippo.indexIngest({ indexRoot: outputRoot, paths: [outputRoot] });
       if (result.ok) setIndexStatus(result);
-      else setIndexError(result.error || "Could not index this folder.");
+      else setIndexError(consumerErrorMessage(result.error || "", "Could not index this folder."));
     } catch (error) {
       setIndexError(consumerErrorMessage(error instanceof Error ? error.message : String(error), "Could not index this folder."));
     } finally {
@@ -851,7 +1137,7 @@ export function App() {
       const result = await rippo.indexSearch({ indexRoot: outputRoot, query, limit: 24 });
       setIndexSearch(result);
       setIndexStatus(result);
-      if (!result.ok) setIndexError(result.error || "Could not search the index.");
+      if (!result.ok) setIndexError(consumerErrorMessage(result.error || "", "Could not search saved footage."));
     } catch (error) {
       setIndexSearch({ ...EMPTY_INDEX_SEARCH, query, indexRoot: outputRoot });
       setIndexError(consumerErrorMessage(error instanceof Error ? error.message : String(error), "Could not search the index."));
@@ -862,7 +1148,8 @@ export function App() {
 
   async function runComposerAction() {
     if (composerAction.id === "search") {
-      await searchSources();
+      if (searchScope === "library") await searchSavedFootage();
+      else await searchSources();
       return;
     }
     if (composerAction.id === "fetch") await addAndFetch();
@@ -934,87 +1221,28 @@ export function App() {
   return (
     <main className="app">
       <div className="layout">
-        <header className="hero">
-          <div className="hero-content">
-            <div className="masthead">
-              <button
-                type="button"
-                className="settings-btn"
-                onClick={() => setSettingsOpen(true)}
-                aria-label="Settings"
-                title="Settings"
-              >
-                <Settings size={18} strokeWidth={2} aria-hidden />
-              </button>
-              <div className="brand-lockup">
-                <img className="brand-logo" src={`${import.meta.env.BASE_URL}brand-logo.png`} alt="" width={120} height={120} decoding="async" />
-                <h1 className="brand-name">RIPPO</h1>
-              </div>
-            </div>
-
-            <div className={`composer ${input ? "has-content" : ""}`}>
-              <textarea
-                id="url-input"
-                ref={textareaRef}
-                className="input-multiline"
-                value={input}
-                onChange={(event) => setInput(event.target.value)}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
-                    event.preventDefault();
-                    runComposerAction();
-                  }
-                }}
-                placeholder="Paste link(s) or search…"
-                rows={1}
-                aria-label="Links or search text"
-              />
-              <div className="composer-foot">
-                <div className="composer-tools">
-                  {composerAction.id === "search" ? (
-                    <div className="pack-select-wrap">
-                      <select
-                        className="provider-select"
-                        value={activeSourcePack}
-                        onChange={(event) => setActiveSourcePack(event.target.value)}
-                        aria-label="Search area"
-                      >
-                        {sourcePacks.map((pack) => (
-                          <option key={pack.id} value={pack.id}>{pack.label}</option>
-                        ))}
-                      </select>
-                    </div>
-                  ) : (
-                    <select
-                      className="provider-select"
-                      value={selectedFetchProvider}
-                      onChange={(event) => setFetchProvider(event.target.value as ProviderId | typeof AUTO_PROVIDER)}
-                      disabled={!providerOptions.length}
-                      aria-label="Source type"
-                    >
-                      {providerOptions.length === 0 ? <option value="">Loading</option> : null}
-                      {providerOptions.length > 0 ? <option value={AUTO_PROVIDER}>Auto</option> : null}
-                      {providerOptions.map((option) => (
-                        <option key={option.id} value={option.id}>{option.label}</option>
-                      ))}
-                    </select>
-                  )}
-                  {detectedCount > 1 ? <span className="link-count">{detectedCount} links</span> : <span className="composer-hint">⌘↵ to {composerAction.hint}</span>}
-                </div>
-                <button
-                  type="button"
-                  className="btn btn-primary btn-fetch"
-                  onClick={runComposerAction}
-                  disabled={composerAction.disabled}
-                >
-                  {(sourceSearchBusy && composerAction.id === "search") || (indexBusy === "searching" && composerAction.id === "search") ? <Loader2 className="spin" size={15} strokeWidth={2} aria-hidden /> : composerAction.icon === "search" ? <Search size={15} strokeWidth={2} aria-hidden /> : null}
-                  {(sourceSearchBusy && composerAction.id === "search") || (indexBusy === "searching" && composerAction.id === "search") ? composerAction.busyLabel : `${composerAction.label}${composerAction.countSuffix || ""}`}
-                </button>
-              </div>
-            </div>
-          </div>
-          <div className="hero-gradient" />
-        </header>
+        <AppHeader
+          input={input}
+          textareaRef={textareaRef}
+          searchScope={searchScope}
+          sourcePacks={sourcePacks}
+          activeSourcePack={activeSourcePack}
+          detectedCount={detectedCount}
+          indexStatus={indexStatus}
+          selectedFetchProvider={selectedFetchProvider}
+          providerOptions={providerOptions}
+          composerAction={composerAction}
+          activeSearchBusy={activeSearchBusy}
+          setInput={setInput}
+          clearIndexError={() => {
+            if (indexError) setIndexError(null);
+          }}
+          runComposerAction={runComposerAction}
+          chooseSearchScope={chooseSearchScope}
+          setActiveSourcePack={setActiveSourcePack}
+          setFetchProvider={setFetchProvider}
+          openSettings={() => setSettingsOpen(true)}
+        />
 
         <section className="workspace">
           {healthError ? <p className="error-text">{healthError}</p> : null}
@@ -1022,120 +1250,126 @@ export function App() {
             <div className="index-panel">
               <div className="index-head">
                 <div className="index-title-block">
-                  <p className="index-eyebrow">Index</p>
-                  <h2 className="index-title">Search your saved footage.</h2>
+                  <p className="index-eyebrow">Saved footage</p>
+                  <h2 className="index-title">Search your saved videos.</h2>
                 </div>
-                <button type="button" className="btn btn-ghost btn-index" onClick={indexSavedFolder} disabled={!rippo || indexBusy !== "idle"}>
-                  {indexBusy === "ingesting" ? <Loader2 className="spin" size={14} strokeWidth={2} aria-hidden /> : <FolderSearch size={14} strokeWidth={2} aria-hidden />}
-                  Index saved folder
-                </button>
               </div>
               <div className="index-meta-row">
                 <span>{indexStatusLine(indexStatus)}</span>
                 <span title={outputRoot || undefined}>{outputRoot || "Saved folder not ready"}</span>
               </div>
-              {indexError ? <p className="error-text">{indexError}</p> : null}
+              {indexError ? <p className="error-text">{consumerErrorMessage(indexError, "Could not search saved footage.")}</p> : null}
               {indexSearch.results.length > 0 ? (
                 <div className="index-results">
                   <div className="index-results-head">
                     <span>{indexSearch.resultCount} moments</span>
                     <span>{indexSearch.query}</span>
                   </div>
-                  {indexSearch.results.map((result) => (
-                    <article key={result.id} className="index-result">
-                      <div className="index-thumb" aria-hidden>
-                        <span>{result.kind.slice(0, 1).toUpperCase()}</span>
-                      </div>
-                      <div className="index-result-body">
-                        <div className="index-result-head">
-                          <h3 className="index-result-title">{result.title || result.file}</h3>
-                          <span className="index-time">{momentRange(result)}</span>
+                  {indexSearch.results.map((result) => {
+                    const KindIcon = result.kind === "image" ? ImageIcon : result.kind === "audio" ? FileAudio : Film;
+                    const isVideo = result.kind === "video";
+                    const isImage = result.kind === "image";
+                    const isExpanded = expandedLibraryId === result.id;
+                    const thumbUrl = libraryThumbs[result.id];
+                    const mediaUrl = libraryMediaUrls[result.id];
+                    const isPlayable = isVideo || result.kind === "audio" || isImage;
+                    const toggleExpand = () => {
+                      if (!isPlayable) return;
+                      setExpandedLibraryId(isExpanded ? null : result.id);
+                    };
+                    return (
+                      <article key={result.id} className={`index-result kind-${result.kind} ${isExpanded ? "is-expanded" : ""}`}>
+                        <button
+                          type="button"
+                          className="index-thumb"
+                          onClick={toggleExpand}
+                          disabled={!isPlayable}
+                          aria-label={isPlayable ? (isExpanded ? "Collapse preview" : "Preview moment") : "No preview available"}
+                          aria-expanded={isExpanded}
+                        >
+                          {thumbUrl ? (
+                            <img className="index-thumb-img" src={thumbUrl} alt="" loading="lazy" decoding="async" />
+                          ) : thumbUrl === null ? (
+                            <KindIcon size={22} strokeWidth={1.6} className="index-thumb-icon" aria-hidden />
+                          ) : (
+                            <Loader2 size={18} strokeWidth={2} className="spin index-thumb-icon" aria-hidden />
+                          )}
+                          {isPlayable ? (
+                            <span className="index-thumb-play" aria-hidden>
+                              <Play size={14} strokeWidth={2.5} />
+                            </span>
+                          ) : null}
+                          <span className="index-thumb-time" aria-hidden>{momentRange(result)}</span>
+                        </button>
+                        <div className="index-result-body">
+                          <div className="index-result-top">
+                            <h3 className="index-result-title" title={result.title || result.file}>{result.title || result.file}</h3>
+                            <span className={`index-match index-match-${result.matchType}`}>{result.matchType}</span>
+                          </div>
+                          {result.description ? <p className="index-result-desc" title={result.description}>{result.description}</p> : null}
+                          <p className="index-result-path" title={result.file}>{result.file}</p>
                         </div>
-                        <p className="index-result-desc">{result.description || result.file}</p>
-                        <p className="index-result-path">{result.file} · {result.matchType}</p>
-                      </div>
-                      <button
-                        type="button"
-                        className="btn btn-ghost btn-reveal"
-                        onClick={() => rippo?.openFolder(folderForPath(result.path))}
-                        disabled={!rippo}
-                      >
-                        Reveal
-                      </button>
-                    </article>
-                  ))}
+                        <button
+                          type="button"
+                          className="btn btn-ghost btn-reveal"
+                          onClick={() => rippo?.openFolder(folderForPath(result.path))}
+                          disabled={!rippo}
+                          title="Reveal in folder"
+                        >
+                          <FolderOpen size={13} strokeWidth={2} aria-hidden /> Reveal
+                        </button>
+                        {isExpanded ? (
+                          <div className="index-player">
+                            {mediaUrl ? (
+                              isVideo ? (
+                                <video
+                                  className="index-player-video"
+                                  src={mediaUrl}
+                                  controls
+                                  autoPlay
+                                  preload="metadata"
+                                  onLoadedMetadata={(event) => {
+                                    const start = result.start ?? 0;
+                                    if (start > 0) (event.currentTarget as HTMLVideoElement).currentTime = start;
+                                  }}
+                                />
+                              ) : result.kind === "audio" ? (
+                                <audio className="index-player-audio" src={mediaUrl} controls autoPlay preload="metadata" />
+                              ) : (
+                                <img className="index-player-image" src={mediaUrl} alt={result.title || result.file} />
+                              )
+                            ) : mediaUrl === null ? (
+                              <p className="index-player-empty">Couldn't open the file. It may have been moved.</p>
+                            ) : (
+                              <div className="index-player-loading"><Loader2 size={16} strokeWidth={2} className="spin" /> Loading preview…</div>
+                            )}
+                          </div>
+                        ) : null}
+                      </article>
+                    );
+                  })}
                 </div>
               ) : (
                 <div className="index-empty">
-                  {indexBusy === "searching" ? "Searching saved footage..." : indexStatus?.momentCount ? "Type what you need and search." : "Index the saved folder, then search for a moment."}
+                  {(() => {
+                    const empty = indexEmptyState(indexBusy, indexSearch, indexStatus, hasComposerText);
+                    return (
+                      <>
+                        <b>{empty.title}</b>
+                        <span>{empty.detail}</span>
+                      </>
+                    );
+                  })()}
                 </div>
               )}
             </div>
           ) : null}
-          {(sourceSearch.query || sourceSearch.results.length > 0 || sourceSearch.error || sourceSearchBusy) ? (
-            <div className="search-panel">
-              <div className="search-status">
-                <span>{sourceStatusLabel(sourceSearch, sourceSearchBusy)}</span>
-                <span>{sourceContextLabel(sourceSearch, input)}</span>
-              </div>
-              {sourceSearch.error ? <p className="error-text">{sourceSearch.error}</p> : null}
-              {sourceSearch.media ? (
-                <article className="media-card">
-                  {sourceSearch.media.poster ? (
-                    <img className="media-poster" src={sourceSearch.media.poster} alt={sourceSearch.media.title || ""} loading="lazy" />
-                  ) : (
-                    <div className="media-poster media-poster-empty" aria-hidden />
-                  )}
-                  <div className="media-body">
-                    <div className="media-head">
-                      <h2 className="media-title">{sourceSearch.media.title}</h2>
-                      <div className="media-meta">
-                        {sourceSearch.media.year ? <span>{sourceSearch.media.year}</span> : null}
-                        {sourceSearch.media.type ? <span className="media-kind">{sourceSearch.media.type === "series" ? "Series" : "Movie"}</span> : null}
-                        {sourceSearch.media.runtime ? <span>{sourceSearch.media.runtime}</span> : null}
-                        {sourceSearch.media.imdbRating ? <span className="media-rating">★ {sourceSearch.media.imdbRating}</span> : null}
-                      </div>
-                    </div>
-                    {sourceSearch.media.synopsis ? <p className="media-synopsis">{sourceSearch.media.synopsis}</p> : null}
-                    {sourceSearch.media.genres?.length ? (
-                      <div className="media-tags">
-                        {sourceSearch.media.genres.slice(0, 4).map((genre) => (
-                          <span key={genre} className="media-tag">{genre}</span>
-                        ))}
-                      </div>
-                    ) : null}
-                    {sourceSearch.media.cast?.length ? (
-                      <p className="media-cast">{sourceSearch.media.cast.join(" · ")}</p>
-                    ) : null}
-                  </div>
-                </article>
-              ) : null}
-              {sourceSearch.playable && sourceSearch.playable.length > 0 ? (
-                <div className="playable-list">
-                  {sourceSearch.playable.map((link, idx) => (
-                    <article key={`${link.url}-${idx}`} className="playable-row">
-                      <div className="playable-info">
-                        <span className="playable-host">{link.host}</span>
-                        <span className="playable-label" title={link.label}>{link.label}</span>
-                        <div className="playable-meta">
-                          {link.extension ? <span className="playable-tag">{link.extension.toUpperCase()}</span> : null}
-                          {link.size ? <span>{link.size}</span> : null}
-                          {link.quality ? <span>{link.quality}</span> : null}
-                        </div>
-                      </div>
-                      <div className="playable-actions">
-                        <button type="button" className="btn btn-primary btn-source" onClick={() => rippo?.openExternal(link.url)}>
-                          <ExternalLink size={14} strokeWidth={2} aria-hidden /> Play
-                        </button>
-                      </div>
-                    </article>
-                  ))}
-                </div>
-              ) : !sourceSearchBusy && sourceSearch.query ? (
-                <p className="empty-playable">No playable sources matched yet — more adapters landing soon.</p>
-              ) : null}
-            </div>
-          ) : null}
+          <SourceSearchPanel
+            sourceSearch={sourceSearch}
+            sourceSearchBusy={sourceSearchBusy}
+            input={input}
+            openExternal={(url) => rippo?.openExternal(url)}
+          />
 
           {items.length > 0 && (
             <div className="queue-summary-row">
@@ -1150,13 +1384,9 @@ export function App() {
               </div>
             </div>
           )}
-          {items.length === 0 && !sourceSearch.query && !sourceSearch.results.length && !sourceSearch.error && !sourceSearchBusy ? (
+          {items.length === 0 && !hasComposerText && !indexSearch.query && !indexError && indexBusy === "idle" && !sourceSearch.query && !sourceSearch.results.length && !sourceSearch.error && !sourceSearchBusy ? (
             <div className="empty">
               <span>Paste a link or search anything.</span>
-              <button type="button" className="empty-index-action" onClick={indexSavedFolder} disabled={!rippo || indexBusy !== "idle"}>
-                {indexBusy === "ingesting" ? <Loader2 className="spin" size={13} strokeWidth={2} aria-hidden /> : <FolderSearch size={13} strokeWidth={2} aria-hidden />}
-                Index saved folder
-              </button>
             </div>
           ) : (
             items.map((item) => {
@@ -1176,65 +1406,22 @@ export function App() {
                 return message ? [{ ...notice, message }] : [];
               });
               return (
-                <article key={item.localId} className={`queue-item ${item.status}`}>
-                  <button type="button" className="thumb" onClick={() => openSource(item)} aria-label="Open source page" title="Open source page">
-                    {item.metadata ? <ThumbnailImage urls={thumbnailUrls(item)} /> : <Link2 size={28} strokeWidth={1.5} aria-hidden />}
-                    <span className="thumb-overlay"><ExternalLink size={20} strokeWidth={2} aria-hidden /></span>
-                  </button>
-                  <div className="item-body">
-                    <div className="item-head">
-                      <h3 className="item-title">{item.metadata?.title || shortUrl(item.url)}</h3>
-                      <p className="item-meta">{metaLine(item)}</p>
-                      {item.error ? <p className="item-error">{consumerErrorMessage(item.error)}</p> : null}
-                      {visibleNotices.map((notice, i) => (
-                        <p key={i} className={notice.level === "error" ? "item-error" : "item-warning"}>{notice.message}</p>
-                      ))}
-                      {item.files?.length && !item.error ? <p className="item-files">{item.files.join(" · ")}</p> : null}
-                    </div>
-                    <div className="item-foot">
-                      <span className={`status-badge status-${item.status}`} data-status={item.status}>
-                        <span className="status-glyph" />
-                        {statusText}
-                      </span>
-                      <div className="preset-chip">
-                        <select
-                          value={item.preset}
-                          onChange={(event) => setItemPreset(item.localId, event.target.value)}
-                          disabled={item.status === "downloading" || item.status === "done"}
-                          aria-label="Output format"
-                          title={presetOptions.find((p) => p.id === item.preset)?.detail}
-                        >
-                          {itemPresets.map((option) => (
-                            <option key={option.id} value={option.id}>{option.label}</option>
-                          ))}
-                        </select>
-                      </div>
-                      {showBrowserAccess ? (
-                        <div className="access-chip" title={browserAccessLabel(item.cookieSource, browsers)}>
-                          <select
-                            value={cookieSourceValue(item.cookieSource)}
-                            onChange={(event) => setItemCookieSource(item.localId, cookieSourceFromValue(event.target.value))}
-                            disabled={item.status === "downloading" || item.status === "done"}
-                            aria-label="Private-site access"
-                          >
-                            <option value="off">No login</option>
-                            {browsers.map((browser) => (
-                              <option key={browser.id} value={`browser:${browser.id}`}>{browser.label} login</option>
-                            ))}
-                          </select>
-                        </div>
-                      ) : null}
-                      <span className="foot-spacer" />
-                      <button type="button" className="icon-btn" onClick={() => refetch(item)} disabled={item.status === "fetching" || item.status === "downloading"} title="Refetch" aria-label="Refetch">
-                        <RefreshCcw size={16} strokeWidth={2} aria-hidden />
-                      </button>
-                      <button type="button" className="icon-btn icon-btn-danger" onClick={() => removeItem(item.localId)} disabled={item.status === "downloading"} title="Remove" aria-label="Remove">
-                        <Trash2 size={16} strokeWidth={2} aria-hidden />
-                      </button>
-                    </div>
-                  </div>
-                  {progress !== null ? <div className={`card-progress ${item.finalizing ? "finalizing" : ""}`} style={{ width: `${progress}%` }} /> : null}
-                </article>
+                <QueueCard
+                  key={item.localId}
+                  item={item}
+                  itemPresets={itemPresets}
+                  presetOptions={presetOptions}
+                  browsers={browsers}
+                  progress={progress}
+                  statusText={statusText}
+                  showBrowserAccess={showBrowserAccess}
+                  visibleNotices={visibleNotices}
+                  openSource={openSource}
+                  setItemPreset={setItemPreset}
+                  setItemCookieSource={setItemCookieSource}
+                  refetch={refetch}
+                  removeItem={removeItem}
+                />
               );
             })
           )}
@@ -1255,11 +1442,13 @@ export function App() {
                 <X size={14} strokeWidth={2} aria-hidden /> Back to app
               </button>
               {([
-                { id: "general", label: "General", icon: FolderOpen },
-                { id: "search",  label: "Search",  icon: Search },
-                { id: "watch",   label: "Watch",   icon: RadarIcon },
-                { id: "access",  label: "Access",  icon: Cookie },
-                { id: "tools",   label: "Tools",   icon: Download },
+                { id: "general",    label: "General",    icon: FolderOpen },
+                { id: "search",     label: "Search",     icon: Search },
+                { id: "ingest",     label: "Ingest",     icon: FolderSearch },
+                { id: "watch",      label: "Watch",      icon: RadarIcon },
+                { id: "access",     label: "Access",     icon: Cookie },
+                { id: "tools",      label: "Tools",      icon: Download },
+                { id: "appearance", label: "Appearance", icon: Monitor },
               ] as const).map((item) => {
                 const Icon = item.icon;
                 const active = settingsSection === item.id;
@@ -1280,17 +1469,21 @@ export function App() {
             <div className="settings-pane">
               <div className="settings-head">
                 <h2 className="settings-title">
-                  {settingsSection === "general" ? "General" :
-                   settingsSection === "search"  ? "Search"  :
-                   settingsSection === "watch"   ? "Watch"   :
-                   settingsSection === "access"  ? "Access"  : "Tools"}
+                  {settingsSection === "general"    ? "General"    :
+                   settingsSection === "search"     ? "Search"     :
+                   settingsSection === "ingest"     ? "Ingest"     :
+                   settingsSection === "watch"      ? "Watch"      :
+                   settingsSection === "access"     ? "Access"     :
+                   settingsSection === "appearance" ? "Appearance" : "Tools"}
                 </h2>
                 <p className="settings-subtitle">
-                  {settingsSection === "general" ? "Where Rippo saves what you download." :
-                   settingsSection === "search"  ? "How Rippo finds links across the web." :
-                   settingsSection === "watch"   ? "Channels and feeds Rippo monitors for new finds." :
-                   settingsSection === "access"  ? "Browser logins for sites that need them." :
-                                                   "Download engines and updates."}
+                  {settingsSection === "general"    ? "Where Rippo saves what you download." :
+                   settingsSection === "search"     ? "How Rippo finds links across the web." :
+                   settingsSection === "ingest"     ? "How saved footage is indexed." :
+                   settingsSection === "watch"      ? "Channels and feeds Rippo monitors for new finds." :
+                   settingsSection === "access"     ? "Use your browser session for video links that need it." :
+                   settingsSection === "appearance" ? "Fonts, cursors, and display preferences." :
+                                                     "Engines Rippo uses to save and prepare files."}
                 </p>
               </div>
 
@@ -1347,6 +1540,155 @@ export function App() {
             </section>
             )}
 
+            {settingsSection === "ingest" && (
+            <section className="settings-section ingest-section">
+              <div className="ingest-compact-head">
+                <div>
+                  <h3 className="settings-row-title">Scan saved videos</h3>
+                  <p className="settings-hint">Pick how hard Rippo should scan your saved folder before you search it.</p>
+                </div>
+                <span className="ingest-cost-pill">
+                  {formatCostPerHour(estimateIngestCostPerHour(indexIngestSettings))}
+                  <small>{formatUsdPerHour(estimateIngestCostPerHour(indexIngestSettings))} per source hour</small>
+                </span>
+              </div>
+              <div className="ingest-preset-bar" role="group" aria-label="Index quality presets">
+                {INGEST_PRESETS.map((preset) => {
+                  const active = currentIngestPreset(indexIngestSettings) === preset.id;
+                  return (
+                    <button
+                      key={preset.id}
+                      type="button"
+                      className={`ingest-preset-tab ${active ? "is-active" : ""}`}
+                      onClick={() => chooseIngestPreset(preset.id)}
+                    >
+                      <span>{preset.name}</span>
+                      <small>{presetDetail(preset.settings)}</small>
+                    </button>
+                  );
+                })}
+              </div>
+              <p className="ingest-current-line">
+                {(() => {
+                  const preset = INGEST_PRESETS.find((item) => item.id === currentIngestPreset(indexIngestSettings));
+                  return preset
+                    ? `${preset.name}: ${preset.description}`
+                    : `Custom: ${indexIngestSettings.chunkDuration}s clips, ${indexIngestSettings.overlap}s overlap, ${indexIngestSettings.targetResolution}p, ${indexIngestSettings.targetFps}fps.`;
+                })()}
+                {" "}Cost mostly follows frames per second.
+              </p>
+              <div className="ingest-grid">
+                <label className="ingest-field">
+                  <span className="ingest-field-head">
+                    <span>Clip length</span>
+                    <b>{indexIngestSettings.chunkDuration}s</b>
+                  </span>
+                  <input
+                    type="range"
+                    min={indexIngestLimits.chunkDuration.min}
+                    max={indexIngestLimits.chunkDuration.max}
+                    step={indexIngestLimits.chunkDuration.step}
+                    value={indexIngestSettings.chunkDuration}
+                    onChange={(event) => saveIndexIngestSettings({ chunkDuration: Number(event.target.value) })}
+                  />
+                  <span className="ingest-range-info">{indexIngestLimits.chunkDuration.min}s - {indexIngestLimits.chunkDuration.max}s</span>
+                  <span className="ingest-help">Lower seconds means more exact results. Higher seconds means cheaper scanning.</span>
+                </label>
+                <label className="ingest-field">
+                  <span className="ingest-field-head">
+                    <span>Overlap</span>
+                    <b>{indexIngestSettings.overlap}s</b>
+                  </span>
+                  <input
+                    type="range"
+                    min={indexIngestLimits.overlap.min}
+                    max={Math.min(indexIngestLimits.overlap.max, Math.max(0, indexIngestSettings.chunkDuration - 1))}
+                    step={indexIngestLimits.overlap.step}
+                    value={indexIngestSettings.overlap}
+                    onChange={(event) => saveIndexIngestSettings({ overlap: Number(event.target.value) })}
+                  />
+                  <span className="ingest-range-info">{indexIngestLimits.overlap.min}s - {Math.min(indexIngestLimits.overlap.max, Math.max(0, indexIngestSettings.chunkDuration - 1))}s</span>
+                  <span className="ingest-help">Keeps moments from getting split between clips. More safety costs more.</span>
+                </label>
+                <label className="ingest-field">
+                  <span className="ingest-field-head">
+                    <span>Video size</span>
+                    <b>{indexIngestSettings.targetResolution}p</b>
+                  </span>
+                  <input
+                    type="range"
+                    min={indexIngestLimits.targetResolution.min}
+                    max={indexIngestLimits.targetResolution.max}
+                    step={indexIngestLimits.targetResolution.step}
+                    value={indexIngestSettings.targetResolution}
+                    onChange={(event) => saveIndexIngestSettings({ targetResolution: Number(event.target.value) })}
+                  />
+                  <span className="ingest-range-info">{indexIngestLimits.targetResolution.min}p - {indexIngestLimits.targetResolution.max}p</span>
+                  <span className="ingest-help">Higher detail helps signs, faces, and small objects. Frame count drives the bill more than size.</span>
+                </label>
+                <label className="ingest-field">
+                  <span className="ingest-field-head">
+                    <span>Frames per second</span>
+                    <b>{indexIngestSettings.targetFps}</b>
+                  </span>
+                  <input
+                    type="range"
+                    min={indexIngestLimits.targetFps.min}
+                    max={indexIngestLimits.targetFps.max}
+                    step={indexIngestLimits.targetFps.step}
+                    value={indexIngestSettings.targetFps}
+                    onChange={(event) => saveIndexIngestSettings({ targetFps: Number(event.target.value) })}
+                  />
+                  <span className="ingest-range-info">{indexIngestLimits.targetFps.min} - {indexIngestLimits.targetFps.max} fps</span>
+                  <span className="ingest-help">Main cost lever. Higher helps fast cuts, gestures, and action.</span>
+                </label>
+              </div>
+              <div className="ingest-toggle-list">
+                <div className="ingest-toggle-row">
+                  <span>
+                    <b>Preprocess chunks</b>
+                    <small>Downscale before embedding to keep calls lighter.</small>
+                  </span>
+                  <button
+                    type="button"
+                    className={`ingest-toggle-btn ${indexIngestSettings.preprocess ? "is-active" : ""}`}
+                    onClick={() => saveIndexIngestSettings({ preprocess: !indexIngestSettings.preprocess })}
+                    aria-pressed={indexIngestSettings.preprocess}
+                  >
+                    {indexIngestSettings.preprocess ? "On" : "Off"}
+                  </button>
+                </div>
+                <div className="ingest-toggle-row">
+                  <span>
+                    <b>Skip still chunks</b>
+                    <small>Ignore video sections that look like a frozen frame.</small>
+                  </span>
+                  <button
+                    type="button"
+                    className={`ingest-toggle-btn ${indexIngestSettings.skipStill ? "is-active" : ""}`}
+                    onClick={() => saveIndexIngestSettings({ skipStill: !indexIngestSettings.skipStill })}
+                    aria-pressed={indexIngestSettings.skipStill}
+                  >
+                    {indexIngestSettings.skipStill ? "On" : "Off"}
+                  </button>
+                </div>
+              </div>
+              <div className="settings-actions ingest-actions">
+                <button type="button" className="btn btn-primary btn-footer" onClick={indexSavedFolder} disabled={!rippo || indexBusy !== "idle"}>
+                  {indexBusy === "ingesting" ? <Loader2 className="spin" size={14} strokeWidth={2} aria-hidden /> : <FolderSearch size={14} strokeWidth={2} aria-hidden />}
+                  Scan folder
+                </button>
+                <span className="settings-version">
+                  {indexSettingsStatus === "saving"
+                    ? "Saving..."
+                    : `${indexIngestSettings.chunkDuration}s clips · ${indexIngestSettings.overlap}s overlap · ${indexIngestSettings.targetFps}fps`}
+                </span>
+              </div>
+              {indexSettingsError ? <p className="settings-warning">{indexSettingsError}</p> : null}
+              {indexError ? <p className="settings-warning">{consumerErrorMessage(indexError, "Could not index this folder.")}</p> : null}
+            </section>
+            )}
+
             {settingsSection === "watch" && (
             <section className="settings-section">
               <div className="settings-row-head">
@@ -1395,101 +1737,167 @@ export function App() {
             <section className="settings-section">
               <div className="settings-row-head">
                 <Cookie size={14} strokeWidth={2} aria-hidden />
-                <h3 className="settings-row-title">Private sites</h3>
+                <h3 className="settings-row-title">Site access</h3>
               </div>
-              <p className="settings-hint">Choose a browser only for links that need your signed-in access. Cookies stay on this Mac.</p>
+              <p className="settings-hint">Pick Chrome only when a video link needs your signed-in session. Rippo passes local browser data to yt-dlp; it does not open or control your account.</p>
               <select
                 className="settings-select"
                 value={cookieSourceValue(cookieSource)}
                 onChange={(event) => changeDefaultCookieSource(event.target.value)}
                 disabled={!rippo}
-                aria-label="Default private-site access"
+                aria-label="Default site access"
               >
-                <option value="off">No login</option>
+                <option value="off">Public links only</option>
                 {browsers.map((browser) => (
-                  <option key={browser.id} value={`browser:${browser.id}`}>Use {browser.label} login</option>
+                  <option key={browser.id} value={`browser:${browser.id}`}>{browser.label}</option>
                 ))}
               </select>
+              <div className={`access-status access-status-${defaultSiteAccess.state}`}>
+                <span className="status-glyph" aria-hidden />
+                <div className="access-status-copy">
+                  <b>{defaultSiteAccess.label}</b>
+                  <span>{defaultSiteAccess.detail}</span>
+                </div>
+                <button type="button" className="btn btn-ghost btn-footer" onClick={() => refreshHealth()} disabled={!rippo}>
+                  Check
+                </button>
+              </div>
               {!browsers.length ? <p className="settings-hint">No supported browser was found.</p> : null}
               {health?.cookies?.status === "error" ? (
-                <p className="settings-warning" title={health.cookies.message || undefined}>Browser login failed — {health.cookies.message}</p>
+                <p className="settings-warning">Could not read that browser session. Try Chrome, close the browser, or grant access.</p>
               ) : null}
             </section>
             )}
 
             {settingsSection === "tools" && (
             <section className="settings-section">
-              <div className="settings-row-head">
-                <Download size={14} strokeWidth={2} aria-hidden />
-                <h3 className="settings-row-title">Download support</h3>
-              </div>
-              <div className="settings-engine-list">
-                <div className="settings-engine-row">
-                  <div className="settings-engine-copy">
-                    <p className="settings-engine-name">Video</p>
-                    <p className="settings-hint">Videos and audio</p>
+              <ul className="tool-list" role="list">
+
+                <li className="tool-row">
+                  <span className={`tool-dot ${health?.python ? "tool-dot-ok" : "tool-dot-dim"}`} aria-hidden />
+                  <div className="tool-body">
+                    <span className="tool-name">Python</span>
+                    <span className="tool-desc">Runs the local Rippo engine</span>
+                    {health?.python ? <span className="tool-path">{health.python}</span> : null}
                   </div>
-                  <span className="settings-version">{ytDlpStatusText(health, healthError)}</span>
-                </div>
-                <p className="settings-hint" title={ytDlpUpdate?.binaryPath || health?.ytDlpPath || undefined}>
-                  {ytDlpPathText(ytDlpUpdate, health)}
-                </p>
-                <div className="settings-actions">
-                  {ytDlpUpdate?.updateAvailable ? (
-                    <button type="button" className="btn btn-primary btn-footer" onClick={updateYtDlp} disabled={!rippo || ytDlpStatus !== "idle"}>
-                      {ytDlpStatus === "updating" ? <Loader2 className="spin" size={14} strokeWidth={2} aria-hidden /> : null}
-                      {ytDlpUpdate.currentVersion ? "Update" : "Install"}
-                    </button>
-                  ) : (
-                    <button type="button" className="btn btn-ghost btn-footer" onClick={checkYtDlpUpdate} disabled={!rippo || ytDlpStatus !== "idle"}>
-                      {ytDlpStatus === "checking" ? <Loader2 className="spin" size={14} strokeWidth={2} aria-hidden /> : <RefreshCcw size={14} strokeWidth={2} aria-hidden />}
-                      Check for updates
-                    </button>
-                  )}
-                </div>
-                {ytDlpError ? <p className="settings-warning">{consumerErrorMessage(ytDlpError)}</p> : null}
-                {ytDlpUpdate && !ytDlpUpdate.updateAvailable && !ytDlpError ? (
-                  <p className="settings-hint">Video support is up to date.</p>
-                ) : null}
-                <div className="settings-engine-row settings-engine-row-spaced">
-                  <div className="settings-engine-copy">
-                    <p className="settings-engine-name">Images</p>
-                    <p className="settings-hint">Image galleries</p>
+                  <span className="tool-status">{pythonStatusText(health, healthError)}</span>
+                </li>
+
+                <li className="tool-row">
+                  <span className={`tool-dot ${health?.ytDlp ? "tool-dot-ok" : "tool-dot-dim"}`} aria-hidden />
+                  <div className="tool-body">
+                    <span className="tool-name">yt-dlp</span>
+                    <span className="tool-desc">Video, audio, thumbnails, and site metadata</span>
+                    {(ytDlpUpdate?.binaryPath || health?.ytDlpPath) ? <span className="tool-path">{ytDlpUpdate?.binaryPath || health?.ytDlpPath}</span> : null}
+                    {ytDlpError ? <span className="tool-error">{consumerErrorMessage(ytDlpError)}</span> : null}
                   </div>
-                  <span className="settings-version">{galleryDlStatusText(health, healthError)}</span>
-                </div>
-                <p className="settings-hint" title={galleryDlUpdate?.binaryPath || health?.galleryDlPath || undefined}>
-                  {galleryDlPathText(galleryDlUpdate, health)}
-                </p>
-                <div className="settings-actions">
-                  {galleryDlUpdate?.updateAvailable ? (
-                    <button type="button" className="btn btn-primary btn-footer" onClick={updateGalleryDl} disabled={!rippo || galleryDlStatus !== "idle"}>
-                      {galleryDlStatus === "updating" ? <Loader2 className="spin" size={14} strokeWidth={2} aria-hidden /> : null}
-                      {galleryDlUpdate.currentVersion ? "Update" : "Install"}
-                    </button>
-                  ) : (
-                    <button type="button" className="btn btn-ghost btn-footer" onClick={checkGalleryDlUpdate} disabled={!rippo || galleryDlStatus !== "idle"}>
-                      {galleryDlStatus === "checking" ? <Loader2 className="spin" size={14} strokeWidth={2} aria-hidden /> : <RefreshCcw size={14} strokeWidth={2} aria-hidden />}
-                      Check for updates
-                    </button>
-                  )}
-                </div>
-                {galleryDlError ? <p className="settings-warning">{consumerErrorMessage(galleryDlError)}</p> : null}
-                {health?.galleryDlError && !galleryDlError ? <p className="settings-warning">{consumerErrorMessage(health.galleryDlError)}</p> : null}
-                {galleryDlUpdate && !galleryDlUpdate.updateAvailable && !galleryDlError ? (
-                  <p className="settings-hint">Image support is up to date.</p>
-                ) : null}
-                <div className="settings-engine-row settings-engine-row-spaced">
-                  <div className="settings-engine-copy">
-                    <p className="settings-engine-name">Torrents</p>
-                    <p className="settings-hint">Magnet links and torrent files</p>
+                  <div className="tool-actions">
+                    {ytDlpUpdate?.updateAvailable ? (
+                      <button type="button" className="tool-btn tool-btn-primary" onClick={updateYtDlp} disabled={!rippo || ytDlpStatus !== "idle"}>
+                        {ytDlpStatus === "updating" ? <Loader2 className="spin" size={12} strokeWidth={2} aria-hidden /> : null}
+                        {ytDlpUpdate.currentVersion ? "Update" : "Install"}
+                      </button>
+                    ) : (
+                      <button type="button" className="tool-btn tool-btn-ghost" onClick={checkYtDlpUpdate} disabled={!rippo || ytDlpStatus !== "idle"}>
+                        {ytDlpStatus === "checking" ? <Loader2 className="spin" size={12} strokeWidth={2} aria-hidden /> : <RefreshCcw size={12} strokeWidth={2} aria-hidden />}
+                        Check
+                      </button>
+                    )}
                   </div>
-                  <span className="settings-version">{aria2cStatusText(health, healthError)}</span>
+                </li>
+
+                <li className="tool-row">
+                  <span className={`tool-dot ${health?.galleryDl ? "tool-dot-ok" : "tool-dot-dim"}`} aria-hidden />
+                  <div className="tool-body">
+                    <span className="tool-name">gallery-dl</span>
+                    <span className="tool-desc">Image galleries and creator pages</span>
+                    {(galleryDlUpdate?.binaryPath || health?.galleryDlPath) ? <span className="tool-path">{galleryDlUpdate?.binaryPath || health?.galleryDlPath}</span> : null}
+                    {galleryDlError ? <span className="tool-error">{consumerErrorMessage(galleryDlError)}</span> : null}
+                    {health?.galleryDlError && !galleryDlError ? <span className="tool-error">{consumerErrorMessage(health.galleryDlError)}</span> : null}
+                  </div>
+                  <div className="tool-actions">
+                    {galleryDlUpdate?.updateAvailable ? (
+                      <button type="button" className="tool-btn tool-btn-primary" onClick={updateGalleryDl} disabled={!rippo || galleryDlStatus !== "idle"}>
+                        {galleryDlStatus === "updating" ? <Loader2 className="spin" size={12} strokeWidth={2} aria-hidden /> : null}
+                        {galleryDlUpdate.currentVersion ? "Update" : "Install"}
+                      </button>
+                    ) : (
+                      <button type="button" className="tool-btn tool-btn-ghost" onClick={checkGalleryDlUpdate} disabled={!rippo || galleryDlStatus !== "idle"}>
+                        {galleryDlStatus === "checking" ? <Loader2 className="spin" size={12} strokeWidth={2} aria-hidden /> : <RefreshCcw size={12} strokeWidth={2} aria-hidden />}
+                        Check
+                      </button>
+                    )}
+                  </div>
+                </li>
+
+                <li className="tool-row">
+                  <span className={`tool-dot ${health?.qBittorrentOk ? "tool-dot-ok" : "tool-dot-dim"}`} aria-hidden />
+                  <div className="tool-body">
+                    <span className="tool-name">qBittorrent-nox</span>
+                    <span className="tool-desc">Preferred torrent engine for magnet links</span>
+                    {health?.qBittorrentPath ? <span className="tool-path">{health.qBittorrentPath}</span> : null}
+                    {health?.qBittorrentError ? <span className="tool-error">{consumerErrorMessage(health.qBittorrentError)}</span> : null}
+                  </div>
+                  <div className="tool-actions">
+                    <button type="button" className="tool-btn tool-btn-ghost" onClick={checkQbittorrentUpdate} disabled={!rippo || qbittorrentStatus !== "idle"}>
+                      {qbittorrentStatus === "checking" ? <Loader2 className="spin" size={12} strokeWidth={2} aria-hidden /> : <RefreshCcw size={12} strokeWidth={2} aria-hidden />}
+                      Check
+                    </button>
+                  </div>
+                </li>
+
+                <li className="tool-row">
+                  <span className={`tool-dot ${health?.aria2cOk ? "tool-dot-ok" : "tool-dot-dim"}`} aria-hidden />
+                  <div className="tool-body">
+                    <span className="tool-name">aria2c</span>
+                    <span className="tool-desc">Torrent fallback for magnet links and torrent files</span>
+                    {health?.aria2cPath ? <span className="tool-path">{health.aria2cPath}</span> : null}
+                    {health?.aria2cError ? <span className="tool-error">{consumerErrorMessage(health.aria2cError)}</span> : null}
+                  </div>
+                  <div className="tool-actions">
+                    <button type="button" className="tool-btn tool-btn-ghost" onClick={checkAria2cUpdate} disabled={!rippo || aria2cStatus !== "idle"}>
+                      {aria2cStatus === "checking" ? <Loader2 className="spin" size={12} strokeWidth={2} aria-hidden /> : <RefreshCcw size={12} strokeWidth={2} aria-hidden />}
+                      Check
+                    </button>
+                  </div>
+                </li>
+
+                <li className="tool-row">
+                  <span className={`tool-dot ${health?.ffmpegOk ? "tool-dot-ok" : "tool-dot-dim"}`} aria-hidden />
+                  <div className="tool-body">
+                    <span className="tool-name">ffmpeg</span>
+                    <span className="tool-desc">Merge, convert, and clean saved media</span>
+                    {health?.ffmpeg ? <span className="tool-path">{health.ffmpeg}</span> : null}
+                  </div>
+                  <div className="tool-actions">
+                    <button type="button" className="tool-btn tool-btn-ghost" onClick={checkFfmpegUpdate} disabled={!rippo || ffmpegStatus !== "idle"}>
+                      {ffmpegStatus === "checking" ? <Loader2 className="spin" size={12} strokeWidth={2} aria-hidden /> : <RefreshCcw size={12} strokeWidth={2} aria-hidden />}
+                      Check
+                    </button>
+                  </div>
+                </li>
+
+              </ul>
+            </section>
+            )}
+
+            {settingsSection === "appearance" && (
+            <section className="settings-section">
+              <div className="ingest-toggle-list">
+                <div className="ingest-toggle-row">
+                  <span>
+                    <b>Font smoothing</b>
+                    <small>Use native macOS font anti-aliasing</small>
+                  </span>
+                  <button
+                    type="button"
+                    className={`ingest-toggle-btn ${fontSmoothing ? "is-active" : ""}`}
+                    onClick={() => setFontSmoothing(!fontSmoothing)}
+                    aria-pressed={fontSmoothing}
+                  >
+                    {fontSmoothing ? "ON" : "OFF"}
+                  </button>
                 </div>
-                <p className="settings-hint" title={health?.qBittorrentPath || health?.aria2cPath || undefined}>
-                  {aria2cPathText(health)}
-                </p>
-                {health?.torrentError ? <p className="settings-warning">{consumerErrorMessage(health.torrentError)}</p> : null}
               </div>
             </section>
             )}
