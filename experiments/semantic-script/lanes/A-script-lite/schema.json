@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "rippo.semantic-script.A-script-lite-v1",
+  "title": "A Script-Lite Moment Record",
+  "type": "object",
+  "required": ["asset_path", "source", "moments"],
+  "properties": {
+    "asset_path": { "type": "string" },
+    "source": { "type": "string" },
+    "chunk": {
+      "type": "object",
+      "properties": {
+        "start": { "type": "number" },
+        "end": { "type": "number" },
+        "path": { "type": "string" }
+      }
+    },
+    "moments": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["start", "end", "visual", "audio", "visible_text", "tags", "shot_type", "people_count"],
+        "properties": {
+          "start": { "type": "number" },
+          "end": { "type": "number" },
+          "visual": { "type": "string" },
+          "audio": { "type": "string" },
+          "visible_text": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "tags": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "shot_type": { "type": "string" },
+          "people_count": { "type": "string" }
+        }
+      }
+    }
+  }
+}
