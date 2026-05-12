@@ -1,8 +1,9 @@
-import { app, BrowserWindow, dialog, ipcMain, session, shell } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, net, protocol, session, shell } from "electron";
 import path from "node:path";
 import { spawn } from "node:child_process";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import fs from "node:fs";
+import { pathToFileURL } from "node:url";
 import {
   cookieSourceBrowserId,
   cookieSourceFromBrowserId,
@@ -25,6 +26,76 @@ import { loadThumbnail } from "./thumbnails";
 let mainWindow: BrowserWindow | null = null;
 
 const isDev = Boolean(process.env.VITE_DEV_SERVER_URL);
+
+protocol.registerSchemesAsPrivileged([
+  {
+    scheme: "rippo-media",
+    privileges: {
+      standard: true,
+      secure: true,
+      supportFetchAPI: true,
+      stream: true,
+      bypassCSP: true,
+      corsEnabled: true,
+    },
+  },
+]);
+
+function libraryThumbCacheDir(): string {
+  return path.join(app.getPath("userData"), "library-thumbs");
+}
+
+function decodeMediaPath(rippoUrl: string): string | null {
+  try {
+    const url = new URL(rippoUrl);
+    if (url.protocol !== "rippo-media:") return null;
+    const encoded = url.pathname.replace(/^\/+/, "");
+    const decoded = decodeURIComponent(encoded);
+    const resolved = path.resolve("/", decoded);
+    return fs.existsSync(resolved) && fs.statSync(resolved).isFile() ? resolved : null;
+  } catch {
+    return null;
+  }
+}
+
+function pathToRippoMediaUrl(absolute: string): string {
+  const normalized = path.resolve(absolute);
+  const encoded = normalized.split(path.sep).map(encodeURIComponent).join("/");
+  return `rippo-media://local/${encoded.replace(/^\/+/, "")}`;
+}
+
+async function extractLibraryThumbnail(filePath: string, time: number): Promise<string | null> {
+  if (!filePath) return null;
+  const resolved = path.resolve(filePath);
+  if (!fs.existsSync(resolved) || !fs.statSync(resolved).isFile()) return null;
+  const ffmpeg = ffmpegPath();
+  if (!ffmpeg) return null;
+  const safeTime = Number.isFinite(time) && time >= 0 ? time : 0;
+  const cacheDir = libraryThumbCacheDir();
+  await fs.promises.mkdir(cacheDir, { recursive: true });
+  const hash = createHash("sha1").update(`${resolved}|${safeTime.toFixed(2)}`).digest("hex").slice(0, 24);
+  const out = path.join(cacheDir, `${hash}.jpg`);
+  if (fs.existsSync(out) && fs.statSync(out).size > 0) return out;
+  return await new Promise<string | null>((resolve) => {
+    const args = [
+      "-y",
+      "-ss", String(safeTime),
+      "-i", resolved,
+      "-frames:v", "1",
+      "-vf", "scale='min(480,iw)':-2",
+      "-q:v", "4",
+      out,
+    ];
+    const child = spawn(ffmpeg, args, { stdio: "ignore" });
+    const killer = setTimeout(() => { try { child.kill("SIGKILL"); } catch {} }, 15000);
+    child.on("error", () => { clearTimeout(killer); resolve(null); });
+    child.on("exit", (code) => {
+      clearTimeout(killer);
+      if (code === 0 && fs.existsSync(out) && fs.statSync(out).size > 0) resolve(out);
+      else resolve(null);
+    });
+  });
+}
 
 function ffmpegPath(): string | null {
   if (app.isPackaged) {
@@ -71,6 +142,36 @@ type Settings = {
   cookiesBrowser?: string;
   outputRoot?: string;
   openRouterModel?: string;
+  indexIngest?: Partial<IndexIngestSettings>;
+};
+
+type NumberLimit = {
+  min: number;
+  max: number;
+  step: number;
+  default: number;
+};
+
+type IndexIngestLimits = {
+  provider: "gemini";
+  label: string;
+  model: string;
+  videoSeconds: number;
+  recommendedDimensions: number[];
+  chunkDuration: NumberLimit;
+  overlap: NumberLimit;
+  targetResolution: NumberLimit;
+  targetFps: NumberLimit;
+};
+
+type IndexIngestSettings = {
+  provider: "gemini";
+  chunkDuration: number;
+  overlap: number;
+  preprocess: boolean;
+  skipStill: boolean;
+  targetResolution: number;
+  targetFps: number;
 };
 
 type PageProbeResponse = {
@@ -112,6 +213,32 @@ type DomProbeCandidate = {
   url: string;
   label?: string;
   contentType?: string;
+};
+
+type IndexIngestPayload = {
+  indexRoot?: string;
+  paths?: string[];
+};
+
+type IndexSemanticIngestPayload = IndexIngestPayload & {
+  provider?: string;
+  chunkDuration?: number;
+  overlap?: number;
+  preprocess?: boolean;
+  skipStill?: boolean;
+  targetResolution?: number;
+  targetFps?: number;
+};
+
+type IndexSearchPayload = {
+  indexRoot?: string;
+  query?: string;
+  limit?: number;
+};
+
+type IndexUpsertPayload = {
+  indexRoot?: string;
+  moments?: unknown[];
 };
 
 type ProbeBeforeRequestListener = (
@@ -476,6 +603,70 @@ function writeSettings(next: Settings): void {
   fs.writeFileSync(settingsPath(), JSON.stringify(next, null, 2));
 }
 
+function activeIndexIngestLimits(): IndexIngestLimits {
+  return {
+    provider: "gemini",
+    label: "Gemini Embedding 2",
+    model: process.env.RIPPO_GEMINI_EMBED_MODEL || "gemini-embedding-2",
+    videoSeconds: 120,
+    recommendedDimensions: [768, 1536, 3072],
+    chunkDuration: { min: 5, max: 120, step: 5, default: 30 },
+    overlap: { min: 0, max: 119, step: 1, default: 5 },
+    targetResolution: { min: 144, max: 1080, step: 16, default: 480 },
+    targetFps: { min: 1, max: 15, step: 1, default: 5 },
+  };
+}
+
+function defaultIndexIngestSettings(limits = activeIndexIngestLimits()): IndexIngestSettings {
+  return {
+    provider: limits.provider,
+    chunkDuration: limits.chunkDuration.default,
+    overlap: limits.overlap.default,
+    preprocess: true,
+    skipStill: true,
+    targetResolution: limits.targetResolution.default,
+    targetFps: limits.targetFps.default,
+  };
+}
+
+function numberSetting(value: unknown, fallback: number, min: number, max: number): number {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return fallback;
+  return Math.max(min, Math.min(Math.round(number), max));
+}
+
+function booleanSetting(value: unknown, fallback: boolean): boolean {
+  return typeof value === "boolean" ? value : fallback;
+}
+
+function indexIngestSettingsFrom(value?: Partial<IndexIngestSettings>, limits = activeIndexIngestLimits()): IndexIngestSettings {
+  const defaults = defaultIndexIngestSettings(limits);
+  const base = { ...defaults, ...(value || {}), provider: limits.provider };
+  const chunkDuration = numberSetting(base.chunkDuration, defaults.chunkDuration, limits.chunkDuration.min, limits.chunkDuration.max);
+  return {
+    provider: limits.provider,
+    chunkDuration,
+    overlap: numberSetting(base.overlap, defaults.overlap, limits.overlap.min, Math.min(limits.overlap.max, chunkDuration - 1)),
+    preprocess: booleanSetting(base.preprocess, defaults.preprocess),
+    skipStill: booleanSetting(base.skipStill, defaults.skipStill),
+    targetResolution: numberSetting(base.targetResolution, defaults.targetResolution, limits.targetResolution.min, limits.targetResolution.max),
+    targetFps: numberSetting(base.targetFps, defaults.targetFps, limits.targetFps.min, limits.targetFps.max),
+  };
+}
+
+function indexIngestSettingsResponse(settings: IndexIngestSettings, limits = activeIndexIngestLimits()) {
+  return {
+    ...settings,
+    limits: {
+      ...limits,
+      overlap: {
+        ...limits.overlap,
+        max: Math.min(limits.overlap.max, settings.chunkDuration - 1),
+      },
+    },
+  };
+}
+
 type YtDlpReleaseAsset = {
   name: string;
   browser_download_url: string;
@@ -505,8 +696,8 @@ type PyPiPackageInfo = {
 function detectBrowsers(): BrowserInfo[] {
   if (process.platform !== "darwin") return [];
   const candidates: { id: string; label: string; bundles: string[] }[] = [
-    { id: "safari", label: "Safari", bundles: ["Safari.app"] },
     { id: "chrome", label: "Chrome", bundles: ["Google Chrome.app", "Google Chrome Canary.app"] },
+    { id: "safari", label: "Safari", bundles: ["Safari.app"] },
     { id: "firefox", label: "Firefox", bundles: ["Firefox.app", "Firefox Developer Edition.app"] },
     { id: "brave", label: "Brave", bundles: ["Brave Browser.app"] },
     { id: "edge", label: "Edge", bundles: ["Microsoft Edge.app"] },
@@ -766,6 +957,38 @@ function candidatePythons(): string[] {
   ].filter(Boolean) as string[];
 }
 
+function parseEnvFile(content: string): NodeJS.ProcessEnv {
+  const parsed: NodeJS.ProcessEnv = {};
+  for (const rawLine of content.split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (!line || line.startsWith("#")) continue;
+    const match = line.match(/^(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)=(.*)$/);
+    if (!match) continue;
+    const key = match[1];
+    let value = match[2].trim();
+    if ((value.startsWith("\"") && value.endsWith("\"")) || (value.startsWith("'") && value.endsWith("'"))) {
+      value = value.slice(1, -1);
+    }
+    parsed[key] = value;
+  }
+  return parsed;
+}
+
+function localEnvFile(): NodeJS.ProcessEnv {
+  const candidates = [
+    path.join(engineCwd(), ".env"),
+    path.join(app.getPath("userData"), ".env"),
+  ];
+  for (const candidate of candidates) {
+    try {
+      if (fs.existsSync(candidate)) return parseEnvFile(fs.readFileSync(candidate, "utf8"));
+    } catch {
+      undefined;
+    }
+  }
+  return {};
+}
+
 function engineEnv(): NodeJS.ProcessEnv {
   const resourcesEngine = path.join(process.resourcesPath, "engine");
   const devEngine = path.join(app.getAppPath(), "src");
@@ -773,18 +996,19 @@ function engineEnv(): NodeJS.ProcessEnv {
   const managedGalleryDlRoot = appManagedGalleryDlRoot();
   const bundledFfmpeg = ffmpegPath();
   const selectedOpenRouterModel = currentOpenRouterModel();
+  const baseEnv = { ...localEnvFile(), ...process.env };
   fs.mkdirSync(path.dirname(appManagedYtDlpPath()), { recursive: true });
   return {
-    ...process.env,
-    PYTHONPATH: [fs.existsSync(managedGalleryDlRoot) ? managedGalleryDlRoot : null, pythonPath, process.env.PYTHONPATH].filter(Boolean).join(path.delimiter),
-    RIPPO_FFMPEG_PATH: bundledFfmpeg || process.env.RIPPO_FFMPEG_PATH || "",
-    RIPPO_YTDLP_PATH: process.env.RIPPO_YTDLP_PATH || appManagedYtDlpPath(),
+    ...baseEnv,
+    PYTHONPATH: [fs.existsSync(managedGalleryDlRoot) ? managedGalleryDlRoot : null, pythonPath, baseEnv.PYTHONPATH].filter(Boolean).join(path.delimiter),
+    RIPPO_FFMPEG_PATH: bundledFfmpeg || baseEnv.RIPPO_FFMPEG_PATH || "",
+    RIPPO_YTDLP_PATH: baseEnv.RIPPO_YTDLP_PATH || appManagedYtDlpPath(),
     RIPPO_GALLERYDL_ROOT: fs.existsSync(managedGalleryDlRoot) ? managedGalleryDlRoot : "",
     RIPPO_OPENROUTER_MODELS_CACHE: appManagedOpenRouterModelsCache(),
     OPENROUTER_MODEL: selectedOpenRouterModel,
-    RIPPO_QBITTORRENT_PATH: process.env.RIPPO_QBITTORRENT_PATH || bundledQbittorrentPath() || "",
-    RIPPO_QBITTORRENT_PROFILE_ROOT: process.env.RIPPO_QBITTORRENT_PROFILE_ROOT || appManagedQbittorrentProfileRoot(),
-    RIPPO_QBITTORRENT_WEBUI_PORT: process.env.RIPPO_QBITTORRENT_WEBUI_PORT || "39080",
+    RIPPO_QBITTORRENT_PATH: baseEnv.RIPPO_QBITTORRENT_PATH || bundledQbittorrentPath() || "",
+    RIPPO_QBITTORRENT_PROFILE_ROOT: baseEnv.RIPPO_QBITTORRENT_PROFILE_ROOT || appManagedQbittorrentProfileRoot(),
+    RIPPO_QBITTORRENT_WEBUI_PORT: baseEnv.RIPPO_QBITTORRENT_WEBUI_PORT || "39080",
   };
 }
 
@@ -881,6 +1105,20 @@ function currentOutputRoot(): string {
   return defaultOutputRoot();
 }
 
+function indexRootFromInput(value: unknown): string {
+  if (typeof value === "string" && value.trim()) return value.trim();
+  return currentOutputRoot();
+}
+
+function safeIndexPaths(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .filter((item): item is string => typeof item === "string")
+    .map((item) => item.trim())
+    .filter(Boolean)
+    .slice(0, 500);
+}
+
 function currentOpenRouterModel(): string {
   const saved = readSettings().openRouterModel;
   if (saved && typeof saved === "string" && saved.trim()) return saved;
@@ -926,6 +1164,7 @@ function createWindow() {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
       nodeIntegration: false,
+      sandbox: false,
     },
   });
 
@@ -939,6 +1178,32 @@ function createWindow() {
 }
 
 app.whenReady().then(() => {
+  protocol.handle("rippo-media", async (request) => {
+    const resolved = decodeMediaPath(request.url);
+    if (!resolved) return new Response("Not Found", { status: 404 });
+    try {
+      return await net.fetch(pathToFileURL(resolved).toString(), { bypassCustomProtocolHandlers: true });
+    } catch {
+      return new Response("Not Found", { status: 404 });
+    }
+  });
+
+  ipcMain.handle("library:thumbnail", async (_event, payload?: { path?: string; time?: number }) => {
+    const filePath = typeof payload?.path === "string" ? payload.path : "";
+    const time = typeof payload?.time === "number" ? payload.time : 0;
+    const out = await extractLibraryThumbnail(filePath, time);
+    if (!out) return { ok: false, url: null };
+    return { ok: true, url: pathToRippoMediaUrl(out) };
+  });
+
+  ipcMain.handle("library:media-url", async (_event, payload?: { path?: string }) => {
+    const filePath = typeof payload?.path === "string" ? payload.path : "";
+    if (!filePath || !fs.existsSync(filePath) || !fs.statSync(filePath).isFile()) {
+      return { ok: false, url: null };
+    }
+    return { ok: true, url: pathToRippoMediaUrl(filePath) };
+  });
+
   ipcMain.handle("engine:health", async () => engineHealthPayload());
 
   ipcMain.handle("page:probe", async (_event, url: string) => {
@@ -1019,6 +1284,116 @@ app.whenReady().then(() => {
       health: await engineHealthPayload(),
       catalog: await runEngine(["ai-models", "--selected-model", model]),
     };
+  });
+
+  ipcMain.handle("engine:index-status", async (_event, indexRoot?: string) => {
+    return await runEngine(["index-status", "--index-root", indexRootFromInput(indexRoot)]);
+  });
+
+  ipcMain.handle("engine:index-ingest", async (_event, payload?: IndexIngestPayload) => {
+    const indexRoot = indexRootFromInput(payload?.indexRoot);
+    const paths = safeIndexPaths(payload?.paths);
+    if (!paths.length) {
+      return {
+        ok: false,
+        indexRoot,
+        assetCount: 0,
+        momentCount: 0,
+        embeddedMomentCount: 0,
+        embeddingEndpointConfigured: false,
+        indexed: [],
+        added: 0,
+        updated: 0,
+        unchanged: 0,
+        skipped: 0,
+        skippedEntries: [],
+        error: "Choose at least one folder or media file to index.",
+      };
+    }
+    return await runEngine(["index-ingest", "--index-root", indexRoot, ...paths]);
+  });
+
+  ipcMain.handle("settings:index-ingest", async () => {
+    const limits = activeIndexIngestLimits();
+    return indexIngestSettingsResponse(indexIngestSettingsFrom(readSettings().indexIngest, limits), limits);
+  });
+
+  ipcMain.handle("settings:set-index-ingest", async (_event, payload?: Partial<IndexIngestSettings>) => {
+    const limits = activeIndexIngestLimits();
+    const settings = readSettings();
+    const next = indexIngestSettingsFrom({ ...settings.indexIngest, ...(payload || {}) }, limits);
+    settings.indexIngest = next;
+    writeSettings(settings);
+    return indexIngestSettingsResponse(next, limits);
+  });
+
+  ipcMain.handle("engine:index-semantic-ingest", async (_event, payload?: IndexSemanticIngestPayload) => {
+    const indexRoot = indexRootFromInput(payload?.indexRoot);
+    const paths = safeIndexPaths(payload?.paths);
+    const limits = activeIndexIngestLimits();
+    const saved = indexIngestSettingsFrom(readSettings().indexIngest, limits);
+    const payloadSettings: Partial<IndexIngestSettings> = {
+      chunkDuration: payload?.chunkDuration,
+      overlap: payload?.overlap,
+      preprocess: payload?.preprocess,
+      skipStill: payload?.skipStill,
+      targetResolution: payload?.targetResolution,
+      targetFps: payload?.targetFps,
+    };
+    const options = indexIngestSettingsFrom({ ...saved, ...payloadSettings }, limits);
+    if (!paths.length) {
+      return {
+        ok: false,
+        indexRoot,
+        assetCount: 0,
+        momentCount: 0,
+        embeddedMomentCount: 0,
+        embeddingEndpointConfigured: false,
+        geminiEmbeddingConfigured: false,
+        semantic: true,
+        embedded: 0,
+        videoChunks: 0,
+        imageCount: 0,
+        failed: 0,
+        skipped: 0,
+        skippedEntries: [],
+        error: "Choose at least one folder or media file to semantically index.",
+      };
+    }
+    return await runEngine([
+      "index-semantic-ingest",
+      "--index-root",
+      indexRoot,
+      "--chunk-duration",
+      String(options.chunkDuration),
+      "--overlap",
+      String(options.overlap),
+      "--target-resolution",
+      String(options.targetResolution),
+      "--target-fps",
+      String(options.targetFps),
+      ...(options.preprocess ? [] : ["--no-preprocess"]),
+      ...(options.skipStill ? [] : ["--no-skip-still"]),
+      ...paths,
+    ]);
+  });
+
+  ipcMain.handle("engine:index-search", async (_event, payload?: IndexSearchPayload) => {
+    const indexRoot = indexRootFromInput(payload?.indexRoot);
+    const query = typeof payload?.query === "string" ? payload.query.slice(0, 240) : "";
+    const limit = Math.max(1, Math.min(Number(payload?.limit || 20), 100));
+    return await runEngine(["index-search", "--index-root", indexRoot, "--query", query, "--limit", String(limit)]);
+  });
+
+  ipcMain.handle("engine:index-upsert", async (_event, payload?: IndexUpsertPayload) => {
+    const indexRoot = indexRootFromInput(payload?.indexRoot);
+    return await runEngine([
+      "index-upsert",
+      "--index-root",
+      indexRoot,
+      "--payload-json",
+      JSON.stringify({ moments: Array.isArray(payload?.moments) ? payload?.moments : [] }),
+    ]);
   });
 
   ipcMain.handle("engine:fetch", async (_event, url: string, provider?: string, cookieSourceInput?: unknown) => {

@@ -34,8 +34,12 @@ from rippopotamus.providers import (
     yt_dlp_run as provider_yt_dlp_run,
 )
 from rippopotamus.query_intelligence import PACK_LABELS, build_query_intelligence, effective_pack, openrouter_model_catalog
+from rippopotamus.metadata_lookup import lookup_media
+from rippopotamus.resolvers import ADAPTERS, resolve_all
 from rippopotamus.search_evidence import search_evidence_status
 from rippopotamus.source_registry import search_sources
+from rippopotamus.footage_index import import_semantic_script_index, index_status, ingest_paths, search_index, upsert_moments
+from rippopotamus.index_worker import SemanticIngestOptions, semantic_ingest_paths
 
 
 def emit(payload: dict[str, Any]) -> None:
@@ -327,12 +331,76 @@ def command_source_search(args: argparse.Namespace) -> int:
         raise SystemExit(str(exc)) from exc
     payload["requestedPack"] = requested_pack
     payload["intelligence"] = intelligence
+    media = lookup_media(args.query or "")
+    payload["media"] = media
+    payload["playable"] = _resolve_playable(media, args.query or "")
     emit(payload)
     return 0
 
 
+def _resolve_playable(media: dict[str, Any] | None, query: str) -> list[dict[str, Any]]:
+    if media:
+        title = media.get("title") or query
+        year_raw = media.get("year")
+        year = int(year_raw) if isinstance(year_raw, str) and year_raw.isdigit() else None
+        imdb_id = media.get("imdbId")
+    else:
+        title = query
+        year = None
+        imdb_id = None
+    links = resolve_all(ADAPTERS, title, year, imdb_id)
+    return [link.to_dict() for link in links]
+
+
 def command_ai_models(args: argparse.Namespace) -> int:
     emit(openrouter_model_catalog(refresh=args.refresh, selected_model=args.selected_model))
+    return 0
+
+
+def command_index_status(args: argparse.Namespace) -> int:
+    emit(index_status(args.index_root))
+    return 0
+
+
+def command_index_ingest(args: argparse.Namespace) -> int:
+    emit(ingest_paths(args.index_root, args.paths))
+    return 0
+
+
+def command_index_semantic_ingest(args: argparse.Namespace) -> int:
+    options = SemanticIngestOptions(
+        chunk_duration=args.chunk_duration,
+        overlap=args.overlap,
+        preprocess=not args.no_preprocess,
+        target_resolution=args.target_resolution,
+        target_fps=args.target_fps,
+        skip_still=not args.no_skip_still,
+    )
+    emit(semantic_ingest_paths(args.index_root, args.paths, options=options))
+    return 0
+
+
+def command_index_import_semantic_script(args: argparse.Namespace) -> int:
+    emit(import_semantic_script_index(args.index_root, args.semantic_db))
+    return 0
+
+
+def command_index_search(args: argparse.Namespace) -> int:
+    emit(search_index(args.index_root, args.query or "", args.limit))
+    return 0
+
+
+def command_index_upsert(args: argparse.Namespace) -> int:
+    if args.payload_json:
+        payload = json.loads(args.payload_json)
+    elif args.input == "-":
+        payload = json.load(sys.stdin)
+    else:
+        with Path(args.input).expanduser().open("r", encoding="utf-8") as handle:
+            payload = json.load(handle)
+    if not isinstance(payload, dict):
+        raise SystemExit("Index upsert payload must be a JSON object.")
+    emit(upsert_moments(args.index_root, payload))
     return 0
 
 
@@ -928,6 +996,43 @@ def build_parser() -> argparse.ArgumentParser:
     ai_models.add_argument("--refresh", action="store_true")
     ai_models.add_argument("--selected-model", default="")
     ai_models.set_defaults(func=command_ai_models)
+
+    index_status_cmd = sub.add_parser("index-status")
+    index_status_cmd.add_argument("--index-root", required=True)
+    index_status_cmd.set_defaults(func=command_index_status)
+
+    index_ingest = sub.add_parser("index-ingest")
+    index_ingest.add_argument("--index-root", required=True)
+    index_ingest.add_argument("paths", nargs="+")
+    index_ingest.set_defaults(func=command_index_ingest)
+
+    index_semantic_ingest = sub.add_parser("index-semantic-ingest")
+    index_semantic_ingest.add_argument("--index-root", required=True)
+    index_semantic_ingest.add_argument("--chunk-duration", type=int, default=30)
+    index_semantic_ingest.add_argument("--overlap", type=int, default=5)
+    index_semantic_ingest.add_argument("--target-resolution", type=int, default=480)
+    index_semantic_ingest.add_argument("--target-fps", type=int, default=5)
+    index_semantic_ingest.add_argument("--no-preprocess", action="store_true")
+    index_semantic_ingest.add_argument("--no-skip-still", action="store_true")
+    index_semantic_ingest.add_argument("paths", nargs="+")
+    index_semantic_ingest.set_defaults(func=command_index_semantic_ingest)
+
+    index_import_semantic = sub.add_parser("index-import-semantic-script")
+    index_import_semantic.add_argument("--index-root", required=True)
+    index_import_semantic.add_argument("--semantic-db", required=True)
+    index_import_semantic.set_defaults(func=command_index_import_semantic_script)
+
+    index_search = sub.add_parser("index-search")
+    index_search.add_argument("--index-root", required=True)
+    index_search.add_argument("--query", default="")
+    index_search.add_argument("--limit", type=int, default=20)
+    index_search.set_defaults(func=command_index_search)
+
+    index_upsert = sub.add_parser("index-upsert")
+    index_upsert.add_argument("--index-root", required=True)
+    index_upsert.add_argument("--input", default="-")
+    index_upsert.add_argument("--payload-json", default="")
+    index_upsert.set_defaults(func=command_index_upsert)
     return parser
 
 

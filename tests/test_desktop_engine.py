@@ -4,14 +4,16 @@ import argparse
 import io
 import json
 import os
+import sqlite3
 import tempfile
 import unittest
 from contextlib import redirect_stdout
 from pathlib import Path
 from unittest import mock
 
-from rippopotamus import desktop_engine, query_intelligence, search_evidence, source_registry
+from rippopotamus import desktop_engine, footage_index, index_worker, query_intelligence, search_evidence, source_registry
 from rippopotamus.providers import ProviderContext, desktop_download_command
+from rippopotamus.video_chunker import VideoChunk
 
 
 class FakeProcess:
@@ -438,6 +440,18 @@ class DesktopEngineTests(unittest.TestCase):
                     "pricing": {"prompt": "0.01", "completion": "0", "request": "0"},
                     "architecture": {"output_modalities": ["text"]},
                 },
+                {
+                    "id": "provider/mixed-output:free",
+                    "name": "Mixed Output",
+                    "pricing": {"prompt": "0", "completion": "0", "request": "0"},
+                    "architecture": {"input_modalities": ["text"], "output_modalities": ["text", "image"]},
+                },
+                {
+                    "id": "provider/unknown-output:free",
+                    "name": "Unknown Output",
+                    "pricing": {"prompt": "0", "completion": "0", "request": "0"},
+                    "architecture": {"input_modalities": ["text"]},
+                },
             ]
         }
 
@@ -451,6 +465,9 @@ class DesktopEngineTests(unittest.TestCase):
         self.assertIn("openrouter/free", [model["id"] for model in catalog["models"]])
         self.assertIn("provider/free-one:free", [model["id"] for model in catalog["models"]])
         self.assertNotIn("provider/paid", [model["id"] for model in catalog["models"]])
+        self.assertNotIn("provider/mixed-output:free", [model["id"] for model in catalog["models"]])
+        self.assertNotIn("provider/unknown-output:free", [model["id"] for model in catalog["models"]])
+        self.assertTrue(all(model["outputModalities"] == ["text"] for model in catalog["models"]))
 
     def test_ai_models_command_emits_selected_catalog(self) -> None:
         args = argparse.Namespace(refresh=False, selected_model="openrouter/free")
@@ -523,6 +540,282 @@ class DesktopEngineTests(unittest.TestCase):
 
         with self.assertRaises(SystemExit):
             desktop_engine.command_source_search(args)
+
+    def test_index_ingest_indexes_media_and_searches_by_filename(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "project"
+            media = Path(tmp) / "footage"
+            media.mkdir()
+            video = media / "night-rally-flag.mp4"
+            video.write_bytes(b"not a real video")
+
+            response = footage_index.ingest_paths(root, [media])
+
+            self.assertTrue(response["ok"])
+            self.assertEqual(response["added"], 1)
+            self.assertEqual(response["assetCount"], 1)
+            self.assertEqual(response["momentCount"], 1)
+
+            results = footage_index.search_index(root, "rally flag", 5)
+
+            self.assertEqual(results["resultCount"], 1)
+            self.assertEqual(results["results"][0]["path"], str(video.resolve()))
+            self.assertEqual(results["results"][0]["matchType"], "text")
+
+    def test_index_upsert_moments_supports_embedding_search(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "project"
+            media = Path(tmp) / "footage"
+            media.mkdir()
+            flag = media / "flag-shot.mp4"
+            crowd = media / "crowd-shot.mp4"
+            flag.write_bytes(b"flag")
+            crowd.write_bytes(b"crowd")
+
+            footage_index.upsert_moments(root, {
+                "moments": [
+                    {
+                        "path": str(flag),
+                        "start": 12,
+                        "end": 18,
+                        "description": "man holding saffron flag in crowd",
+                        "tags": ["flag", "crowd"],
+                        "embedding": [1.0, 0.0],
+                    },
+                    {
+                        "path": str(crowd),
+                        "start": 4,
+                        "end": 10,
+                        "description": "wide crowd shot near stage",
+                        "tags": ["crowd", "stage"],
+                        "embedding": [0.0, 1.0],
+                    },
+                ],
+            })
+
+            results = footage_index.search_index(root, "flag", 5, query_vector=[0.95, 0.05])
+
+            self.assertEqual(results["resultCount"], 1)
+            self.assertEqual(results["results"][0]["path"], str(flag.resolve()))
+            self.assertEqual(results["results"][0]["matchType"], "embedding")
+
+    def test_index_search_does_not_return_low_score_vector_noise(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "project"
+            media = Path(tmp) / "footage"
+            media.mkdir()
+            video = media / "hospital-building.mp4"
+            video.write_bytes(b"fake video")
+
+            footage_index.upsert_moments(root, {
+                "moments": [
+                    {
+                        "path": str(video),
+                        "start": 0,
+                        "end": 10,
+                        "description": "aerial hospital building with parking lot",
+                        "tags": ["hospital", "building"],
+                        "embedding": [1.0, 0.0],
+                    },
+                ],
+            })
+
+            miss = footage_index.search_index(root, "nuke", 5, query_vector=[0.0, 1.0])
+            lexical_fallback = footage_index.search_index(root, "building", 5, query_vector=[0.0, 1.0])
+
+            self.assertEqual(miss["resultCount"], 0)
+            self.assertEqual(lexical_fallback["resultCount"], 1)
+            self.assertEqual(lexical_fallback["results"][0]["matchType"], "text")
+
+    def test_import_semantic_script_index_bridges_experiment_rows(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "project"
+            media = Path(tmp) / "footage"
+            media.mkdir()
+            video = media / "parking-lot.mp4"
+            video.write_bytes(b"fake video")
+            semantic_db = Path(tmp) / "semantic-script.sqlite3"
+            with sqlite3.connect(semantic_db) as conn:
+                conn.execute("""
+                    CREATE TABLE scripts (
+                        id TEXT PRIMARY KEY,
+                        asset_path TEXT NOT NULL,
+                        start REAL NOT NULL,
+                        end REAL NOT NULL,
+                        visual TEXT NOT NULL,
+                        audio TEXT NOT NULL,
+                        visible_text_json TEXT NOT NULL,
+                        tags_json TEXT NOT NULL,
+                        shot_type TEXT NOT NULL,
+                        people_count TEXT NOT NULL,
+                        source TEXT NOT NULL,
+                        embedding_json TEXT,
+                        embedding_provider TEXT,
+                        embedding_model TEXT,
+                        embedding_dim INTEGER
+                    )
+                """)
+                conn.execute(
+                    """
+                    INSERT INTO scripts(
+                        id,
+                        asset_path,
+                        start,
+                        end,
+                        visual,
+                        audio,
+                        visible_text_json,
+                        tags_json,
+                        shot_type,
+                        people_count,
+                        source,
+                        embedding_json,
+                        embedding_provider,
+                        embedding_model,
+                        embedding_dim
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        "clip-1",
+                        str(video),
+                        13.0,
+                        28.0,
+                        "Aerial view of a hospital building and parking lot.",
+                        "ambient drone audio",
+                        json.dumps(["hospital entrance"]),
+                        json.dumps(["building", "parking lot"]),
+                        "aerial",
+                        "none",
+                        "test",
+                        json.dumps([1.0, 0.0]),
+                        "gemini",
+                        "gemini-embedding-2",
+                        2,
+                    ),
+                )
+
+            response = footage_index.import_semantic_script_index(root, semantic_db)
+
+            self.assertTrue(response["ok"])
+            self.assertEqual(response["imported"], 1)
+            self.assertEqual(response["embeddedMomentCount"], 1)
+
+            results = footage_index.search_index(root, "parking lot", 5, query_vector=[0.95, 0.05])
+
+            self.assertEqual(results["resultCount"], 1)
+            self.assertEqual(results["results"][0]["path"], str(video.resolve()))
+            self.assertEqual(results["results"][0]["start"], 13.0)
+            self.assertEqual(results["results"][0]["end"], 28.0)
+            self.assertEqual(results["results"][0]["matchType"], "embedding")
+            self.assertEqual(results["results"][0]["embeddingProvider"], "gemini")
+
+    def test_semantic_ingest_indexes_image_embedding(self) -> None:
+        class FakeEmbedder:
+            provider = "gemini"
+            model = "gemini-embedding-2"
+            dimensions = 2
+
+            def embed_image_document(self, _path: Path) -> list[float]:
+                return [1.0, 0.0]
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "project"
+            image = Path(tmp) / "green-field.jpg"
+            image.write_bytes(b"fake jpg")
+
+            response = index_worker.semantic_ingest_paths(root, [image], embedder=FakeEmbedder())
+
+            self.assertTrue(response["ok"])
+            self.assertEqual(response["embedded"], 1)
+            self.assertEqual(response["imageCount"], 1)
+            self.assertEqual(response["embeddedMomentCount"], 1)
+
+            results = footage_index.search_index(root, "field", 5, query_vector=[0.9, 0.1])
+
+            self.assertEqual(results["resultCount"], 1)
+            self.assertEqual(results["results"][0]["path"], str(image.resolve()))
+            self.assertEqual(results["results"][0]["kind"], "image")
+            self.assertEqual(results["results"][0]["matchType"], "embedding")
+            self.assertEqual(results["results"][0]["embeddingModel"], "gemini-embedding-2")
+
+    def test_semantic_ingest_indexes_video_chunks(self) -> None:
+        class FakeEmbedder:
+            provider = "gemini"
+            model = "gemini-embedding-2"
+            dimensions = 2
+
+            def embed_video_document(self, path: Path) -> list[float]:
+                return [0.0, 1.0] if "0000" in path.name else [0.2, 0.8]
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "project"
+            video = Path(tmp) / "night-rally.mp4"
+            chunk_a = Path(tmp) / "chunk_0000.mp4"
+            chunk_b = Path(tmp) / "chunk_0001.mp4"
+            video.write_bytes(b"fake video")
+            chunk_a.write_bytes(b"chunk a")
+            chunk_b.write_bytes(b"chunk b")
+            chunks = [
+                VideoChunk(chunk_path=chunk_a, source_path=video.resolve(), start=0.0, end=30.0),
+                VideoChunk(chunk_path=chunk_b, source_path=video.resolve(), start=25.0, end=55.0),
+            ]
+
+            with mock.patch("rippopotamus.index_worker.chunk_video", return_value=chunks):
+                with mock.patch("rippopotamus.index_worker.is_still_frame_chunk", return_value=False):
+                    with mock.patch("rippopotamus.index_worker.preprocess_video_chunk", side_effect=lambda path, **_kwargs: path):
+                        response = index_worker.semantic_ingest_paths(root, [video], embedder=FakeEmbedder())
+
+            self.assertTrue(response["ok"])
+            self.assertEqual(response["embedded"], 2)
+            self.assertEqual(response["videoChunks"], 2)
+            self.assertEqual(response["embeddedMomentCount"], 2)
+
+            results = footage_index.search_index(root, "rally", 5, query_vector=[0.0, 1.0])
+
+            self.assertEqual(results["resultCount"], 2)
+            self.assertEqual(results["results"][0]["path"], str(video.resolve()))
+            self.assertEqual(results["results"][0]["start"], 0.0)
+            self.assertEqual(results["results"][0]["matchType"], "embedding")
+
+    def test_semantic_ingest_rejects_gemini_chunk_over_provider_limit(self) -> None:
+        class FakeEmbedder:
+            provider = "gemini"
+            model = "gemini-embedding-2"
+            dimensions = 2
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "project"
+            video = Path(tmp) / "night-rally.mp4"
+            video.write_bytes(b"fake video")
+
+            response = index_worker.semantic_ingest_paths(
+                root,
+                [video],
+                embedder=FakeEmbedder(),
+                options=index_worker.SemanticIngestOptions(chunk_duration=121, overlap=5),
+            )
+
+            self.assertFalse(response["ok"])
+            self.assertIn("up to 120 seconds", response["error"])
+            self.assertEqual(response["embedded"], 0)
+
+    def test_index_commands_parse_backend_routes(self) -> None:
+        parser = desktop_engine.build_parser()
+        ingest = parser.parse_args(["index-ingest", "--index-root", "/tmp/rippo", "/tmp/media"])
+        semantic = parser.parse_args(["index-semantic-ingest", "--index-root", "/tmp/rippo", "--chunk-duration", "20", "/tmp/media"])
+        semantic_import = parser.parse_args(["index-import-semantic-script", "--index-root", "/tmp/rippo", "--semantic-db", "/tmp/semantic.sqlite3"])
+        search = parser.parse_args(["index-search", "--index-root", "/tmp/rippo", "--query", "red car", "--limit", "7"])
+        upsert = parser.parse_args(["index-upsert", "--index-root", "/tmp/rippo", "--payload-json", '{"moments": []}'])
+
+        self.assertIs(ingest.func, desktop_engine.command_index_ingest)
+        self.assertIs(semantic.func, desktop_engine.command_index_semantic_ingest)
+        self.assertEqual(semantic.chunk_duration, 20)
+        self.assertIs(semantic_import.func, desktop_engine.command_index_import_semantic_script)
+        self.assertEqual(semantic_import.semantic_db, "/tmp/semantic.sqlite3")
+        self.assertIs(search.func, desktop_engine.command_index_search)
+        self.assertEqual(search.limit, 7)
+        self.assertIs(upsert.func, desktop_engine.command_index_upsert)
 
     def test_fetch_auto_uses_yt_dlp_when_supported(self) -> None:
         args = argparse.Namespace(url="https://www.youtube.com/watch?v=TQd2k1pEXp4", provider="auto")

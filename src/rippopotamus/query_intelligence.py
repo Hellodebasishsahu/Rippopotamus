@@ -236,7 +236,7 @@ def _free_chat_models(payload: dict[str, Any]) -> list[dict[str, object]]:
         if model_id == DEFAULT_OPENROUTER_MODEL or model_id.endswith(":free") or _pricing_is_free(model.get("pricing")):
             architecture = model.get("architecture") if isinstance(model.get("architecture"), dict) else {}
             output_modalities = architecture.get("output_modalities") if isinstance(architecture, dict) else []
-            if output_modalities and "text" not in output_modalities:
+            if not _is_text_only_output(output_modalities):
                 continue
             models.append(_model_payload(model))
     models.sort(key=lambda item: (0 if item["id"] == DEFAULT_OPENROUTER_MODEL else 1, item["name"].lower()))
@@ -248,6 +248,13 @@ def _pricing_is_free(pricing: object) -> bool:
         return False
     keys = ("prompt", "completion", "request", "web_search", "internal_reasoning")
     return all(str(pricing.get(key, "0")).strip() in {"0", "0.0", "0.000000", ""} for key in keys)
+
+
+def _is_text_only_output(output_modalities: object) -> bool:
+    if not isinstance(output_modalities, list):
+        return False
+    normalized = [str(modality).strip().lower() for modality in output_modalities if str(modality).strip()]
+    return normalized == ["text"]
 
 
 def _model_payload(model: dict[str, Any]) -> dict[str, object]:

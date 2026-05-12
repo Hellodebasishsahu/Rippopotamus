@@ -8,11 +8,20 @@ declare global {
       searchSources: (query?: string, pack?: string) => Promise<SourceSearchResponse>;
       listAiModels: (refresh?: boolean) => Promise<OpenRouterModelCatalog>;
       setAiModel: (modelId: string) => Promise<{ model: string; health: EngineHealth; catalog: OpenRouterModelCatalog }>;
+      indexStatus: (indexRoot?: string) => Promise<IndexStatusResponse>;
+      indexIngest: (payload: IndexIngestRequest) => Promise<IndexIngestResponse>;
+      indexSemanticIngest: (payload: IndexSemanticIngestRequest) => Promise<IndexSemanticIngestResponse>;
+      getIndexIngestSettings: () => Promise<IndexIngestSettingsResponse>;
+      setIndexIngestSettings: (payload: Partial<IndexIngestSettings>) => Promise<IndexIngestSettingsResponse>;
+      indexSearch: (payload: IndexSearchRequest) => Promise<IndexSearchResponse>;
+      indexUpsert: (payload: IndexUpsertRequest) => Promise<IndexUpsertResponse>;
       fetch: (url: string, provider?: ProviderId | "auto", cookieSource?: CookieSource) => Promise<FetchResponse>;
       download: (payload: DownloadRequest) => Promise<DownloadResponse>;
       openFolder: (folder: string) => Promise<void>;
       openExternal: (url: string) => Promise<void>;
       loadThumbnail: (urls: string[]) => Promise<ThumbnailLoadResult>;
+      libraryThumbnail: (payload: { path: string; time?: number }) => Promise<{ ok: boolean; url: string | null }>;
+      libraryMediaUrl: (payload: { path: string }) => Promise<{ ok: boolean; url: string | null }>;
       listBrowsers: () => Promise<CookiesBrowserResponse>;
       setDefaultCookieSource: (source: CookieSource) => Promise<CookiesBrowserResponse>;
       setCookiesBrowser: (browserId: string | null) => Promise<CookiesBrowserResponse>;
@@ -230,7 +239,200 @@ export type SourceSearchResponse = {
   routeResultCount?: number;
   searchedSources?: string[];
   intelligence?: SourceSearchIntelligence;
+  media?: MediaInfo | null;
+  playable?: PlayableLink[];
   error?: string;
+};
+
+export type PlayableLink = {
+  url: string;
+  host: string;
+  label: string;
+  kind: "video" | "audio" | string;
+  size?: string;
+  quality?: string;
+  extension?: string;
+  source_adapter?: string;
+};
+
+export type IndexMoment = {
+  id?: string;
+  path: string;
+  assetPath?: string;
+  start?: number | null;
+  end?: number | null;
+  title?: string;
+  description?: string;
+  caption?: string;
+  tags?: string[];
+  embedding?: number[];
+  vector?: number[];
+};
+
+export type IndexStatusResponse = {
+  ok: boolean;
+  indexRoot: string;
+  dbPath?: string;
+  assetCount: number;
+  momentCount: number;
+  embeddedMomentCount: number;
+  embeddingEndpointConfigured: boolean;
+  geminiEmbeddingConfigured?: boolean;
+  geminiEmbeddingModel?: string;
+  embeddingDimensions?: number;
+  error?: string;
+};
+
+export type IndexAsset = {
+  id: string;
+  path: string;
+  kind: "video" | "image" | "audio" | string;
+  title: string;
+  duration?: number | null;
+  width?: number | null;
+  height?: number | null;
+  state: "added" | "updated" | "unchanged" | string;
+};
+
+export type IndexSkippedEntry = {
+  path: string;
+  reason: string;
+};
+
+export type IndexIngestRequest = {
+  indexRoot?: string;
+  paths: string[];
+};
+
+export type IndexIngestResponse = IndexStatusResponse & {
+  indexed: IndexAsset[];
+  added: number;
+  updated: number;
+  unchanged: number;
+  skipped: number;
+  skippedEntries: IndexSkippedEntry[];
+};
+
+export type IndexSemanticIngestRequest = {
+  indexRoot?: string;
+  paths: string[];
+  provider?: IndexEmbeddingProvider;
+  chunkDuration?: number;
+  overlap?: number;
+  preprocess?: boolean;
+  skipStill?: boolean;
+  targetResolution?: number;
+  targetFps?: number;
+};
+
+export type IndexEmbeddingProvider = "gemini";
+
+export type IndexNumberLimit = {
+  min: number;
+  max: number;
+  step: number;
+  default: number;
+};
+
+export type IndexIngestLimits = {
+  provider: IndexEmbeddingProvider;
+  label: string;
+  model: string;
+  videoSeconds: number;
+  recommendedDimensions: number[];
+  chunkDuration: IndexNumberLimit;
+  overlap: IndexNumberLimit;
+  targetResolution: IndexNumberLimit;
+  targetFps: IndexNumberLimit;
+};
+
+export type IndexIngestSettings = {
+  provider: IndexEmbeddingProvider;
+  chunkDuration: number;
+  overlap: number;
+  preprocess: boolean;
+  skipStill: boolean;
+  targetResolution: number;
+  targetFps: number;
+};
+
+export type IndexIngestSettingsResponse = IndexIngestSettings & {
+  limits: IndexIngestLimits;
+};
+
+export type IndexSemanticIngestResponse = IndexStatusResponse & {
+  semantic: boolean;
+  embedded: number;
+  videoChunks: number;
+  imageCount: number;
+  failed: number;
+  failedEntries?: IndexSkippedEntry[];
+  skipped: number;
+  skippedEntries: IndexSkippedEntry[];
+  embeddingProvider?: string;
+  embeddingModel?: string;
+  chunkDuration?: number;
+  overlap?: number;
+};
+
+export type IndexSearchRequest = {
+  indexRoot?: string;
+  query?: string;
+  limit?: number;
+};
+
+export type IndexSearchResult = {
+  id: string;
+  assetId: string;
+  path: string;
+  file: string;
+  kind: "video" | "image" | "audio" | string;
+  title: string;
+  start?: number | null;
+  end?: number | null;
+  description: string;
+  tags: string[];
+  score: number;
+  matchType: "embedding" | "text" | "recent" | string;
+  duration?: number | null;
+  width?: number | null;
+  height?: number | null;
+  embeddingProvider?: string | null;
+  embeddingModel?: string | null;
+};
+
+export type IndexSearchResponse = IndexStatusResponse & {
+  query: string;
+  results: IndexSearchResult[];
+  resultCount: number;
+  queryEmbeddingSource?: string | null;
+};
+
+export type IndexUpsertRequest = {
+  indexRoot?: string;
+  moments: IndexMoment[];
+};
+
+export type IndexUpsertResponse = IndexStatusResponse & {
+  upserted: number;
+  skipped: number;
+  skippedEntries: IndexSkippedEntry[];
+};
+
+export type MediaInfo = {
+  imdbId: string | null;
+  type: "movie" | "series" | string | null;
+  title: string | null;
+  year: string | null;
+  releaseInfo?: string | null;
+  poster?: string | null;
+  background?: string | null;
+  synopsis?: string | null;
+  runtime?: string | null;
+  imdbRating?: string | null;
+  genres?: string[] | null;
+  cast?: string[] | null;
+  source?: string;
 };
 
 export type YtDlpUpdateInfo = {
