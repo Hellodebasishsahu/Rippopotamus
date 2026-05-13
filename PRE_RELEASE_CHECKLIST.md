@@ -16,12 +16,30 @@ Use this before cutting any local test build or sharing a macOS/Windows app pack
 
 - Windows x64 directory packaging is wired through `npm run package:win`.
 - Expected Windows x64 local test build path is `release/win-unpacked/Rippopotamus.exe`.
-- Windows ARM64 directory packaging is available through `npm run package:win:arm64`.
 - Packaged ffmpeg lookup uses `ffmpeg.exe` on Windows and unpacked `ffmpeg-static` resources.
 - Windows package branding uses `public/brand-logo.ico`.
 - Python runtime discovery now includes the Windows launcher/path commands: `py`, `python`, and `python3`.
 - Remaining Windows release blockers: no frozen Python/provider runtime, no Windows signing, no installer target, and no real Windows-machine smoke yet.
-- Mac-to-Windows cross-builds are packaging smoke only. `ffmpeg-static` installs the host-platform binary, so final Windows media smoke must be built from a Windows install or Windows CI runner.
+- Mac-to-Windows cross-builds explicitly run `npm run prepare:ffmpeg:win` so the packaged directory contains `ffmpeg.exe`. Final Windows media smoke still needs a Windows install or Windows CI runner.
+- Electron Builder runs `scripts/after-pack.cjs` to fail missing target ffmpeg binaries and prune wrong-platform ffmpeg binaries from packaged output.
+
+## Current Run Status - 2026-05-13
+
+- Automated gate: passed with `npm test` after `npm ci`.
+- Dependency install: `npm ci` passed with 0 vulnerabilities. Editable Python install passed in a temp Python 3.13 venv at `/tmp/rippo-prepod-venv`; the literal `/usr/bin/python3` path on this Mac is Python 3.9.6 and fails the repo's `>=3.11` requirement.
+- Desktop engine health: passed with Homebrew Python 3.13, `yt-dlp 2026.03.17`, ffmpeg 8.0.1, and aria2c fallback torrent support. `gallery-dl` and qBittorrent-nox remain missing from the host install.
+- CLI smoke: passed for init, add, status, manifest, zip, dry-run, expected folders, and manifest contents using `/tmp/rippo-release-smoke`.
+- Real media smoke: passed for `mp4-best`, `proxy`, `audio-mp3`, and `thumbnail` using `https://archive.org/details/SampleVideo1280x7205mb`. The previous YouTube test URL now returns "Video unavailable" for real downloads, so it is no longer a valid smoke URL.
+- Readable failure smoke: passed. `https://example.com/not-a-video` returned `media not found` / `This source is no longer available`, not a stack trace.
+- Desktop dev boot: passed. `npm run dev` opened a nonblank Electron window, showed Tools health for Python, yt-dlp, aria2c, and ffmpeg, accepted multiple pasted URLs, fetched good metadata, kept the failed link visible, showed download progress, saved one MP4, and opened `/Users/dev/Downloads/Rippo` in Finder.
+- Native packages: passed for `npm run package:win` and `npm run package:mac`. Windows artifact is `release/win-unpacked/Rippopotamus.exe` and macOS artifact is `release/mac-arm64/Rippopotamus.app`.
+- Package artifact verifier: `npm run verify:package:mac` passed and checks Mach-O executable headers. `npm run verify:package:win` passed and checks PE executable headers for both `Rippopotamus.exe` and bundled `ffmpeg.exe`.
+- Packaged engine health: `npm run verify:package:mac:engine` passed locally and confirmed the packaged macOS engine uses the packaged ffmpeg path. `npm run verify:package:win:engine` is wired for Windows CI only because it must execute the packaged Windows `ffmpeg.exe` on Windows.
+- Package binary hygiene: packaged macOS output must not include `ffmpeg.exe`, and packaged Windows output must not include the macOS/Linux `ffmpeg` binary.
+- Artifact review: no `.env`, `manifest.json`, scratch, output, ChatGPT, appraisal, tests, docs, or experiment paths were found inside the packaged asar/resources scan. `release/win-unpacked/Rippopotamus.exe` is PE32+ x86-64 and the mac app binary is arm64.
+- Important blocker: the Windows package was cross-built on macOS. It now verifies the packaged Windows `ffmpeg.exe`, but the folder is still packaging proof, not real Windows launch/media-runtime proof. Final Windows launch/download smoke must be run on Windows or Windows CI.
+- Windows CI: added `.github/workflows/windows-package.yml` to install the Python engine, run `npm ci`, run `npm test`, run `npm run package:win:ci`, run packaged Windows engine health against bundled `ffmpeg.exe`, and upload `release/win-unpacked` from a real Windows runner.
+- External release blockers remain: Python/yt-dlp is not frozen, Windows installer/signing is not configured, macOS notarization is skipped, and real Windows-machine launch/download smoke is still required before sharing broadly.
 
 ## Audit - 2026-05-09
 

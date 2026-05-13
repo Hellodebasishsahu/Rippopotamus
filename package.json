@@ -9,8 +9,13 @@
     "build:ui": "tsc -p tsconfig.json --noEmit && vite build",
     "build:electron": "tsc -p tsconfig.electron.json",
     "package:mac": "npm run build && electron-builder --mac dir",
-    "package:win": "npm run build && electron-builder --win dir --x64",
-    "package:win:arm64": "npm run build && electron-builder --win dir --arm64",
+    "prepare:ffmpeg:win": "node scripts/install-ffmpeg-static-target.mjs win32 x64",
+    "package:win": "npm run prepare:ffmpeg:win && npm run build && electron-builder --win dir --x64",
+    "package:win:ci": "npm run package:win && npm run verify:package:win",
+    "verify:package:mac": "node scripts/verify-package-artifact.mjs mac",
+    "verify:package:win": "node scripts/verify-package-artifact.mjs win",
+    "verify:package:mac:engine": "node scripts/verify-packaged-engine-health.mjs mac",
+    "verify:package:win:engine": "node scripts/verify-packaged-engine-health.mjs win",
     "test": "PYTHONPATH=src python -m unittest discover -s tests && npm run build && node --test tests/electron_cookie_validation.test.cjs tests/electron_thumbnail_validation.test.cjs tests/electron_media_library_validation.test.cjs tests/electron_page_probe_policy_validation.test.cjs tests/library_preview_contract.test.cjs tests/url_parser_validation.test.cjs"
   },
   "keywords": [],
@@ -39,6 +44,7 @@
     "appId": "app.rippopotamus.desktop",
     "productName": "Rippopotamus",
     "asar": true,
+    "afterPack": "scripts/after-pack.cjs",
     "asarUnpack": [
       "node_modules/ffmpeg-static/**/*"
     ],
