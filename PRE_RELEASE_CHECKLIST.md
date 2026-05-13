@@ -37,8 +37,8 @@ Use this before cutting any local test build or sharing a macOS/Windows app pack
 - Packaged engine health: `npm run verify:package:mac:engine` passed locally and confirmed the packaged macOS engine uses the packaged ffmpeg path. `npm run verify:package:win:engine` is wired for Windows CI only because it must execute the packaged Windows `ffmpeg.exe` on Windows.
 - Package binary hygiene: packaged macOS output must not include `ffmpeg.exe`, and packaged Windows output must not include the macOS/Linux `ffmpeg` binary.
 - Artifact review: no `.env`, `manifest.json`, scratch, output, ChatGPT, appraisal, tests, docs, or experiment paths were found inside the packaged asar/resources scan. `release/win-unpacked/Rippopotamus.exe` is PE32+ x86-64 and the mac app binary is arm64.
-- Important blocker: the Windows package was cross-built on macOS. It now verifies the packaged Windows `ffmpeg.exe`, but the folder is still packaging proof, not real Windows launch/media-runtime proof. Final Windows launch/download smoke must be run on Windows or Windows CI.
-- Windows CI: added `.github/workflows/windows-package.yml` to install the Python engine, run `npm ci`, run `npm test`, run `npm run package:win:ci`, run packaged Windows engine health against bundled `ffmpeg.exe`, and upload `release/win-unpacked` from a real Windows runner.
+- Windows CI: passed in GitHub Actions run `25819033019` on a real `windows-latest` runner. The job installed the Python engine, ran `npm ci`, ran `npm test`, ran `npm run package:win:ci`, ran packaged Windows engine health against bundled `ffmpeg.exe`, and uploaded `release/win-unpacked`.
+- Important blocker: Windows packaging and packaged engine health are proven on Windows CI, but GUI launch/download smoke on an actual Windows desktop is still required before sharing broadly.
 - External release blockers remain: Python/yt-dlp is not frozen, Windows installer/signing is not configured, macOS notarization is skipped, and real Windows-machine launch/download smoke is still required before sharing broadly.
 
 ## Audit - 2026-05-09
