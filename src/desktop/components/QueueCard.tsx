@@ -1,24 +1,8 @@
 import { ExternalLink, ImageOff, Link2, Loader2, RefreshCcw, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
-import type { BrowserInfo, CookieSource, FetchResponse, PresetOption } from "../../../electron/types";
-
-export type QueueItem = {
-  localId: string;
-  url: string;
-  status: "queued" | "fetching" | "ready" | "downloading" | "done" | "failed";
-  preset: string;
-  metadata?: Extract<FetchResponse, { ok: true }>["metadata"];
-  error?: string;
-  progress?: number;
-  stage?: string;
-  phase?: string;
-  phaseIndex?: number;
-  finalizing?: boolean;
-  files?: string[];
-  jobId?: string;
-  notices?: { level: "warning" | "error"; message: string }[];
-  cookieSource: CookieSource;
-};
+import type { BrowserInfo, CookieSource, PresetOption } from "../../../electron/types";
+import { queueItemCanChangeOutput, queueItemCanRefetch, queueItemCanRemove, type QueueItem } from "../app/downloadQueueModel";
+import { getDesktopClient } from "../client/desktopClient";
 
 function formatDuration(seconds?: number) {
   if (!seconds) return "Unknown length";
@@ -116,7 +100,14 @@ function ThumbnailImage({ urls }: { urls: string[] }) {
     setLoading(true);
     setOrientation("landscape");
 
-    window.rippo.loadThumbnail(urls).then((result) => {
+    const desktop = getDesktopClient();
+    if (!desktop) {
+      setFailed(true);
+      setLoading(false);
+      return;
+    }
+
+    desktop.loadThumbnail(urls).then((result) => {
       if (cancelled) return;
       if (result.src) setSrc(result.src);
       else setFailed(true);
@@ -205,7 +196,7 @@ export function QueueCard({
             <select
               value={item.preset}
               onChange={(event) => setItemPreset(item.localId, event.target.value)}
-              disabled={item.status === "downloading" || item.status === "done"}
+              disabled={!queueItemCanChangeOutput(item)}
               aria-label="Output format"
               title={presetOptions.find((p) => p.id === item.preset)?.detail}
             >
@@ -219,7 +210,7 @@ export function QueueCard({
               <select
                 value={cookieSourceValue(item.cookieSource)}
                 onChange={(event) => setItemCookieSource(item.localId, cookieSourceFromValue(event.target.value))}
-                disabled={item.status === "downloading" || item.status === "done"}
+                disabled={!queueItemCanChangeOutput(item)}
                 aria-label="Site access"
               >
                 <option value="off">Public only</option>
@@ -230,10 +221,10 @@ export function QueueCard({
             </div>
           ) : null}
           <span className="foot-spacer" />
-          <button type="button" className="icon-btn" onClick={() => refetch(item)} disabled={item.status === "fetching" || item.status === "downloading"} title="Refetch" aria-label="Refetch">
+          <button type="button" className="icon-btn" onClick={() => refetch(item)} disabled={!queueItemCanRefetch(item)} title="Refetch" aria-label="Refetch">
             <RefreshCcw size={16} strokeWidth={2} aria-hidden />
           </button>
-          <button type="button" className="icon-btn icon-btn-danger" onClick={() => removeItem(item.localId)} disabled={item.status === "downloading"} title="Remove" aria-label="Remove">
+          <button type="button" className="icon-btn icon-btn-danger" onClick={() => removeItem(item.localId)} disabled={!queueItemCanRemove(item)} title="Remove" aria-label="Remove">
             <Trash2 size={16} strokeWidth={2} aria-hidden />
           </button>
         </div>

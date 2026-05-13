@@ -22,9 +22,9 @@ class CliTests(unittest.TestCase):
 
     def test_provider_catalog_is_ui_ready(self) -> None:
         catalog = provider_catalog()
-        self.assertIn({"id": "yt-dlp", "label": "Video", "defaultPreset": "mp4-best"}, catalog["providers"])
-        self.assertIn({"id": "gallery-dl", "label": "Images", "defaultPreset": "gallery"}, catalog["providers"])
-        self.assertIn({"id": "torrent", "label": "Torrent", "defaultPreset": "torrent"}, catalog["providers"])
+        self.assertIn({"id": "yt-dlp", "label": "Video", "defaultPreset": "mp4-best", "supportsBrowserAccess": True}, catalog["providers"])
+        self.assertIn({"id": "gallery-dl", "label": "Images", "defaultPreset": "gallery", "supportsBrowserAccess": False}, catalog["providers"])
+        self.assertIn({"id": "torrent", "label": "Torrent", "defaultPreset": "torrent", "supportsBrowserAccess": False}, catalog["providers"])
         self.assertIn({"id": "gallery", "label": "Images", "detail": "Image gallery", "provider": "gallery-dl"}, catalog["presets"])
         self.assertIn({"id": "torrent", "label": "Torrent", "detail": "Magnet or torrent file", "provider": "torrent"}, catalog["presets"])
 

@@ -66,10 +66,10 @@ PRESETS: dict[str, dict[str, Any]] = {
     },
 }
 
-PROVIDER_CATALOG: dict[str, dict[str, str]] = {
-    "yt-dlp": {"id": "yt-dlp", "label": "Video", "defaultPreset": "mp4-best"},
-    "gallery-dl": {"id": "gallery-dl", "label": "Images", "defaultPreset": "gallery"},
-    "torrent": {"id": "torrent", "label": "Torrent", "defaultPreset": "torrent"},
+PROVIDER_CATALOG: dict[str, dict[str, Any]] = {
+    "yt-dlp": {"id": "yt-dlp", "label": "Video", "defaultPreset": "mp4-best", "supportsBrowserAccess": True},
+    "gallery-dl": {"id": "gallery-dl", "label": "Images", "defaultPreset": "gallery", "supportsBrowserAccess": False},
+    "torrent": {"id": "torrent", "label": "Torrent", "defaultPreset": "torrent", "supportsBrowserAccess": False},
 }
 
 PROVIDERS = set(PROVIDER_CATALOG)
@@ -84,7 +84,7 @@ class ProviderContext:
     ffmpeg_path: str | None = None
 
 
-def provider_catalog() -> dict[str, list[dict[str, str]]]:
+def provider_catalog() -> dict[str, list[dict[str, Any]]]:
     return {
         "providers": [dict(provider) for provider in PROVIDER_CATALOG.values()],
         "presets": [

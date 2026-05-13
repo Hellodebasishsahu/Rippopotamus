@@ -134,6 +134,7 @@ export type ProviderOption = {
   id: ProviderId;
   label: string;
   defaultPreset: string;
+  supportsBrowserAccess?: boolean;
 };
 
 export type PresetOption = {

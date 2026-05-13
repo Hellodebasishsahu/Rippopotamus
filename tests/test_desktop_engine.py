@@ -11,7 +11,7 @@ from contextlib import redirect_stdout
 from pathlib import Path
 from unittest import mock
 
-from rippopotamus import desktop_engine, footage_index, index_worker, query_intelligence, search_evidence, source_registry
+from rippopotamus import desktop_engine, desktop_runtime, footage_index, index_worker, query_intelligence, search_evidence, source_registry, torrent_downloads
 from rippopotamus.providers import ProviderContext, desktop_download_command
 from rippopotamus.video_chunker import VideoChunk
 
@@ -33,13 +33,13 @@ class DesktopEngineTests(unittest.TestCase):
             binary.chmod(0o755)
 
             with mock.patch.dict(os.environ, {"RIPPO_YTDLP_PATH": str(binary)}):
-                self.assertEqual(desktop_engine.yt_dlp_base(), [str(binary)])
+                self.assertEqual(desktop_runtime.yt_dlp_base(), [str(binary)])
 
     def test_missing_configured_yt_dlp_path_falls_back(self) -> None:
         with mock.patch.dict(os.environ, {"RIPPO_YTDLP_PATH": "/missing/yt-dlp"}):
-            with mock.patch("rippopotamus.desktop_engine.configured_yt_dlp_path", return_value=None):
+            with mock.patch("rippopotamus.desktop_runtime.configured_yt_dlp_path", return_value=None):
                 with mock.patch.dict("sys.modules", {"yt_dlp": object()}):
-                    self.assertEqual(desktop_engine.yt_dlp_base(), [desktop_engine.sys.executable, "-m", "yt_dlp"])
+                    self.assertEqual(desktop_runtime.yt_dlp_base(), [desktop_runtime.sys.executable, "-m", "yt_dlp"])
 
     def test_configured_yt_dlp_path_rejects_non_executable(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -49,45 +49,45 @@ class DesktopEngineTests(unittest.TestCase):
 
             with mock.patch.dict(os.environ, {"RIPPO_YTDLP_PATH": str(binary)}):
                 with self.assertRaises(SystemExit):
-                    desktop_engine.configured_yt_dlp_path()
+                    desktop_runtime.configured_yt_dlp_path()
 
     def test_cookies_browser_args_returns_yt_dlp_flag(self) -> None:
         with mock.patch.dict(os.environ, {"RIPPO_COOKIES_FROM_BROWSER": "chrome"}):
-            self.assertEqual(desktop_engine.cookies_browser_args(), ["--cookies-from-browser", "chrome"])
+            self.assertEqual(desktop_runtime.cookies_browser_args(), ["--cookies-from-browser", "chrome"])
 
     def test_cookies_browser_args_ignores_blank_value(self) -> None:
         with mock.patch.dict(os.environ, {"RIPPO_COOKIES_FROM_BROWSER": "   "}):
-            self.assertEqual(desktop_engine.cookies_browser_args(), [])
+            self.assertEqual(desktop_runtime.cookies_browser_args(), [])
 
     def test_verify_cookies_browser_reports_off_when_unset(self) -> None:
         with mock.patch.dict(os.environ, {}, clear=True):
             self.assertEqual(
-                desktop_engine.verify_cookies_browser(["yt-dlp"]),
+                desktop_runtime.verify_cookies_browser(["yt-dlp"]),
                 {"status": "off", "browser": None, "ok": None, "message": None},
             )
 
     def test_verify_cookies_browser_accepts_extracted_cookie_output(self) -> None:
-        completed = desktop_engine.subprocess.CompletedProcess(
+        completed = desktop_runtime.subprocess.CompletedProcess(
             args=[],
             returncode=1,
             stdout="Extracting cookies from chrome\nExtracted 12 cookies from chrome\n",
             stderr="ERROR: Unsupported URL: https://example.com/\n",
         )
-        with mock.patch("rippopotamus.desktop_engine.subprocess.run", return_value=completed):
+        with mock.patch("rippopotamus.desktop_runtime.subprocess.run", return_value=completed):
             self.assertEqual(
-                desktop_engine.verify_cookies_browser(["yt-dlp"], "chrome"),
+                desktop_runtime.verify_cookies_browser(["yt-dlp"], "chrome"),
                 {"status": "ok", "browser": "chrome", "ok": True, "message": "Browser cookies are readable."},
             )
 
     def test_cookie_error_message_maps_locked_database(self) -> None:
         self.assertEqual(
-            desktop_engine.cookie_error_message("ERROR: cookie database is locked"),
+            desktop_runtime.cookie_error_message("ERROR: cookie database is locked"),
             "Browser cookies are locked. Close the browser and retry.",
         )
 
     def test_cookie_error_message_maps_unavailable_format(self) -> None:
         self.assertEqual(
-            desktop_engine.cookie_error_message("ERROR: Requested format is not available"),
+            desktop_runtime.cookie_error_message("ERROR: Requested format is not available"),
             "Selected format is not available for this link.",
         )
 
@@ -119,7 +119,7 @@ class DesktopEngineTests(unittest.TestCase):
 
     def test_fetch_metadata_uses_explicit_cookie_source(self) -> None:
         args = argparse.Namespace(url="https://www.youtube.com/watch?v=TQd2k1pEXp4", provider="yt-dlp", cookies_browser="chrome")
-        with mock.patch("rippopotamus.desktop_engine.yt_dlp_base", return_value=["yt-dlp"]):
+        with mock.patch("rippopotamus.desktop_engine.provider_context", return_value=ProviderContext(yt_dlp_base=("yt-dlp",), cookies_browser="chrome")):
             with mock.patch("rippopotamus.desktop_engine.run_text", return_value='{"id": "TQd2k1pEXp4", "title": "Video"}') as run_text:
                 stream = io.StringIO()
                 with redirect_stdout(stream):
@@ -856,52 +856,52 @@ class DesktopEngineTests(unittest.TestCase):
                     desktop_engine.command_fetch(args)
 
     def test_cookies_health_ignores_external_config(self) -> None:
-        completed = desktop_engine.subprocess.CompletedProcess(
+        completed = desktop_runtime.subprocess.CompletedProcess(
             args=[],
             returncode=0,
             stdout="Extracting cookies from chrome\nExtracted 12 cookies from chrome\n",
             stderr="",
         )
         with mock.patch.dict(os.environ, {"RIPPO_COOKIES_FROM_BROWSER": "safari"}):
-            with mock.patch("rippopotamus.desktop_engine.subprocess.run", return_value=completed) as run:
-                desktop_engine.verify_cookies_browser(["yt-dlp"], "chrome")
+            with mock.patch("rippopotamus.desktop_runtime.subprocess.run", return_value=completed) as run:
+                desktop_runtime.verify_cookies_browser(["yt-dlp"], "chrome")
 
         self.assertIn("--ignore-config", run.call_args.args[0])
         self.assertIn("chrome", run.call_args.args[0])
         self.assertNotIn("safari", run.call_args.args[0])
 
     def test_gallery_dl_status_reports_image_provider_runtime(self) -> None:
-        completed = desktop_engine.subprocess.CompletedProcess(
+        completed = desktop_runtime.subprocess.CompletedProcess(
             args=[],
             returncode=0,
             stdout="1.32.1\n",
             stderr="",
         )
-        with mock.patch("rippopotamus.desktop_engine.gallery_dl_base", return_value=["gallery-dl"]):
-            with mock.patch("rippopotamus.desktop_engine.subprocess.run", return_value=completed):
+        with mock.patch("rippopotamus.desktop_runtime.gallery_dl_base", return_value=["gallery-dl"]):
+            with mock.patch("rippopotamus.desktop_runtime.subprocess.run", return_value=completed):
                 self.assertEqual(
-                    desktop_engine.gallery_dl_status(),
+                    desktop_runtime.gallery_dl_status(),
                     {"ok": True, "version": "1.32.1", "path": "gallery-dl", "error": None},
                 )
 
     def test_gallery_dl_status_reports_missing_runtime_without_failing_health(self) -> None:
-        with mock.patch("rippopotamus.desktop_engine.gallery_dl_base", side_effect=SystemExit("Missing gallery-dl.")):
+        with mock.patch("rippopotamus.desktop_runtime.gallery_dl_base", side_effect=SystemExit("Missing gallery-dl.")):
             self.assertEqual(
-                desktop_engine.gallery_dl_status(),
+                desktop_runtime.gallery_dl_status(),
                 {"ok": False, "version": None, "path": None, "error": "Missing gallery-dl."},
             )
 
     def test_aria2c_status_reports_torrent_provider_runtime(self) -> None:
-        completed = desktop_engine.subprocess.CompletedProcess(
+        completed = desktop_runtime.subprocess.CompletedProcess(
             args=[],
             returncode=0,
             stdout="aria2 version 1.37.0\n",
             stderr="",
         )
-        with mock.patch("rippopotamus.desktop_engine.aria2c_base", return_value=["aria2c"]):
-            with mock.patch("rippopotamus.desktop_engine.subprocess.run", return_value=completed):
+        with mock.patch("rippopotamus.desktop_runtime.aria2c_base", return_value=["aria2c"]):
+            with mock.patch("rippopotamus.desktop_runtime.subprocess.run", return_value=completed):
                 self.assertEqual(
-                    desktop_engine.aria2c_status(),
+                    desktop_runtime.aria2c_status(),
                     {"ok": True, "version": "1.37.0", "path": "aria2c", "error": None},
                 )
 
@@ -965,8 +965,8 @@ class DesktopEngineTests(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as tmp:
             args.output_root = tmp
-            with mock.patch("rippopotamus.desktop_engine.qbittorrent_status", return_value={"ok": True}):
-                with mock.patch("rippopotamus.desktop_engine.command_qbittorrent_download", return_value=0) as qbit_download:
+            with mock.patch("rippopotamus.torrent_downloads.qbittorrent_status", return_value={"ok": True}):
+                with mock.patch("rippopotamus.torrent_downloads.command_qbittorrent_download", return_value=0) as qbit_download:
                     self.assertEqual(desktop_engine.command_download(args), 0)
 
         qbit_download.assert_called_once()
@@ -982,37 +982,37 @@ class DesktopEngineTests(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as tmp:
             args.output_root = tmp
-            with mock.patch("rippopotamus.desktop_engine.qbittorrent_status", return_value={"ok": False}):
+            with mock.patch("rippopotamus.torrent_downloads.qbittorrent_status", return_value={"ok": False}):
                 with mock.patch("rippopotamus.providers.aria2c_base", return_value=["aria2c"]):
-                    with mock.patch("rippopotamus.desktop_engine.command_aria2_download", return_value=0) as aria_download:
+                    with mock.patch("rippopotamus.torrent_downloads.command_aria2_download", return_value=0) as aria_download:
                         self.assertEqual(desktop_engine.command_download(args), 0)
 
         aria_download.assert_called_once()
 
     def test_qbittorrent_status_reports_torrent_runtime(self) -> None:
-        completed = desktop_engine.subprocess.CompletedProcess(
+        completed = desktop_runtime.subprocess.CompletedProcess(
             args=[],
             returncode=0,
             stdout="qBittorrent v5.1.4\n",
             stderr="",
         )
-        with mock.patch("rippopotamus.desktop_engine.qbittorrent_nox_base", return_value=["qbittorrent-nox"]):
-            with mock.patch("rippopotamus.desktop_engine.subprocess.run", return_value=completed):
+        with mock.patch("rippopotamus.desktop_runtime.qbittorrent_nox_base", return_value=["qbittorrent-nox"]):
+            with mock.patch("rippopotamus.desktop_runtime.subprocess.run", return_value=completed):
                 self.assertEqual(
-                    desktop_engine.qbittorrent_status(),
+                    desktop_runtime.qbittorrent_status(),
                     {"ok": True, "version": "5.1.4", "path": "qbittorrent-nox", "error": None},
                 )
 
     def test_torrent_engine_status_prefers_qbittorrent_over_aria2(self) -> None:
-        with mock.patch("rippopotamus.desktop_engine.qbittorrent_status", return_value={"ok": True, "version": "5.1.4"}):
-            with mock.patch("rippopotamus.desktop_engine.aria2c_status", return_value={"ok": True, "version": "1.37.0"}):
-                self.assertEqual(desktop_engine.torrent_engine_status()["engine"], "qbittorrent")
+        with mock.patch("rippopotamus.desktop_runtime.qbittorrent_status", return_value={"ok": True, "version": "5.1.4"}):
+            with mock.patch("rippopotamus.desktop_runtime.aria2c_status", return_value={"ok": True, "version": "1.37.0"}):
+                self.assertEqual(desktop_runtime.torrent_engine_status()["engine"], "qbittorrent")
 
     def test_qbittorrent_config_uses_app_owned_profile(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             profile = Path(tmp) / "qbt"
             output = Path(tmp) / "out"
-            desktop_engine.write_qbt_config(profile, 39080, output)
+            torrent_downloads.write_qbt_config(profile, 39080, output)
             config = profile / "qBittorrent_rippo" / "config" / "qBittorrent.conf"
 
             text = config.read_text(encoding="utf-8")
@@ -1057,9 +1057,9 @@ class DesktopEngineTests(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as tmp:
             stream = io.StringIO()
-            with mock.patch("rippopotamus.desktop_engine.subprocess.Popen", return_value=FakeProcess(lines, 0)):
+            with mock.patch("rippopotamus.torrent_downloads.subprocess.Popen", return_value=FakeProcess(lines, 0)):
                 with redirect_stdout(stream):
-                    self.assertEqual(desktop_engine.command_aria2_download(args, Path(tmp), ["aria2c"]), 0)
+                    self.assertEqual(torrent_downloads.command_aria2_download(args, Path(tmp), ["aria2c"]), 0)
 
         events = [json.loads(line) for line in stream.getvalue().splitlines()]
         self.assertFalse([event for event in events if event["type"] == "notice"])
@@ -1074,9 +1074,9 @@ class DesktopEngineTests(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as tmp:
             stream = io.StringIO()
-            with mock.patch("rippopotamus.desktop_engine.subprocess.Popen", return_value=FakeProcess(lines, 1)):
+            with mock.patch("rippopotamus.torrent_downloads.subprocess.Popen", return_value=FakeProcess(lines, 1)):
                 with redirect_stdout(stream):
-                    self.assertEqual(desktop_engine.command_aria2_download(args, Path(tmp), ["aria2c"]), 1)
+                    self.assertEqual(torrent_downloads.command_aria2_download(args, Path(tmp), ["aria2c"]), 1)
 
         events = [json.loads(line) for line in stream.getvalue().splitlines()]
         self.assertFalse([event for event in events if event["type"] == "notice"])

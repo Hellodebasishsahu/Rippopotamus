@@ -1,28 +1,17 @@
 import { Cookie, Download, ExternalLink, FileAudio, Film, FolderOpen, FolderSearch, Image as ImageIcon, Loader2, Monitor, Play, Radar as RadarIcon, RefreshCcw, RotateCcw, Search, Trash2, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { BrowserInfo, CookieSource, DownloadEvent, EngineHealth, FetchResponse, GalleryDlUpdateInfo, IndexIngestLimits, IndexIngestSettings, IndexSearchResponse, IndexSearchResult, IndexStatusResponse, OpenRouterModelCatalog, PresetOption, ProviderId, ProviderOption, SourceSearchPack, SourceSearchResponse, SourceSearchResult, YtDlpUpdateInfo } from "../../electron/types";
+import type { BrowserInfo, CookieSource, EngineHealth, GalleryDlUpdateInfo, IndexSearchResponse, IndexSearchResult, IndexStatusResponse, OpenRouterModelCatalog, PresetOption, ProviderId, ProviderOption, YtDlpUpdateInfo } from "../../electron/types";
+import { itemSupportsBrowserAccess, presetsForItem, queueItemProgress, queueItemStatusText, sourceUrl, useDownloadQueue } from "./app/useDownloadQueue";
+import type { QueueItem } from "./app/useDownloadQueue";
+import { currentIngestPreset, estimateIngestCostPerHour, formatCostPerHour, formatUsdPerHour, INGEST_PRESETS, presetDetail, useIndexIngestSettings } from "./app/useIndexIngestSettings";
+import { useLibraryIndex } from "./app/useLibraryIndex";
+import type { IndexBusy } from "./app/useLibraryIndex";
+import { useSourceSearch } from "./app/useSourceSearch";
+import { createDesktopClient } from "./client/desktopClient";
 import { AppHeader } from "./components/AppHeader";
 import { QueueCard } from "./components/QueueCard";
 import { SourceSearchPanel } from "./components/SourceSearchPanel";
 import { extractUrls } from "./urlParser";
-
-type QueueItem = {
-  localId: string;
-  url: string;
-  status: "queued" | "fetching" | "ready" | "downloading" | "done" | "failed";
-  preset: string;
-  metadata?: Extract<FetchResponse, { ok: true }>["metadata"];
-  error?: string;
-  progress?: number;
-  stage?: string;
-  phase?: string;
-  phaseIndex?: number;
-  finalizing?: boolean;
-  files?: string[];
-  jobId?: string;
-  notices?: { level: "warning" | "error"; message: string }[];
-  cookieSource: CookieSource;
-};
 
 type ComposerAction = {
   id: "idle" | "search" | "fetch";
@@ -38,117 +27,6 @@ type SearchScope = "library" | "web";
 
 const AUTO_PROVIDER = "auto";
 const COOKIE_OFF: CookieSource = { mode: "off" };
-const DEFAULT_INDEX_INGEST_LIMITS: IndexIngestLimits = {
-  provider: "gemini",
-  label: "Gemini Embedding 2",
-  model: "gemini-embedding-2",
-  videoSeconds: 120,
-  recommendedDimensions: [768, 1536, 3072],
-  chunkDuration: { min: 5, max: 120, step: 5, default: 30 },
-  overlap: { min: 0, max: 29, step: 1, default: 5 },
-  targetResolution: { min: 144, max: 1080, step: 16, default: 480 },
-  targetFps: { min: 1, max: 15, step: 1, default: 5 },
-};
-const DEFAULT_INDEX_INGEST_SETTINGS: IndexIngestSettings = {
-  provider: "gemini",
-  chunkDuration: 30,
-  overlap: 5,
-  preprocess: true,
-  skipStill: true,
-  targetResolution: 480,
-  targetFps: 5,
-};
-const GEMINI_VIDEO_EMBED_USD_PER_FRAME = 0.00079;
-const USD_TO_INR_ESTIMATE = 94.4;
-
-function estimateIngestCostPerHour(settings: Pick<IndexIngestSettings, "chunkDuration" | "overlap" | "targetFps">): number {
-  const step = Math.max(1, settings.chunkDuration - settings.overlap);
-  const overlapMultiplier = settings.chunkDuration / step;
-  return 3600 * settings.targetFps * GEMINI_VIDEO_EMBED_USD_PER_FRAME * overlapMultiplier;
-}
-
-function formatCostPerHour(value: number): string {
-  if (!Number.isFinite(value) || value <= 0) return "unknown";
-  const inr = value * USD_TO_INR_ESTIMATE;
-  if (inr >= 1000) return `~₹${(inr / 1000).toFixed(1)}k/hr`;
-  if (inr < 100) return `~₹${Math.round(inr)}/hr`;
-  return `~₹${Math.round(inr / 10) * 10}/hr`;
-}
-
-function formatUsdPerHour(value: number): string {
-  if (!Number.isFinite(value) || value <= 0) return "";
-  return `$${value.toFixed(value >= 10 ? 0 : 2)}/hr`;
-}
-
-function presetDetail(settings: Pick<IndexIngestSettings, "chunkDuration" | "overlap" | "targetResolution" | "targetFps">): string {
-  return `${formatCostPerHour(estimateIngestCostPerHour(settings))} · ${settings.targetResolution}p/${settings.targetFps}fps`;
-}
-
-const INGEST_PRESETS: Array<{
-  id: string;
-  name: string;
-  description: string;
-  settings: Pick<IndexIngestSettings, "chunkDuration" | "overlap" | "targetResolution" | "targetFps" | "preprocess" | "skipStill">;
-}> = [
-  {
-    id: "quick",
-    name: "Quick scan",
-    description: "Good for rough search across lots of footage.",
-    settings: { chunkDuration: 60, overlap: 5, targetResolution: 360, targetFps: 3, preprocess: true, skipStill: true },
-  },
-  {
-    id: "balanced",
-    name: "Balanced",
-    description: "Best default for normal clips and saved downloads.",
-    settings: { chunkDuration: 30, overlap: 5, targetResolution: 480, targetFps: 5, preprocess: true, skipStill: true },
-  },
-  {
-    id: "detail",
-    name: "Detail search",
-    description: "Better for faces, signs, text, and small objects.",
-    settings: { chunkDuration: 15, overlap: 5, targetResolution: 720, targetFps: 8, preprocess: true, skipStill: true },
-  },
-  {
-    id: "motion",
-    name: "Fast action",
-    description: "Use when quick cuts or gestures matter.",
-    settings: { chunkDuration: 10, overlap: 4, targetResolution: 720, targetFps: 12, preprocess: true, skipStill: false },
-  },
-];
-const DEFAULT_SOURCE_PACKS: SourceSearchPack[] = [
-  { id: "all", label: "All" },
-  { id: "movies", label: "Movies and shows" },
-  { id: "starter", label: "Best starting points" },
-  { id: "public", label: "Public archives" },
-  { id: "stock", label: "Free stock media" },
-  { id: "tools", label: "Media tools" },
-];
-const EMPTY_SOURCE_SEARCH: SourceSearchResponse = {
-  ok: false,
-  query: "",
-  pack: "all",
-  packs: DEFAULT_SOURCE_PACKS,
-  results: [],
-};
-const EMPTY_INDEX_SEARCH: IndexSearchResponse = {
-  ok: false,
-  query: "",
-  indexRoot: "",
-  assetCount: 0,
-  momentCount: 0,
-  embeddedMomentCount: 0,
-  embeddingEndpointConfigured: false,
-  results: [],
-  resultCount: 0,
-};
-
-function formatDuration(seconds?: number) {
-  if (!seconds) return "Unknown length";
-  const minutes = Math.floor(seconds / 60);
-  const rest = Math.floor(seconds % 60).toString().padStart(2, "0");
-  return `${minutes}:${rest}`;
-}
-
 function formatMomentTime(seconds?: number | null): string {
   if (seconds === null || seconds === undefined) return "";
   const safe = Math.max(0, Math.floor(seconds));
@@ -184,89 +62,6 @@ function savedFootageBadge(status: IndexStatusResponse | null): string {
   if (status.momentCount && !status.embeddedMomentCount) return "Scan needed";
   if (status.momentCount) return `${status.momentCount} moments`;
   return "No moments";
-}
-
-function shortUrl(url: string) {
-  try {
-    const parsed = new URL(url);
-    return parsed.hostname.replace(/^www\./, "");
-  } catch {
-    return url;
-  }
-}
-
-function sourceUrl(item: QueueItem) {
-  return item.metadata?.webpage_url || item.url;
-}
-
-function providerForItem(item: QueueItem, presets: PresetOption[], providers: ProviderOption[]): ProviderId {
-  return item.metadata?.provider || presets.find((preset) => preset.id === item.preset)?.provider || providers[0]?.id || "";
-}
-
-function itemSupportsBrowserAccess(item: QueueItem, presets: PresetOption[], providers: ProviderOption[]): boolean {
-  return item.status === "queued" || item.status === "fetching" || item.status === "failed" || providerForItem(item, presets, providers) === "yt-dlp";
-}
-
-function defaultPresetForProvider(provider: ProviderId, providers: ProviderOption[]): string {
-  return providers.find((option) => option.id === provider)?.defaultPreset || providers[0]?.defaultPreset || "";
-}
-
-function presetsForItem(item: QueueItem, presets: PresetOption[], providers: ProviderOption[]) {
-  const provider = providerForItem(item, presets, providers);
-  return presets.filter((preset) => preset.provider === provider);
-}
-
-const statusLabels: Record<QueueItem["status"], string> = {
-  queued: "Queued",
-  fetching: "Fetching…",
-  ready: "Ready",
-  downloading: "Downloading",
-  done: "Saved",
-  failed: "Failed",
-};
-
-function metaLine(item: QueueItem): string {
-  const parts: string[] = [];
-  if (item.metadata?.extractor) parts.push(item.metadata.extractor);
-  else parts.push(shortUrl(sourceUrl(item)));
-  if (item.metadata?.uploader) parts.push(item.metadata.uploader);
-  if (item.metadata?.duration) parts.push(formatDuration(item.metadata.duration));
-  return parts.join(" · ");
-}
-
-function sourceOpenUrl(source: SourceSearchResult): string {
-  return source.openUrl || source.url;
-}
-
-function sourceActionLabel(source: SourceSearchResult): string {
-  return source.actionLabel || (sourceOpenUrl(source) !== source.url ? "Search" : "Open");
-}
-
-function sourceStatusLabel(search: SourceSearchResponse, busy: boolean): string {
-  if (busy) return "Searching live sources...";
-  const actual = search.actualResultCount ?? search.results.filter((result) => result.resultKind === "item").length;
-  const routes = search.routeResultCount ?? search.results.filter((result) => result.resultKind !== "item").length;
-  if (actual > 0 && routes > 0) return `${actual} results · ${routes} source routes`;
-  if (actual > 0) return `${actual} results`;
-  return `${routes || search.results.length} source routes`;
-}
-
-function sourceBadgeLabel(source: SourceSearchResult): string {
-  if (source.resultKind === "item") return `${source.sourceName || source.packLabel} result`;
-  return "source route";
-}
-
-function sourceContextLabel(search: SourceSearchResponse, input: string): string {
-  const intelligence = search.intelligence;
-  if (intelligence?.enabled && intelligence.pack !== "all") {
-    const evidence = intelligence.webEvidence;
-    const evidenceCount = evidence?.resultCount ?? evidence?.results?.length ?? 0;
-    if (evidence?.enabled && evidenceCount > 0) {
-      return `AI routed to ${intelligence.packLabel} from ${evidence.label || evidence.source || "web evidence"}`;
-    }
-    return `AI routed to ${intelligence.packLabel}`;
-  }
-  return search.query || input.trim() || "search";
 }
 
 function searchEvidenceText(health: EngineHealth | null): string {
@@ -342,15 +137,6 @@ function siteAccessStatus(source: CookieSource, browsers: BrowserInfo[], health:
     label: "Not checked yet",
     detail: `${browserName} is selected, but access has not been checked yet.`,
   };
-}
-
-function fetchErrorMessage(error: unknown): string {
-  const raw = error instanceof Error ? error.message : String(error);
-  const message = raw
-    .replace(/^Error invoking remote method '[^']+':\s*/i, "")
-    .replace(/^Error:\s*/i, "")
-    .trim();
-  return consumerErrorMessage(message, "Could not read this link. Try another link.");
 }
 
 const TECHNICAL_MESSAGE_PATTERNS = [
@@ -557,27 +343,7 @@ function resolveComposerAction({
   };
 }
 
-function thumbnailUrls(item: QueueItem): string[] {
-  const candidates = [
-    item.metadata?.thumbnail,
-    ...(item.metadata?.thumbnails || []),
-  ].filter((value): value is string => Boolean(value));
-  return Array.from(new Set(candidates));
-}
-
-function currentIngestPreset(settings: IndexIngestSettings): string {
-  const match = INGEST_PRESETS.find((preset) => (
-    preset.settings.chunkDuration === settings.chunkDuration &&
-    preset.settings.overlap === settings.overlap &&
-    preset.settings.targetResolution === settings.targetResolution &&
-    preset.settings.targetFps === settings.targetFps &&
-    preset.settings.preprocess === settings.preprocess &&
-    preset.settings.skipStill === settings.skipStill
-  ));
-  return match?.id || "custom";
-}
-
-function indexEmptyState(indexBusy: "idle" | "ingesting" | "searching", indexSearch: IndexSearchResponse, indexStatus: IndexStatusResponse | null, hasComposerText: boolean): { title: string; detail: string } {
+function indexEmptyState(indexBusy: IndexBusy, indexSearch: IndexSearchResponse, indexStatus: IndexStatusResponse | null, hasComposerText: boolean): { title: string; detail: string } {
   if (indexBusy === "searching") {
     return { title: "Searching saved footage...", detail: "Looking through the saved folder." };
   }
@@ -600,25 +366,13 @@ function indexEmptyState(indexBusy: "idle" | "ingesting" | "searching", indexSea
 }
 
 export function App() {
-  const rippo = window.rippo;
+  const desktop = useMemo(() => createDesktopClient(window.rippo), []);
   const [health, setHealth] = useState<EngineHealth | null>(null);
   const [healthError, setHealthError] = useState<string | null>(null);
   const [input, setInput] = useState("");
   const [searchScope, setSearchScope] = useState<SearchScope>("library");
-  const [activeSourcePack, setActiveSourcePack] = useState("all");
-  const [sourceSearch, setSourceSearch] = useState<SourceSearchResponse>(EMPTY_SOURCE_SEARCH);
-  const [sourceSearchBusy, setSourceSearchBusy] = useState(false);
-  const [indexStatus, setIndexStatus] = useState<IndexStatusResponse | null>(null);
-  const [indexSearch, setIndexSearch] = useState<IndexSearchResponse>(EMPTY_INDEX_SEARCH);
-  const [indexBusy, setIndexBusy] = useState<"idle" | "ingesting" | "searching">("idle");
-  const [indexError, setIndexError] = useState<string | null>(null);
-  const [libraryThumbs, setLibraryThumbs] = useState<Record<string, string | null>>({});
-  const [expandedLibraryId, setExpandedLibraryId] = useState<string | null>(null);
-  const [libraryMediaUrls, setLibraryMediaUrls] = useState<Record<string, string | null>>({});
   const [fetchProvider, setFetchProvider] = useState<ProviderId | typeof AUTO_PROVIDER>(AUTO_PROVIDER);
-  const [items, setItems] = useState<QueueItem[]>([]);
   const [outputRoot, setOutputRoot] = useState("");
-  const [busy, setBusy] = useState(false);
   const [browsers, setBrowsers] = useState<BrowserInfo[]>([]);
   const [cookieSource, setCookieSource] = useState<CookieSource>(COOKIE_OFF);
   const [ytDlpUpdate, setYtDlpUpdate] = useState<YtDlpUpdateInfo | null>(null);
@@ -636,11 +390,43 @@ export function App() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsSection, setSettingsSection] = useState<"general" | "search" | "ingest" | "watch" | "access" | "tools" | "appearance">("general");
   const [fontSmoothing, setFontSmoothing] = useState(() => localStorage.getItem("rippo:appearance:fontSmoothing") !== "false");
-  const [indexIngestSettings, setIndexIngestSettings] = useState<IndexIngestSettings>(DEFAULT_INDEX_INGEST_SETTINGS);
-  const [indexIngestLimits, setIndexIngestLimits] = useState<IndexIngestLimits>(DEFAULT_INDEX_INGEST_LIMITS);
-  const [indexSettingsStatus, setIndexSettingsStatus] = useState<"idle" | "saving">("idle");
-  const [indexSettingsError, setIndexSettingsError] = useState<string | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const {
+    indexIngestSettings,
+    indexIngestLimits,
+    indexSettingsStatus,
+    indexSettingsError,
+    saveIndexIngestSettings,
+    chooseIngestPreset,
+  } = useIndexIngestSettings({ desktop, consumerErrorMessage });
+  const {
+    activeSourcePack,
+    setActiveSourcePack,
+    sourcePacks,
+    sourceSearch,
+    sourceSearchBusy,
+    resetSourceSearch,
+    searchSources: searchSourceQuery,
+  } = useSourceSearch({ desktop, consumerErrorMessage });
+  const {
+    indexStatus,
+    indexSearch,
+    indexBusy,
+    indexError,
+    libraryThumbs,
+    expandedLibraryId,
+    libraryMediaUrls,
+    setExpandedLibraryId,
+    resetIndexSearch,
+    clearIndexError,
+    indexSavedFolder,
+    searchSavedFootage,
+  } = useLibraryIndex({
+    desktop,
+    outputRoot,
+    indexIngestSettings,
+    consumerErrorMessage,
+  });
 
   useEffect(() => {
     document.documentElement.classList.toggle("no-font-smoothing", !fontSmoothing);
@@ -655,71 +441,22 @@ export function App() {
   }, [settingsOpen]);
 
   useEffect(() => {
-    if (!settingsOpen || !rippo || typeof rippo.listAiModels !== "function" || aiCatalog) return;
+    if (!settingsOpen || !desktop || typeof desktop.listAiModels !== "function" || aiCatalog) return;
     void loadAiModels(false);
-  }, [settingsOpen, rippo, aiCatalog]);
+  }, [settingsOpen, desktop, aiCatalog]);
 
   useEffect(() => {
-    if (!rippo || typeof rippo.getIndexIngestSettings !== "function") return;
-    rippo.getIndexIngestSettings().then((result) => {
-      setIndexIngestSettings({ ...DEFAULT_INDEX_INGEST_SETTINGS, ...result });
-      setIndexIngestLimits(result.limits || DEFAULT_INDEX_INGEST_LIMITS);
-    }).catch(() => undefined);
-  }, [rippo]);
-
-  useEffect(() => {
-    if (!rippo) return;
-    rippo.listBrowsers().then((result) => {
+    if (!desktop) return;
+    desktop.listBrowsers().then((result) => {
       setBrowsers(result.browsers);
       setCookieSource(cookieSourceFromResponse(result.source, result.selected));
     }).catch(() => undefined);
-  }, [rippo]);
-
-  useEffect(() => {
-    if (!rippo || typeof rippo.libraryThumbnail !== "function") return;
-    let cancelled = false;
-    const pending = indexSearch.results.filter((r) => !(r.id in libraryThumbs));
-    if (pending.length === 0) return;
-    (async () => {
-      for (const result of pending) {
-        if (cancelled) return;
-        try {
-          const res = await rippo.libraryThumbnail({ path: result.path, time: result.start ?? 0 });
-          if (cancelled) return;
-          setLibraryThumbs((prev) => ({ ...prev, [result.id]: res?.url || null }));
-        } catch {
-          if (!cancelled) setLibraryThumbs((prev) => ({ ...prev, [result.id]: null }));
-        }
-      }
-    })();
-    return () => { cancelled = true; };
-  }, [indexSearch.results, rippo, libraryThumbs]);
-
-  useEffect(() => {
-    if (!expandedLibraryId || !rippo || typeof rippo.libraryMediaUrl !== "function") return;
-    if (expandedLibraryId in libraryMediaUrls) return;
-    const result = indexSearch.results.find((r) => r.id === expandedLibraryId);
-    if (!result) return;
-    let cancelled = false;
-    rippo.libraryMediaUrl({ path: result.path }).then((res) => {
-      if (cancelled) return;
-      setLibraryMediaUrls((prev) => ({ ...prev, [expandedLibraryId]: res?.url || null }));
-    }).catch(() => {
-      if (!cancelled) setLibraryMediaUrls((prev) => ({ ...prev, [expandedLibraryId]: null }));
-    });
-    return () => { cancelled = true; };
-  }, [expandedLibraryId, rippo, indexSearch.results, libraryMediaUrls]);
-
-  useEffect(() => {
-    setLibraryThumbs({});
-    setLibraryMediaUrls({});
-    setExpandedLibraryId(null);
-  }, [indexSearch.query, indexSearch.indexRoot]);
+  }, [desktop]);
 
   async function refreshHealth() {
-    if (!rippo) return null;
+    if (!desktop) return null;
     try {
-      const nextHealth = await rippo.health();
+      const nextHealth = await desktop.health();
       setHealth(nextHealth);
       if (nextHealth.outputRoot) setOutputRoot(nextHealth.outputRoot);
       setHealthError(null);
@@ -731,51 +468,25 @@ export function App() {
   }
 
   async function changeDefaultCookieSource(value: string) {
-    if (!rippo) return;
+    if (!desktop) return;
     const next = cookieSourceFromValue(value);
-    const result = typeof rippo.setDefaultCookieSource === "function"
-      ? await rippo.setDefaultCookieSource(next)
-      : await rippo.setCookiesBrowser(next.mode === "browser" ? next.browserId : null);
+    const result = typeof desktop.setDefaultCookieSource === "function"
+      ? await desktop.setDefaultCookieSource(next)
+      : await desktop.setCookiesBrowser(next.mode === "browser" ? next.browserId : null);
     setCookieSource(cookieSourceFromResponse(result.source, result.selected));
     await refreshHealth();
   }
 
-  async function saveIndexIngestSettings(patch: Partial<IndexIngestSettings>) {
-    const optimistic = { ...indexIngestSettings, ...patch };
-    setIndexIngestSettings(optimistic);
-    if (!rippo || typeof rippo.setIndexIngestSettings !== "function") return;
-    setIndexSettingsStatus("saving");
-    setIndexSettingsError(null);
-    try {
-      const saved = await rippo.setIndexIngestSettings(patch);
-      setIndexIngestSettings({ ...DEFAULT_INDEX_INGEST_SETTINGS, ...saved });
-      setIndexIngestLimits(saved.limits || DEFAULT_INDEX_INGEST_LIMITS);
-    } catch (error) {
-      setIndexSettingsError(consumerErrorMessage(error instanceof Error ? error.message : String(error), "Could not save ingest settings."));
-    } finally {
-      setIndexSettingsStatus("idle");
-    }
-  }
-
-  function chooseIngestPreset(presetId: string) {
-    const preset = INGEST_PRESETS.find((item) => item.id === presetId);
-    if (!preset) return;
-    void saveIndexIngestSettings(preset.settings);
-  }
-
   function chooseSearchScope(scope: SearchScope) {
     setSearchScope(scope);
-    if (scope === "library") setSourceSearch(EMPTY_SOURCE_SEARCH);
-    else {
-      setIndexSearch(EMPTY_INDEX_SEARCH);
-      setIndexError(null);
-    }
+    if (scope === "library") resetSourceSearch();
+    else resetIndexSearch();
   }
 
   async function chooseOutputRoot() {
-    if (!rippo) return;
+    if (!desktop) return;
     try {
-      const result = await rippo.chooseOutputRoot();
+      const result = await desktop.chooseOutputRoot();
       if (!result.canceled) setOutputRoot(result.outputRoot);
     } catch {
       undefined;
@@ -783,9 +494,9 @@ export function App() {
   }
 
   async function resetOutputRoot() {
-    if (!rippo) return;
+    if (!desktop) return;
     try {
-      const result = await rippo.resetOutputRoot();
+      const result = await desktop.resetOutputRoot();
       setOutputRoot(result.outputRoot);
     } catch {
       undefined;
@@ -793,11 +504,11 @@ export function App() {
   }
 
   async function loadAiModels(refresh: boolean) {
-    if (!rippo || typeof rippo.listAiModels !== "function" || aiStatus !== "idle") return;
+    if (!desktop || typeof desktop.listAiModels !== "function" || aiStatus !== "idle") return;
     setAiStatus("loading");
     setAiError(null);
     try {
-      const result = await rippo.listAiModels(refresh);
+      const result = await desktop.listAiModels(refresh);
       setAiCatalog(result);
       if (result.error) setAiError(result.error);
     } catch (error) {
@@ -808,11 +519,11 @@ export function App() {
   }
 
   async function changeAiModel(modelId: string) {
-    if (!rippo || typeof rippo.setAiModel !== "function") return;
+    if (!desktop || typeof desktop.setAiModel !== "function") return;
     setAiStatus("saving");
     setAiError(null);
     try {
-      const result = await rippo.setAiModel(modelId);
+      const result = await desktop.setAiModel(modelId);
       setHealth(result.health);
       setAiCatalog(result.catalog);
       if (result.catalog.error) setAiError(result.catalog.error);
@@ -824,15 +535,15 @@ export function App() {
   }
 
   async function checkYtDlpUpdate() {
-    if (!rippo || ytDlpStatus !== "idle") return;
-    if (typeof rippo.checkYtDlpUpdate !== "function") {
+    if (!desktop || ytDlpStatus !== "idle") return;
+    if (typeof desktop.checkYtDlpUpdate !== "function") {
       setYtDlpError("Restart Rippopotamus to load the yt-dlp updater.");
       return;
     }
     setYtDlpStatus("checking");
     setYtDlpError(null);
     try {
-      const result = await rippo.checkYtDlpUpdate();
+      const result = await desktop.checkYtDlpUpdate();
       setYtDlpUpdate(result);
     } catch (error) {
       setYtDlpError(updaterErrorMessage(error, "yt-dlp"));
@@ -842,15 +553,15 @@ export function App() {
   }
 
   async function updateYtDlp() {
-    if (!rippo || ytDlpStatus !== "idle") return;
-    if (typeof rippo.updateYtDlp !== "function") {
+    if (!desktop || ytDlpStatus !== "idle") return;
+    if (typeof desktop.updateYtDlp !== "function") {
       setYtDlpError("Restart Rippopotamus to load the yt-dlp updater.");
       return;
     }
     setYtDlpStatus("updating");
     setYtDlpError(null);
     try {
-      const result = await rippo.updateYtDlp();
+      const result = await desktop.updateYtDlp();
       setYtDlpUpdate(result);
       setHealth(result.health);
     } catch (error) {
@@ -861,15 +572,15 @@ export function App() {
   }
 
   async function checkGalleryDlUpdate() {
-    if (!rippo || galleryDlStatus !== "idle") return;
-    if (typeof rippo.checkGalleryDlUpdate !== "function") {
+    if (!desktop || galleryDlStatus !== "idle") return;
+    if (typeof desktop.checkGalleryDlUpdate !== "function") {
       setGalleryDlError("Restart Rippopotamus to load the gallery-dl updater.");
       return;
     }
     setGalleryDlStatus("checking");
     setGalleryDlError(null);
     try {
-      const result = await rippo.checkGalleryDlUpdate();
+      const result = await desktop.checkGalleryDlUpdate();
       setGalleryDlUpdate(result);
     } catch (error) {
       setGalleryDlError(updaterErrorMessage(error, "gallery-dl"));
@@ -879,15 +590,15 @@ export function App() {
   }
 
   async function updateGalleryDl() {
-    if (!rippo || galleryDlStatus !== "idle") return;
-    if (typeof rippo.updateGalleryDl !== "function") {
+    if (!desktop || galleryDlStatus !== "idle") return;
+    if (typeof desktop.updateGalleryDl !== "function") {
       setGalleryDlError("Restart Rippopotamus to load the gallery-dl updater.");
       return;
     }
     setGalleryDlStatus("updating");
     setGalleryDlError(null);
     try {
-      const result = await rippo.updateGalleryDl();
+      const result = await desktop.updateGalleryDl();
       setGalleryDlUpdate(result);
       setHealth(result.health);
     } catch (error) {
@@ -898,7 +609,7 @@ export function App() {
   }
 
   async function checkQbittorrentUpdate() {
-    if (!rippo || qbittorrentStatus !== "idle") return;
+    if (!desktop || qbittorrentStatus !== "idle") return;
     setQbittorrentStatus("checking");
     try {
       await refreshHealth();
@@ -908,7 +619,7 @@ export function App() {
   }
 
   async function checkAria2cUpdate() {
-    if (!rippo || aria2cStatus !== "idle") return;
+    if (!desktop || aria2cStatus !== "idle") return;
     setAria2cStatus("checking");
     try {
       await refreshHealth();
@@ -918,7 +629,7 @@ export function App() {
   }
 
   async function checkFfmpegUpdate() {
-    if (!rippo || ffmpegStatus !== "idle") return;
+    if (!desktop || ffmpegStatus !== "idle") return;
     setFfmpegStatus("checking");
     try {
       await refreshHealth();
@@ -937,30 +648,46 @@ export function App() {
   const inputUrls = useMemo(() => extractUrls(input), [input]);
   const detectedCount = inputUrls.length;
   const hasComposerText = input.trim().length > 0;
-  const sourcePacks = useMemo(() => {
-    const packs = [...DEFAULT_SOURCE_PACKS, ...sourceSearch.packs];
-    return packs.filter((pack, index, list) => list.findIndex((candidate) => candidate.id === pack.id) === index);
-  }, [sourceSearch.packs]);
   const providerOptions = health?.providers || [];
   const presetOptions = health?.presets || [];
   const defaultSiteAccess = siteAccessStatus(cookieSource, browsers, health);
   const selectedFetchProvider = fetchProvider || AUTO_PROVIDER;
+  const {
+    items,
+    busy,
+    totals,
+    queueUrls,
+    downloadReady,
+    refetch,
+    removeItem,
+    setItemPreset,
+    setItemCookieSource,
+  } = useDownloadQueue({
+    desktop,
+    selectedFetchProvider,
+    providerOptions,
+    presetOptions,
+    cookieSource,
+    outputRoot,
+    consumerErrorMessage,
+    consumerNoticeMessage,
+  });
   const composerAction = useMemo(() => resolveComposerAction({
       hasText: hasComposerText,
       urlCount: detectedCount,
-      canUseDesktop: Boolean(rippo),
+      canUseDesktop: Boolean(desktop),
       hasProvider: Boolean(selectedFetchProvider),
       searchBusy: searchScope === "library" ? indexBusy === "searching" : sourceSearchBusy,
-    }), [detectedCount, hasComposerText, indexBusy, rippo, searchScope, selectedFetchProvider, sourceSearchBusy]);
+    }), [detectedCount, hasComposerText, indexBusy, desktop, searchScope, selectedFetchProvider, sourceSearchBusy]);
   const activeSearchBusy = composerAction.id === "search" && (searchScope === "library" ? indexBusy === "searching" : sourceSearchBusy);
 
   useEffect(() => {
-    if (!rippo) {
+    if (!desktop) {
       setHealthError("Desktop engine IPC is not available.");
       return;
     }
     void refreshHealth();
-  }, [rippo]);
+  }, [desktop]);
 
   useEffect(() => {
     if (!providerOptions.length) return;
@@ -968,253 +695,28 @@ export function App() {
   }, [providerOptions]);
 
   useEffect(() => {
-    if (!rippo || typeof rippo.indexStatus !== "function" || !outputRoot) return;
-    let cancelled = false;
-    rippo.indexStatus(outputRoot).then((result) => {
-      if (!cancelled) setIndexStatus(result);
-    }).catch(() => undefined);
-    return () => {
-      cancelled = true;
-    };
-  }, [rippo, outputRoot]);
-
-  useEffect(() => {
-    if (detectedCount > 0 && sourceSearch.query) setSourceSearch(EMPTY_SOURCE_SEARCH);
-  }, [detectedCount, sourceSearch.query]);
-
-  useEffect(() => {
-    if (!rippo) return undefined;
-    return rippo.onDownloadEvent((event: DownloadEvent) => {
-      setItems((current) => current.map((item) => {
-        if (item.jobId !== event.jobId) return item;
-        if (event.type === "notice") {
-          const message = consumerNoticeMessage(event.message || "");
-          if (!message) return item;
-          const notice = { level: event.level || "warning", message };
-          const notices = [...(item.notices || []), notice]
-            .filter((candidate, index, list) => list.findIndex((other) => other.message === candidate.message) === index)
-            .slice(-2);
-          return { ...item, notices, finalizing: notice.level === "error" ? false : item.finalizing };
-        }
-        if (event.type === "phase") {
-          return { ...item, phase: event.kind, phaseIndex: (item.phaseIndex || 0) + 1, progress: 0, finalizing: false };
-        }
-        if (event.type === "progress") {
-          if (item.finalizing) return item;
-          return { ...item, progress: event.percent ?? item.progress, stage: event.speed ? `${event.speed}${event.eta ? `, ${event.eta} left` : ""}` : item.stage };
-        }
-        if (event.type === "stage") {
-          return { ...item, stage: event.message, finalizing: event.finalizing ? true : item.finalizing, progress: event.finalizing ? 100 : item.progress };
-        }
-        if (event.type === "success") return { ...item, status: "done", progress: 100, files: event.files, stage: "Saved", finalizing: false };
-        if (event.type === "error") return { ...item, status: "failed", error: consumerErrorMessage(event.error || ""), finalizing: false, notices: [] };
-        return item;
-      }));
-    });
-  }, [rippo]);
-
-  const totals = useMemo(() => ({
-    ready: items.filter((item) => item.status === "ready").length,
-    done: items.filter((item) => item.status === "done").length,
-    failed: items.filter((item) => item.status === "failed").length,
-  }), [items]);
-
-  async function queueUrls(urls: string[], providerOverride: ProviderId | typeof AUTO_PROVIDER = selectedFetchProvider) {
-    if (!urls.length || !rippo || !providerOverride) return;
-    const provider = providerOverride;
-    const initialPreset = provider === AUTO_PROVIDER ? "" : defaultPresetForProvider(provider, providerOptions);
-    const initialCookieSource = cookieSource;
-
-    const existing = new Set(items.map((item) => item.url));
-    const fresh = urls
-      .filter((url) => !existing.has(url))
-      .map((url) => ({ localId: crypto.randomUUID().slice(0, 10), url, status: "queued" as const, preset: initialPreset, cookieSource: initialCookieSource }));
-
-    if (!fresh.length) return;
-
-    setItems((current) => [...fresh, ...current]);
-
-    for (const item of fresh) {
-      setItems((current) => current.map((candidate) => candidate.localId === item.localId ? { ...candidate, status: "fetching" } : candidate));
-      try {
-        const result = await rippo.fetch(item.url, provider, item.cookieSource);
-        if (result.ok) {
-          const resolvedProvider = result.metadata.provider || (provider === AUTO_PROVIDER ? providerOptions[0]?.id : provider) || "";
-          setItems((current) => current.map((candidate) => candidate.localId === item.localId ? { ...candidate, status: "ready", preset: defaultPresetForProvider(resolvedProvider, providerOptions), metadata: result.metadata, error: undefined } : candidate));
-        } else {
-          setItems((current) => current.map((candidate) => candidate.localId === item.localId ? { ...candidate, status: "failed", error: fetchErrorMessage(result.error) } : candidate));
-        }
-      } catch (error) {
-        setItems((current) => current.map((candidate) => candidate.localId === item.localId ? { ...candidate, status: "failed", error: fetchErrorMessage(error) } : candidate));
-      }
-    }
-  }
+    if (detectedCount > 0 && sourceSearch.query) resetSourceSearch();
+  }, [detectedCount, sourceSearch.query, resetSourceSearch]);
 
   async function addAndFetch() {
     const urls = inputUrls;
     if (!urls.length) return;
     setInput("");
-    setSourceSearch(EMPTY_SOURCE_SEARCH);
+    resetSourceSearch();
     await queueUrls(urls);
-  }
-
-  function openSourceResult(source: SourceSearchResult) {
-    const url = sourceOpenUrl(source);
-    if (rippo) rippo.openExternal(url).catch(() => undefined);
-    else window.open(url, "_blank", "noopener,noreferrer");
-  }
-
-  async function searchSources() {
-    const query = input.trim().slice(0, 120);
-    if (!query || !rippo || typeof rippo.searchSources !== "function") {
-      setSourceSearch({
-        ...EMPTY_SOURCE_SEARCH,
-        query,
-        pack: activeSourcePack,
-        error: "Source search runs inside the desktop app.",
-      });
-      return;
-    }
-
-    setSourceSearchBusy(true);
-    try {
-      const result = await rippo.searchSources(query, activeSourcePack);
-      setSourceSearch(result);
-    } catch (error) {
-      setSourceSearch({
-        ...EMPTY_SOURCE_SEARCH,
-        query,
-        pack: activeSourcePack,
-        error: consumerErrorMessage(error instanceof Error ? error.message : String(error), "Could not search sources."),
-      });
-    } finally {
-      setSourceSearchBusy(false);
-    }
-  }
-
-  async function indexSavedFolder() {
-    if (!rippo || !outputRoot) {
-      setIndexError("Index runs inside the desktop app.");
-      return;
-    }
-
-    setIndexBusy("ingesting");
-    setIndexError(null);
-    try {
-      const result = typeof rippo.indexSemanticIngest === "function"
-        ? await rippo.indexSemanticIngest({
-            indexRoot: outputRoot,
-            paths: [outputRoot],
-            provider: indexIngestSettings.provider,
-            chunkDuration: indexIngestSettings.chunkDuration,
-            overlap: indexIngestSettings.overlap,
-            preprocess: indexIngestSettings.preprocess,
-            skipStill: indexIngestSettings.skipStill,
-            targetResolution: indexIngestSettings.targetResolution,
-            targetFps: indexIngestSettings.targetFps,
-          })
-        : await rippo.indexIngest({ indexRoot: outputRoot, paths: [outputRoot] });
-      if (result.ok) setIndexStatus(result);
-      else setIndexError(consumerErrorMessage(result.error || "", "Could not index this folder."));
-    } catch (error) {
-      setIndexError(consumerErrorMessage(error instanceof Error ? error.message : String(error), "Could not index this folder."));
-    } finally {
-      setIndexBusy("idle");
-    }
-  }
-
-  async function searchSavedFootage(query = input.trim().slice(0, 240)) {
-    if (!query) return;
-    if (!rippo || typeof rippo.indexSearch !== "function" || !outputRoot) {
-      setIndexSearch({ ...EMPTY_INDEX_SEARCH, query, indexRoot: outputRoot });
-      setIndexError("Index search runs inside the desktop app.");
-      return;
-    }
-
-    setIndexBusy("searching");
-    setIndexError(null);
-    try {
-      const result = await rippo.indexSearch({ indexRoot: outputRoot, query, limit: 24 });
-      setIndexSearch(result);
-      setIndexStatus(result);
-      if (!result.ok) setIndexError(consumerErrorMessage(result.error || "", "Could not search saved footage."));
-    } catch (error) {
-      setIndexSearch({ ...EMPTY_INDEX_SEARCH, query, indexRoot: outputRoot });
-      setIndexError(consumerErrorMessage(error instanceof Error ? error.message : String(error), "Could not search the index."));
-    } finally {
-      setIndexBusy("idle");
-    }
   }
 
   async function runComposerAction() {
     if (composerAction.id === "search") {
-      if (searchScope === "library") await searchSavedFootage();
-      else await searchSources();
+      if (searchScope === "library") await searchSavedFootage(input);
+      else await searchSourceQuery(input);
       return;
     }
     if (composerAction.id === "fetch") await addAndFetch();
   }
 
-  async function downloadReady() {
-    const ready = items.filter((item) => item.status === "ready");
-    if (!ready.length || busy || !rippo) return;
-    setBusy(true);
-    for (const item of ready) {
-      const jobId = item.localId;
-      setItems((current) => current.map((candidate) => candidate.localId === item.localId ? { ...candidate, status: "downloading", progress: 0, error: undefined, jobId, phase: undefined, phaseIndex: 0, finalizing: false, stage: undefined, notices: [] } : candidate));
-      try {
-        const response = await rippo.download({
-          url: item.url,
-          preset: item.preset,
-          outputRoot,
-          itemId: item.localId,
-          title: item.metadata?.title || item.localId,
-          cookieSource: item.cookieSource,
-        });
-        const result = response.result as { type?: string; files?: string[] } | undefined;
-        if (result?.type === "success") {
-          setItems((current) => current.map((candidate) => candidate.localId === item.localId ? { ...candidate, status: "done", progress: 100, files: result.files, stage: "Saved", jobId: response.jobId } : candidate));
-        } else {
-          setItems((current) => current.map((candidate) => candidate.localId === item.localId ? { ...candidate, jobId: response.jobId } : candidate));
-        }
-      } catch (error) {
-        setItems((current) => current.map((candidate) => candidate.localId === item.localId ? { ...candidate, status: "failed", error: consumerErrorMessage(error instanceof Error ? error.message : String(error)), notices: [] } : candidate));
-      }
-    }
-    setBusy(false);
-  }
-
-  async function refetch(item: QueueItem) {
-    if (!rippo) return;
-    const provider = providerForItem(item, presetOptions, providerOptions);
-    if (!provider) return;
-    setItems((current) => current.map((candidate) => candidate.localId === item.localId ? { ...candidate, status: "fetching", error: undefined, notices: [] } : candidate));
-    try {
-      const result = await rippo.fetch(item.url, provider, item.cookieSource);
-      if (result.ok) {
-        setItems((current) => current.map((candidate) => candidate.localId === item.localId ? { ...candidate, status: "ready", preset: defaultPresetForProvider(result.metadata.provider || provider, providerOptions), metadata: result.metadata, error: undefined } : candidate));
-      } else {
-        setItems((current) => current.map((candidate) => candidate.localId === item.localId ? { ...candidate, status: "failed", error: fetchErrorMessage(result.error) } : candidate));
-      }
-    } catch (error) {
-      setItems((current) => current.map((candidate) => candidate.localId === item.localId ? { ...candidate, status: "failed", error: fetchErrorMessage(error) } : candidate));
-    }
-  }
-
-  function removeItem(id: string) {
-    setItems((current) => current.filter((item) => item.localId !== id));
-  }
-
-  function setItemPreset(id: string, preset: string) {
-    setItems((current) => current.map((item) => item.localId === id ? { ...item, preset } : item));
-  }
-
-  function setItemCookieSource(id: string, source: CookieSource) {
-    setItems((current) => current.map((item) => item.localId === id ? { ...item, cookieSource: source } : item));
-  }
-
   function openSource(item: QueueItem) {
-    if (rippo) rippo.openExternal(sourceUrl(item)).catch(() => undefined);
+    if (desktop) desktop.openExternal(sourceUrl(item)).catch(() => undefined);
     else window.open(sourceUrl(item), "_blank", "noopener,noreferrer");
   }
 
@@ -1234,9 +736,7 @@ export function App() {
           composerAction={composerAction}
           activeSearchBusy={activeSearchBusy}
           setInput={setInput}
-          clearIndexError={() => {
-            if (indexError) setIndexError(null);
-          }}
+          clearIndexError={clearIndexError}
           runComposerAction={runComposerAction}
           chooseSearchScope={chooseSearchScope}
           setActiveSourcePack={setActiveSourcePack}
@@ -1312,8 +812,8 @@ export function App() {
                         <button
                           type="button"
                           className="btn btn-ghost btn-reveal"
-                          onClick={() => rippo?.openFolder(folderForPath(result.path))}
-                          disabled={!rippo}
+                          onClick={() => desktop?.openFolder(folderForPath(result.path))}
+                          disabled={!desktop}
                           title="Reveal in folder"
                         >
                           <FolderOpen size={13} strokeWidth={2} aria-hidden /> Reveal
@@ -1368,17 +868,17 @@ export function App() {
             sourceSearch={sourceSearch}
             sourceSearchBusy={sourceSearchBusy}
             input={input}
-            openExternal={(url) => rippo?.openExternal(url)}
+            openExternal={(url) => desktop?.openExternal(url)}
           />
 
           {items.length > 0 && (
             <div className="queue-summary-row">
               <p className="queue-summary">{items.length} · {totals.ready} ready · {totals.done} saved{totals.failed ? ` · ${totals.failed} failed` : ""}</p>
               <div className="queue-summary-actions">
-                <button type="button" className="btn btn-ghost btn-footer" onClick={() => rippo?.openFolder(outputRoot)} disabled={!rippo} title={outputRoot || undefined}>
+                <button type="button" className="btn btn-ghost btn-footer" onClick={() => desktop?.openFolder(outputRoot)} disabled={!desktop} title={outputRoot || undefined}>
                   <FolderOpen size={14} strokeWidth={2} aria-hidden /> Open folder
                 </button>
-                <button type="button" className="btn btn-primary btn-footer" onClick={downloadReady} disabled={!totals.ready || busy || !rippo}>
+                <button type="button" className="btn btn-primary btn-footer" onClick={downloadReady} disabled={!totals.ready || busy || !desktop}>
                   {busy ? <Loader2 className="spin" size={14} strokeWidth={2} aria-hidden /> : <Download size={14} strokeWidth={2} aria-hidden />} Download{totals.ready ? ` ${totals.ready}` : ""}
                 </button>
               </div>
@@ -1391,15 +891,8 @@ export function App() {
           ) : (
             items.map((item) => {
               const itemPresets = presetsForItem(item, presetOptions, providerOptions);
-              const progress = item.status === "downloading" ? Math.max(2, Math.round(item.progress || 0)) : null;
-              let statusText: string;
-              if (item.status === "downloading") {
-                if (item.finalizing) statusText = item.stage || "Finalizing…";
-                else if (item.phase) statusText = `${item.phase} · ${progress}%`;
-                else statusText = `${progress}%`;
-              } else {
-                statusText = statusLabels[item.status];
-              }
+              const progress = queueItemProgress(item);
+              const statusText = queueItemStatusText(item);
               const showBrowserAccess = browsers.length > 0 && itemSupportsBrowserAccess(item, presetOptions, providerOptions);
               const visibleNotices = item.error ? [] : (item.notices || []).flatMap((notice) => {
                 const message = consumerNoticeMessage(notice.message);
@@ -1497,10 +990,10 @@ export function App() {
                 {outputRoot || "Will use ~/Downloads/Rippo"}
               </p>
               <div className="settings-actions">
-                <button type="button" className="btn btn-primary btn-footer" onClick={chooseOutputRoot} disabled={!rippo}>
+                <button type="button" className="btn btn-primary btn-footer" onClick={chooseOutputRoot} disabled={!desktop}>
                   <FolderSearch size={14} strokeWidth={2} aria-hidden /> Choose…
                 </button>
-                <button type="button" className="btn btn-ghost btn-footer" onClick={resetOutputRoot} disabled={!rippo} title="Reset to ~/Downloads/Rippo">
+                <button type="button" className="btn btn-ghost btn-footer" onClick={resetOutputRoot} disabled={!desktop} title="Reset to ~/Downloads/Rippo">
                   <RotateCcw size={14} strokeWidth={2} aria-hidden /> Default
                 </button>
               </div>
@@ -1520,7 +1013,7 @@ export function App() {
                 className="settings-select"
                 value={openRouterModelText(aiCatalog, health)}
                 onChange={(event) => changeAiModel(event.target.value)}
-                disabled={!rippo || aiStatus !== "idle"}
+                disabled={!desktop || aiStatus !== "idle"}
                 aria-label="OpenRouter routing model"
               >
                 {(aiCatalog?.models?.length ? aiCatalog.models : [{ id: openRouterModelText(aiCatalog, health), name: openRouterModelText(aiCatalog, health) }]).map((model) => (
@@ -1528,7 +1021,7 @@ export function App() {
                 ))}
               </select>
               <div className="settings-actions">
-                <button type="button" className="btn btn-ghost btn-footer" onClick={() => loadAiModels(true)} disabled={!rippo || aiStatus !== "idle"}>
+                <button type="button" className="btn btn-ghost btn-footer" onClick={() => loadAiModels(true)} disabled={!desktop || aiStatus !== "idle"}>
                   {aiStatus === "loading" ? <Loader2 className="spin" size={14} strokeWidth={2} aria-hidden /> : <RefreshCcw size={14} strokeWidth={2} aria-hidden />}
                   Refresh free models
                 </button>
@@ -1674,7 +1167,7 @@ export function App() {
                 </div>
               </div>
               <div className="settings-actions ingest-actions">
-                <button type="button" className="btn btn-primary btn-footer" onClick={indexSavedFolder} disabled={!rippo || indexBusy !== "idle"}>
+                <button type="button" className="btn btn-primary btn-footer" onClick={indexSavedFolder} disabled={!desktop || indexBusy !== "idle"}>
                   {indexBusy === "ingesting" ? <Loader2 className="spin" size={14} strokeWidth={2} aria-hidden /> : <FolderSearch size={14} strokeWidth={2} aria-hidden />}
                   Scan folder
                 </button>
@@ -1744,7 +1237,7 @@ export function App() {
                 className="settings-select"
                 value={cookieSourceValue(cookieSource)}
                 onChange={(event) => changeDefaultCookieSource(event.target.value)}
-                disabled={!rippo}
+                disabled={!desktop}
                 aria-label="Default site access"
               >
                 <option value="off">Public links only</option>
@@ -1758,7 +1251,7 @@ export function App() {
                   <b>{defaultSiteAccess.label}</b>
                   <span>{defaultSiteAccess.detail}</span>
                 </div>
-                <button type="button" className="btn btn-ghost btn-footer" onClick={() => refreshHealth()} disabled={!rippo}>
+                <button type="button" className="btn btn-ghost btn-footer" onClick={() => refreshHealth()} disabled={!desktop}>
                   Check
                 </button>
               </div>
@@ -1793,12 +1286,12 @@ export function App() {
                   </div>
                   <div className="tool-actions">
                     {ytDlpUpdate?.updateAvailable ? (
-                      <button type="button" className="tool-btn tool-btn-primary" onClick={updateYtDlp} disabled={!rippo || ytDlpStatus !== "idle"}>
+                      <button type="button" className="tool-btn tool-btn-primary" onClick={updateYtDlp} disabled={!desktop || ytDlpStatus !== "idle"}>
                         {ytDlpStatus === "updating" ? <Loader2 className="spin" size={12} strokeWidth={2} aria-hidden /> : null}
                         {ytDlpUpdate.currentVersion ? "Update" : "Install"}
                       </button>
                     ) : (
-                      <button type="button" className="tool-btn tool-btn-ghost" onClick={checkYtDlpUpdate} disabled={!rippo || ytDlpStatus !== "idle"}>
+                      <button type="button" className="tool-btn tool-btn-ghost" onClick={checkYtDlpUpdate} disabled={!desktop || ytDlpStatus !== "idle"}>
                         {ytDlpStatus === "checking" ? <Loader2 className="spin" size={12} strokeWidth={2} aria-hidden /> : <RefreshCcw size={12} strokeWidth={2} aria-hidden />}
                         Check
                       </button>
@@ -1817,12 +1310,12 @@ export function App() {
                   </div>
                   <div className="tool-actions">
                     {galleryDlUpdate?.updateAvailable ? (
-                      <button type="button" className="tool-btn tool-btn-primary" onClick={updateGalleryDl} disabled={!rippo || galleryDlStatus !== "idle"}>
+                      <button type="button" className="tool-btn tool-btn-primary" onClick={updateGalleryDl} disabled={!desktop || galleryDlStatus !== "idle"}>
                         {galleryDlStatus === "updating" ? <Loader2 className="spin" size={12} strokeWidth={2} aria-hidden /> : null}
                         {galleryDlUpdate.currentVersion ? "Update" : "Install"}
                       </button>
                     ) : (
-                      <button type="button" className="tool-btn tool-btn-ghost" onClick={checkGalleryDlUpdate} disabled={!rippo || galleryDlStatus !== "idle"}>
+                      <button type="button" className="tool-btn tool-btn-ghost" onClick={checkGalleryDlUpdate} disabled={!desktop || galleryDlStatus !== "idle"}>
                         {galleryDlStatus === "checking" ? <Loader2 className="spin" size={12} strokeWidth={2} aria-hidden /> : <RefreshCcw size={12} strokeWidth={2} aria-hidden />}
                         Check
                       </button>
@@ -1839,7 +1332,7 @@ export function App() {
                     {health?.qBittorrentError ? <span className="tool-error">{consumerErrorMessage(health.qBittorrentError)}</span> : null}
                   </div>
                   <div className="tool-actions">
-                    <button type="button" className="tool-btn tool-btn-ghost" onClick={checkQbittorrentUpdate} disabled={!rippo || qbittorrentStatus !== "idle"}>
+                    <button type="button" className="tool-btn tool-btn-ghost" onClick={checkQbittorrentUpdate} disabled={!desktop || qbittorrentStatus !== "idle"}>
                       {qbittorrentStatus === "checking" ? <Loader2 className="spin" size={12} strokeWidth={2} aria-hidden /> : <RefreshCcw size={12} strokeWidth={2} aria-hidden />}
                       Check
                     </button>
@@ -1855,7 +1348,7 @@ export function App() {
                     {health?.aria2cError ? <span className="tool-error">{consumerErrorMessage(health.aria2cError)}</span> : null}
                   </div>
                   <div className="tool-actions">
-                    <button type="button" className="tool-btn tool-btn-ghost" onClick={checkAria2cUpdate} disabled={!rippo || aria2cStatus !== "idle"}>
+                    <button type="button" className="tool-btn tool-btn-ghost" onClick={checkAria2cUpdate} disabled={!desktop || aria2cStatus !== "idle"}>
                       {aria2cStatus === "checking" ? <Loader2 className="spin" size={12} strokeWidth={2} aria-hidden /> : <RefreshCcw size={12} strokeWidth={2} aria-hidden />}
                       Check
                     </button>
@@ -1870,7 +1363,7 @@ export function App() {
                     {health?.ffmpeg ? <span className="tool-path">{health.ffmpeg}</span> : null}
                   </div>
                   <div className="tool-actions">
-                    <button type="button" className="tool-btn tool-btn-ghost" onClick={checkFfmpegUpdate} disabled={!rippo || ffmpegStatus !== "idle"}>
+                    <button type="button" className="tool-btn tool-btn-ghost" onClick={checkFfmpegUpdate} disabled={!desktop || ffmpegStatus !== "idle"}>
                       {ffmpegStatus === "checking" ? <Loader2 className="spin" size={12} strokeWidth={2} aria-hidden /> : <RefreshCcw size={12} strokeWidth={2} aria-hidden />}
                       Check
                     </button>
