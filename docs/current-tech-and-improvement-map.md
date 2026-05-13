@@ -92,32 +92,26 @@ index-ingest
 
 This is cheap but weak. It mostly searches filenames and basic metadata.
 
-### Semantic ingest
+### Visual search gap
 
 ```text
-index-semantic-ingest
--> discover media
--> chunk video
--> optional preprocess/downscale/fps reduction
--> skip still chunks
--> Gemini Embedding 2 embeds image/video chunks
--> write embedded moments into SQLite
+no active semantic ingest command
+-> filename/basic metadata indexing only
+-> rebuild later with captions, object tags, OCR, and transcripts
+-> do not ship direct video embeddings as the product answer
 ```
 
 This is real, but it can get expensive if used blindly on a lot of video.
 
-### Experiment import
+### Old experiment import
 
-We also have an import bridge:
+The old experiment import bridge is not part of the active desktop/agent command surface anymore:
 
 ```text
-index-import-semantic-script
--> read experiments/out/.../semantic-script.sqlite3
--> convert scripts rows into normal app moments
--> preserve Gemini embedding metadata
+no active import command
+-> old rows should not be treated as product search truth
+-> rebuild later from inspectable captions/tags/transcripts if we want this back
 ```
-
-This is how the Rohtak experiment rows were moved into the app index.
 
 ## Current Experiment Direction
 
@@ -449,4 +443,3 @@ Get the exact clip moment.
 Trust why it matched.
 Use it immediately.
 ```
-

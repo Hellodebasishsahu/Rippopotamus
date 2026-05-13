@@ -8,12 +8,8 @@ import type {
   GalleryDlUpdateResult,
   IndexIngestRequest,
   IndexIngestResponse,
-  IndexIngestSettings,
-  IndexIngestSettingsResponse,
   IndexSearchRequest,
   IndexSearchResponse,
-  IndexSemanticIngestRequest,
-  IndexSemanticIngestResponse,
   OpenRouterModelCatalog,
   SourceSearchResponse,
   ThumbnailLoadResult,
@@ -30,9 +26,6 @@ export type DesktopClient = {
   setAiModel: (modelId: string) => Promise<{ model: string; health: EngineHealth; catalog: OpenRouterModelCatalog }>;
   indexStatus: RippoBridge["indexStatus"];
   indexIngest: (payload: IndexIngestRequest) => Promise<IndexIngestResponse>;
-  indexSemanticIngest: (payload: IndexSemanticIngestRequest) => Promise<IndexSemanticIngestResponse>;
-  getIndexIngestSettings: () => Promise<IndexIngestSettingsResponse>;
-  setIndexIngestSettings: (payload: Partial<IndexIngestSettings>) => Promise<IndexIngestSettingsResponse>;
   indexSearch: (payload: IndexSearchRequest) => Promise<IndexSearchResponse>;
   fetch: RippoBridge["fetch"];
   download: (payload: DownloadRequest) => Promise<DownloadResponse>;
@@ -62,9 +55,6 @@ export function createDesktopClient(bridge?: RippoBridge): DesktopClient | null 
     setAiModel: bridge.setAiModel,
     indexStatus: bridge.indexStatus,
     indexIngest: bridge.indexIngest,
-    indexSemanticIngest: bridge.indexSemanticIngest,
-    getIndexIngestSettings: bridge.getIndexIngestSettings,
-    setIndexIngestSettings: bridge.setIndexIngestSettings,
     indexSearch: bridge.indexSearch,
     fetch: bridge.fetch,
     download: bridge.download,

@@ -752,8 +752,7 @@ Completed renderer slices:
 - `src/desktop/app/useDownloadQueue.ts` owns queue state, fetch/refetch, download events, and item mutation.
 - `src/desktop/app/useDownloadQueue.ts` now reads browser-access support from provider catalog data instead of hard-coding provider ids.
 - `src/desktop/app/useSourceSearch.ts` owns web/source search state and source packs.
-- `src/desktop/app/useLibraryIndex.ts` owns saved-library status, search, ingest, thumbnails, and preview URLs.
-- `src/desktop/app/useIndexIngestSettings.ts` owns ingest settings, presets, and scan cost display helpers.
+- `src/desktop/app/useLibraryIndex.ts` owns saved-library status, filename/basic metadata search, ingest, thumbnails, and preview URLs.
 
 Completed Electron slices:
 
@@ -761,7 +760,7 @@ Completed Electron slices:
 - `electron/mediaLibrary.ts` owns `rippo-media://` path decoding, local media fetch, and library thumbnail extraction.
 - `electron/settingsStore.ts` owns persisted desktop settings, output root, and selected OpenRouter model.
 - `electron/engineProcess.ts` owns Python runtime selection, engine env construction, and JSON-line engine execution.
-- `electron/indexIpc.ts` owns index IPC handlers, ingest settings normalization, index-root/path input cleanup, and index engine commands.
+- `electron/indexIpc.ts` owns index IPC handlers, app-level index-root/path input cleanup, and filename/basic metadata index engine commands.
 - `electron/cookiesIpc.ts` owns browser detection, default cookie source resolution, cookie-source CLI args, and cookie settings IPC handlers.
 - `electron/toolUpdatesIpc.ts` owns yt-dlp/gallery-dl update checks, app-managed installs, and tool-update IPC handlers.
 - `electron/shellOutputIpc.ts` owns folder opening, external URL opening, and output-root chooser/reset IPC handlers.

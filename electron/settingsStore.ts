@@ -8,17 +8,6 @@ export type Settings = {
   cookiesBrowser?: string;
   outputRoot?: string;
   openRouterModel?: string;
-  indexIngest?: Partial<IndexIngestSettings>;
-};
-
-export type IndexIngestSettings = {
-  provider: "gemini";
-  chunkDuration: number;
-  overlap: number;
-  preprocess: boolean;
-  skipStill: boolean;
-  targetResolution: number;
-  targetFps: number;
 };
 
 function settingsPath(): string {

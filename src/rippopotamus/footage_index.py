@@ -45,6 +45,17 @@ MEDIA_EXTENSIONS: dict[str, str] = {
 
 SKIPPED_DIRS = {".git", ".rippo", "node_modules", "__pycache__"}
 DEFAULT_VECTOR_MIN_SCORE = 0.2
+VISIBLE_MOMENT_SQL = """
+    NOT (
+        moments.id = moments.asset_id || ':full'
+        AND EXISTS (
+            SELECT 1
+            FROM moments AS sibling_moments
+            WHERE sibling_moments.asset_id = moments.asset_id
+              AND sibling_moments.id != moments.id
+        )
+    )
+"""
 
 
 def now_iso() -> str:
@@ -901,7 +912,7 @@ def lexical_search(conn: sqlite3.Connection, query: str, limit: int) -> list[dic
     tokens = tokenize_query(query)
     if not tokens:
         rows = conn.execute(
-            """
+            f"""
             SELECT
                 moments.id AS moment_id,
                 moments.asset_id,
@@ -919,6 +930,7 @@ def lexical_search(conn: sqlite3.Connection, query: str, limit: int) -> list[dic
                 assets.height
             FROM moments
             JOIN assets ON assets.id = moments.asset_id
+            WHERE {VISIBLE_MOMENT_SQL}
             ORDER BY moments.updated_at DESC
             LIMIT ?
             """,
@@ -929,7 +941,7 @@ def lexical_search(conn: sqlite3.Connection, query: str, limit: int) -> list[dic
     if fts_available(conn):
         try:
             rows = conn.execute(
-                """
+                f"""
                 SELECT
                     moments.id AS moment_id,
                     moments.asset_id,
@@ -950,6 +962,7 @@ def lexical_search(conn: sqlite3.Connection, query: str, limit: int) -> list[dic
                 JOIN moments ON moments.id = moments_fts.moment_id
                 JOIN assets ON assets.id = moments.asset_id
                 WHERE moments_fts MATCH ?
+                  AND {VISIBLE_MOMENT_SQL}
                 ORDER BY rank
                 LIMIT ?
                 """,
@@ -960,7 +973,7 @@ def lexical_search(conn: sqlite3.Connection, query: str, limit: int) -> list[dic
             pass
 
     rows = conn.execute(
-        """
+        f"""
         SELECT
             moments.id AS moment_id,
             moments.asset_id,
@@ -978,6 +991,7 @@ def lexical_search(conn: sqlite3.Connection, query: str, limit: int) -> list[dic
             assets.height
         FROM moments
         JOIN assets ON assets.id = moments.asset_id
+        WHERE {VISIBLE_MOMENT_SQL}
         """
     ).fetchall()
     ranked: list[tuple[int, sqlite3.Row]] = []
@@ -995,11 +1009,21 @@ def lexical_search(conn: sqlite3.Connection, query: str, limit: int) -> list[dic
     return [row_payload(row, score, "text") for score, row in ranked[:limit]]
 
 
-def search_index(index_root: str | Path, query: str, limit: int = 20, query_vector: list[float] | None = None) -> dict[str, Any]:
+def search_index(
+    index_root: str | Path,
+    query: str,
+    limit: int = 20,
+    query_vector: list[float] | None = None,
+    *,
+    use_vector: bool = True,
+) -> dict[str, Any]:
     root = Path(index_root).expanduser().resolve()
     safe_limit = max(1, min(int(limit or 20), 100))
-    query_payload = None if query_vector else query_embedding_payload(query)
-    vector = query_vector or (query_payload.get("vector") if query_payload else None)
+    query_payload = None
+    vector = None
+    if use_vector:
+        query_payload = None if query_vector else query_embedding_payload(query)
+        vector = query_vector or (query_payload.get("vector") if query_payload else None)
     min_score = safe_score(os.environ.get("RIPPO_INDEX_VECTOR_MIN_SCORE"), DEFAULT_VECTOR_MIN_SCORE)
     with closing(connect_index(root)) as conn:
         results = (
@@ -1029,7 +1053,7 @@ def search_index(index_root: str | Path, query: str, limit: int = 20, query_vect
         "geminiEmbeddingConfigured": gemini_status.configured,
         "geminiEmbeddingModel": gemini_status.model,
         "embeddingDimensions": gemini_status.dimensions,
-        "queryEmbeddingSource": query_payload.get("source") if query_payload else ("manual" if query_vector else None),
+        "queryEmbeddingSource": query_payload.get("source") if query_payload else ("manual" if use_vector and query_vector else None),
         "vectorMinScore": min_score,
         **counts,
     }

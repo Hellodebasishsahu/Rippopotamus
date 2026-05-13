@@ -1,6 +1,6 @@
 # Rippopotamus Pre-Release Checklist
 
-Use this before cutting any local test build or sharing a macOS app package.
+Use this before cutting any local test build or sharing a macOS/Windows app package.
 
 ## Current Run Status - 2026-05-09
 
@@ -11,6 +11,17 @@ Use this before cutting any local test build or sharing a macOS app package.
 - macOS package: passed for local test build at `release/mac-arm64/Rippopotamus.app`.
 - Desktop dev boot: blocked. Port `5173` is already held by an existing Node/Vite process from this repo, Vite moved to `5174`, and Electron exited with `SIGABRT`.
 - External release blockers remain: Python/yt-dlp is not frozen, signing is ad hoc, and notarization is skipped.
+
+## Current Windows Support Status - 2026-05-13
+
+- Windows x64 directory packaging is wired through `npm run package:win`.
+- Expected Windows x64 local test build path is `release/win-unpacked/Rippopotamus.exe`.
+- Windows ARM64 directory packaging is available through `npm run package:win:arm64`.
+- Packaged ffmpeg lookup uses `ffmpeg.exe` on Windows and unpacked `ffmpeg-static` resources.
+- Windows package branding uses `public/brand-logo.ico`.
+- Python runtime discovery now includes the Windows launcher/path commands: `py`, `python`, and `python3`.
+- Remaining Windows release blockers: no frozen Python/provider runtime, no Windows signing, no installer target, and no real Windows-machine smoke yet.
+- Mac-to-Windows cross-builds are packaging smoke only. `ffmpeg-static` installs the host-platform binary, so final Windows media smoke must be built from a Windows install or Windows CI runner.
 
 ## Audit - 2026-05-09
 
@@ -27,7 +38,7 @@ Use this before cutting any local test build or sharing a macOS app package.
 
 ## 1. Scope Freeze
 
-- [ ] Confirm the release target: local CLI, desktop MVP, or macOS packaged app.
+- [ ] Confirm the release target: local CLI, desktop MVP, macOS packaged app, or Windows packaged app.
 - [x] Confirm the release version in `package.json` and `pyproject.toml` matches.
 - [x] Review `git status --short -b` and separate release changes from scratch files, generated images, and unrelated notes.
 - [ ] Confirm no local-only paths, test downloads, personal output folders, or credentials are staged.
@@ -120,7 +131,7 @@ npm run dev
 - [ ] Confirm the output folder button opens the correct download folder.
 - [ ] Confirm app reload/close behavior does not lose visible queue state unexpectedly.
 
-## 7. macOS Package Check
+## 7. Native Package Check
 
 - [x] Build the packaged app:
 
@@ -129,6 +140,13 @@ npm run package:mac
 ```
 
 - [ ] Open `release/mac-arm64/Rippopotamus.app`.
+- [ ] For Windows test builds, run:
+
+```bash
+npm run package:win
+```
+
+- [ ] Open `release/win-unpacked/Rippopotamus.exe` on a Windows x64 machine.
 - [x] Confirm packaged renderer loads from `dist/renderer/index.html`.
 - [x] Confirm packaged Electron main loads from `dist-electron/main.js`.
 - [ ] Confirm packaged app can run `engine:health`.
@@ -159,5 +177,5 @@ npm run package:mac
 - [ ] Python engine is not yet frozen into a standalone binary.
 - [ ] `yt-dlp` availability still depends on Python package or system PATH.
 - [ ] macOS signing and notarization are not configured.
-- [ ] Windows packaging is not part of the current release path.
+- [ ] Windows packaging has only a local directory target; installer, signing, and real Windows smoke are still required before sharing broadly.
 - [ ] Real-platform downloads can break when upstream platforms change; run the real media smoke test on release day.

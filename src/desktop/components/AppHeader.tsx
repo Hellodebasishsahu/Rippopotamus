@@ -17,14 +17,12 @@ export type ComposerAction = {
 function indexStatusLine(status: IndexStatusResponse | null): string {
   if (!status) return "Not scanned yet";
   if (!status.assetCount && !status.momentCount) return "No saved footage scanned";
-  if (status.momentCount && !status.embeddedMomentCount) return `${status.assetCount} files · scan needed`;
-  return `${status.assetCount} files · ${status.momentCount} moments`;
+  return `${status.assetCount} files · filename index`;
 }
 
 function savedFootageBadge(status: IndexStatusResponse | null): string {
   if (!status || !status.assetCount) return "No saved footage";
-  if (status.momentCount && !status.embeddedMomentCount) return "Scan needed";
-  if (status.momentCount) return `${status.momentCount} moments`;
+  if (status.momentCount) return `${status.assetCount} files`;
   return "No moments";
 }
 

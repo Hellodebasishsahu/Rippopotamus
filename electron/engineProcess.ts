@@ -14,13 +14,15 @@ import { currentOpenRouterModel } from "./settingsStore";
 
 function candidatePythons(): string[] {
   const configured = process.env.RIPPO_PYTHON;
-  return [
-    configured,
-    "/opt/homebrew/opt/python@3.13/libexec/bin/python",
-    "/opt/homebrew/bin/python3",
-    "python3",
-    "python",
-  ].filter(Boolean) as string[];
+  const platformCandidates = process.platform === "win32"
+    ? ["py", "python", "python3"]
+    : [
+        "/opt/homebrew/opt/python@3.13/libexec/bin/python",
+        "/opt/homebrew/bin/python3",
+        "python3",
+        "python",
+      ];
+  return [configured, ...platformCandidates].filter(Boolean) as string[];
 }
 
 function parseEnvFile(content: string): NodeJS.ProcessEnv {

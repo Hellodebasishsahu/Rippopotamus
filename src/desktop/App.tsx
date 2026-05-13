@@ -3,7 +3,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { BrowserInfo, CookieSource, EngineHealth, GalleryDlUpdateInfo, IndexSearchResponse, IndexSearchResult, IndexStatusResponse, OpenRouterModelCatalog, PresetOption, ProviderId, ProviderOption, YtDlpUpdateInfo } from "../../electron/types";
 import { itemSupportsBrowserAccess, presetsForItem, queueItemProgress, queueItemStatusText, sourceUrl, useDownloadQueue } from "./app/useDownloadQueue";
 import type { QueueItem } from "./app/useDownloadQueue";
-import { currentIngestPreset, estimateIngestCostPerHour, formatCostPerHour, formatUsdPerHour, INGEST_PRESETS, presetDetail, useIndexIngestSettings } from "./app/useIndexIngestSettings";
+import { libraryPlayerState, libraryPreviewStart, nextExpandedLibraryId } from "./app/libraryPreview";
 import { useLibraryIndex } from "./app/useLibraryIndex";
 import type { IndexBusy } from "./app/useLibraryIndex";
 import { useSourceSearch } from "./app/useSourceSearch";
@@ -53,14 +53,12 @@ function folderForPath(filePath: string): string {
 function indexStatusLine(status: IndexStatusResponse | null): string {
   if (!status) return "Not scanned yet";
   if (!status.assetCount && !status.momentCount) return "No saved footage scanned";
-  if (status.momentCount && !status.embeddedMomentCount) return `${status.assetCount} files · scan needed`;
-  return `${status.assetCount} files · ${status.momentCount} moments`;
+  return `${status.assetCount} files · filename index`;
 }
 
 function savedFootageBadge(status: IndexStatusResponse | null): string {
   if (!status || !status.assetCount) return "No saved footage";
-  if (status.momentCount && !status.embeddedMomentCount) return "Scan needed";
-  if (status.momentCount) return `${status.momentCount} moments`;
+  if (status.momentCount) return `${status.assetCount} files`;
   return "No moments";
 }
 
@@ -347,20 +345,14 @@ function indexEmptyState(indexBusy: IndexBusy, indexSearch: IndexSearchResponse,
   if (indexBusy === "searching") {
     return { title: "Searching saved footage...", detail: "Looking through the saved folder." };
   }
-  if (indexStatus?.momentCount && !indexStatus.embeddedMomentCount) {
-    return {
-      title: "Scan needed to search inside videos",
-      detail: indexSearch.query ? `Right now Rippo only knows file names. Use Settings > Ingest to search for "${indexSearch.query}" visually.` : "Right now Rippo only knows file names. Use Settings > Ingest to search scenes and speech.",
-    };
-  }
   if (indexSearch.query) {
-    return { title: `No matches for "${indexSearch.query}"`, detail: "Try a simpler scene, object, person, or spoken phrase." };
+    return { title: `No filename matches for "${indexSearch.query}"`, detail: "Visual scene search is not wired yet. Right now Rippo only searches file names and basic metadata." };
   }
   if (hasComposerText) {
-    return { title: "Ready to search saved footage", detail: "Hit Search to look inside your saved folder." };
+    return { title: "Ready to search saved files", detail: "Hit Search to match filenames and basic metadata." };
   }
-  if (indexStatus?.momentCount) {
-    return { title: "Search saved footage", detail: "Try a scene, object, person, or spoken words." };
+  if (indexStatus?.assetCount) {
+    return { title: "Search saved files", detail: "Filename search is available. Visual scene search is a later rebuild." };
   }
   return { title: "No saved footage scanned yet", detail: "Use Settings > Ingest when you want to add saved videos." };
 }
@@ -392,14 +384,6 @@ export function App() {
   const [fontSmoothing, setFontSmoothing] = useState(() => localStorage.getItem("rippo:appearance:fontSmoothing") !== "false");
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const {
-    indexIngestSettings,
-    indexIngestLimits,
-    indexSettingsStatus,
-    indexSettingsError,
-    saveIndexIngestSettings,
-    chooseIngestPreset,
-  } = useIndexIngestSettings({ desktop, consumerErrorMessage });
-  const {
     activeSourcePack,
     setActiveSourcePack,
     sourcePacks,
@@ -424,7 +408,6 @@ export function App() {
   } = useLibraryIndex({
     desktop,
     outputRoot,
-    indexIngestSettings,
     consumerErrorMessage,
   });
 
@@ -767,15 +750,14 @@ export function App() {
                   </div>
                   {indexSearch.results.map((result) => {
                     const KindIcon = result.kind === "image" ? ImageIcon : result.kind === "audio" ? FileAudio : Film;
-                    const isVideo = result.kind === "video";
-                    const isImage = result.kind === "image";
                     const isExpanded = expandedLibraryId === result.id;
                     const thumbUrl = libraryThumbs[result.id];
                     const mediaUrl = libraryMediaUrls[result.id];
-                    const isPlayable = isVideo || result.kind === "audio" || isImage;
+                    const playableMediaUrl = typeof mediaUrl === "string" ? mediaUrl : undefined;
+                    const playerState = libraryPlayerState(result, expandedLibraryId, mediaUrl);
+                    const isPlayable = playerState !== "closed" || nextExpandedLibraryId(expandedLibraryId, result) !== expandedLibraryId;
                     const toggleExpand = () => {
-                      if (!isPlayable) return;
-                      setExpandedLibraryId(isExpanded ? null : result.id);
+                      setExpandedLibraryId(nextExpandedLibraryId(expandedLibraryId, result));
                     };
                     return (
                       <article key={result.id} className={`index-result kind-${result.kind} ${isExpanded ? "is-expanded" : ""}`}>
@@ -820,25 +802,23 @@ export function App() {
                         </button>
                         {isExpanded ? (
                           <div className="index-player">
-                            {mediaUrl ? (
-                              isVideo ? (
+                            {playerState === "video" ? (
                                 <video
                                   className="index-player-video"
-                                  src={mediaUrl}
+                                  src={playableMediaUrl}
                                   controls
                                   autoPlay
                                   preload="metadata"
                                   onLoadedMetadata={(event) => {
-                                    const start = result.start ?? 0;
+                                    const start = libraryPreviewStart(result);
                                     if (start > 0) (event.currentTarget as HTMLVideoElement).currentTime = start;
                                   }}
                                 />
-                              ) : result.kind === "audio" ? (
-                                <audio className="index-player-audio" src={mediaUrl} controls autoPlay preload="metadata" />
-                              ) : (
-                                <img className="index-player-image" src={mediaUrl} alt={result.title || result.file} />
-                              )
-                            ) : mediaUrl === null ? (
+                            ) : playerState === "audio" ? (
+                              <audio className="index-player-audio" src={playableMediaUrl} controls autoPlay preload="metadata" />
+                            ) : playerState === "image" ? (
+                              <img className="index-player-image" src={playableMediaUrl} alt={result.title || result.file} />
+                            ) : playerState === "missing" ? (
                               <p className="index-player-empty">Couldn't open the file. It may have been moved.</p>
                             ) : (
                               <div className="index-player-loading"><Loader2 size={16} strokeWidth={2} className="spin" /> Loading preview…</div>
@@ -1037,147 +1017,21 @@ export function App() {
             <section className="settings-section ingest-section">
               <div className="ingest-compact-head">
                 <div>
-                  <h3 className="settings-row-title">Scan saved videos</h3>
-                  <p className="settings-hint">Pick how hard Rippo should scan your saved folder before you search it.</p>
+                  <h3 className="settings-row-title">Index saved files</h3>
+                  <p className="settings-hint">Adds real files to the local library using filenames and basic media metadata only.</p>
                 </div>
-                <span className="ingest-cost-pill">
-                  {formatCostPerHour(estimateIngestCostPerHour(indexIngestSettings))}
-                  <small>{formatUsdPerHour(estimateIngestCostPerHour(indexIngestSettings))} per source hour</small>
-                </span>
+                <span className="ingest-cost-pill">No AI scan<small>visual search gap</small></span>
               </div>
-              <div className="ingest-preset-bar" role="group" aria-label="Index quality presets">
-                {INGEST_PRESETS.map((preset) => {
-                  const active = currentIngestPreset(indexIngestSettings) === preset.id;
-                  return (
-                    <button
-                      key={preset.id}
-                      type="button"
-                      className={`ingest-preset-tab ${active ? "is-active" : ""}`}
-                      onClick={() => chooseIngestPreset(preset.id)}
-                    >
-                      <span>{preset.name}</span>
-                      <small>{presetDetail(preset.settings)}</small>
-                    </button>
-                  );
-                })}
-              </div>
-              <p className="ingest-current-line">
-                {(() => {
-                  const preset = INGEST_PRESETS.find((item) => item.id === currentIngestPreset(indexIngestSettings));
-                  return preset
-                    ? `${preset.name}: ${preset.description}`
-                    : `Custom: ${indexIngestSettings.chunkDuration}s clips, ${indexIngestSettings.overlap}s overlap, ${indexIngestSettings.targetResolution}p, ${indexIngestSettings.targetFps}fps.`;
-                })()}
-                {" "}Cost mostly follows frames per second.
-              </p>
-              <div className="ingest-grid">
-                <label className="ingest-field">
-                  <span className="ingest-field-head">
-                    <span>Clip length</span>
-                    <b>{indexIngestSettings.chunkDuration}s</b>
-                  </span>
-                  <input
-                    type="range"
-                    min={indexIngestLimits.chunkDuration.min}
-                    max={indexIngestLimits.chunkDuration.max}
-                    step={indexIngestLimits.chunkDuration.step}
-                    value={indexIngestSettings.chunkDuration}
-                    onChange={(event) => saveIndexIngestSettings({ chunkDuration: Number(event.target.value) })}
-                  />
-                  <span className="ingest-range-info">{indexIngestLimits.chunkDuration.min}s - {indexIngestLimits.chunkDuration.max}s</span>
-                  <span className="ingest-help">Lower seconds means more exact results. Higher seconds means cheaper scanning.</span>
-                </label>
-                <label className="ingest-field">
-                  <span className="ingest-field-head">
-                    <span>Overlap</span>
-                    <b>{indexIngestSettings.overlap}s</b>
-                  </span>
-                  <input
-                    type="range"
-                    min={indexIngestLimits.overlap.min}
-                    max={Math.min(indexIngestLimits.overlap.max, Math.max(0, indexIngestSettings.chunkDuration - 1))}
-                    step={indexIngestLimits.overlap.step}
-                    value={indexIngestSettings.overlap}
-                    onChange={(event) => saveIndexIngestSettings({ overlap: Number(event.target.value) })}
-                  />
-                  <span className="ingest-range-info">{indexIngestLimits.overlap.min}s - {Math.min(indexIngestLimits.overlap.max, Math.max(0, indexIngestSettings.chunkDuration - 1))}s</span>
-                  <span className="ingest-help">Keeps moments from getting split between clips. More safety costs more.</span>
-                </label>
-                <label className="ingest-field">
-                  <span className="ingest-field-head">
-                    <span>Video size</span>
-                    <b>{indexIngestSettings.targetResolution}p</b>
-                  </span>
-                  <input
-                    type="range"
-                    min={indexIngestLimits.targetResolution.min}
-                    max={indexIngestLimits.targetResolution.max}
-                    step={indexIngestLimits.targetResolution.step}
-                    value={indexIngestSettings.targetResolution}
-                    onChange={(event) => saveIndexIngestSettings({ targetResolution: Number(event.target.value) })}
-                  />
-                  <span className="ingest-range-info">{indexIngestLimits.targetResolution.min}p - {indexIngestLimits.targetResolution.max}p</span>
-                  <span className="ingest-help">Higher detail helps signs, faces, and small objects. Frame count drives the bill more than size.</span>
-                </label>
-                <label className="ingest-field">
-                  <span className="ingest-field-head">
-                    <span>Frames per second</span>
-                    <b>{indexIngestSettings.targetFps}</b>
-                  </span>
-                  <input
-                    type="range"
-                    min={indexIngestLimits.targetFps.min}
-                    max={indexIngestLimits.targetFps.max}
-                    step={indexIngestLimits.targetFps.step}
-                    value={indexIngestSettings.targetFps}
-                    onChange={(event) => saveIndexIngestSettings({ targetFps: Number(event.target.value) })}
-                  />
-                  <span className="ingest-range-info">{indexIngestLimits.targetFps.min} - {indexIngestLimits.targetFps.max} fps</span>
-                  <span className="ingest-help">Main cost lever. Higher helps fast cuts, gestures, and action.</span>
-                </label>
-              </div>
-              <div className="ingest-toggle-list">
-                <div className="ingest-toggle-row">
-                  <span>
-                    <b>Preprocess chunks</b>
-                    <small>Downscale before embedding to keep calls lighter.</small>
-                  </span>
-                  <button
-                    type="button"
-                    className={`ingest-toggle-btn ${indexIngestSettings.preprocess ? "is-active" : ""}`}
-                    onClick={() => saveIndexIngestSettings({ preprocess: !indexIngestSettings.preprocess })}
-                    aria-pressed={indexIngestSettings.preprocess}
-                  >
-                    {indexIngestSettings.preprocess ? "On" : "Off"}
-                  </button>
-                </div>
-                <div className="ingest-toggle-row">
-                  <span>
-                    <b>Skip still chunks</b>
-                    <small>Ignore video sections that look like a frozen frame.</small>
-                  </span>
-                  <button
-                    type="button"
-                    className={`ingest-toggle-btn ${indexIngestSettings.skipStill ? "is-active" : ""}`}
-                    onClick={() => saveIndexIngestSettings({ skipStill: !indexIngestSettings.skipStill })}
-                    aria-pressed={indexIngestSettings.skipStill}
-                  >
-                    {indexIngestSettings.skipStill ? "On" : "Off"}
-                  </button>
-                </div>
-              </div>
+              <p className="ingest-current-line">This deliberately does not run embeddings, captions, transcript, or object detection. Scene search like women, mic, stage, crowd is not available until we rebuild that layer properly.</p>
               <div className="settings-actions ingest-actions">
                 <button type="button" className="btn btn-primary btn-footer" onClick={indexSavedFolder} disabled={!desktop || indexBusy !== "idle"}>
                   {indexBusy === "ingesting" ? <Loader2 className="spin" size={14} strokeWidth={2} aria-hidden /> : <FolderSearch size={14} strokeWidth={2} aria-hidden />}
-                  Scan folder
+                  Index folder
                 </button>
                 <span className="settings-version">
-                  {indexSettingsStatus === "saving"
-                    ? "Saving..."
-                    : `${indexIngestSettings.chunkDuration}s clips · ${indexIngestSettings.overlap}s overlap · ${indexIngestSettings.targetFps}fps`}
+                  {`${indexStatus?.assetCount || 0} files indexed`}
                 </span>
               </div>
-              {indexSettingsError ? <p className="settings-warning">{indexSettingsError}</p> : null}
               {indexError ? <p className="settings-warning">{consumerErrorMessage(indexError, "Could not index this folder.")}</p> : null}
             </section>
             )}

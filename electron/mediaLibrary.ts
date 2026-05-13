@@ -6,6 +6,16 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { ffmpegPath, libraryThumbCacheDir } from "./appPaths";
 
+type LibraryThumbnailDeps = {
+  ffmpeg?: string | null;
+  cacheDir?: string | null;
+  timeoutMs?: number;
+};
+
+type MediaFetchDeps = {
+  fetch: (url: string, init: { bypassCustomProtocolHandlers: true }) => Promise<Response>;
+};
+
 export function decodeMediaPath(rippoUrl: string): string | null {
   try {
     const url = new URL(rippoUrl);
@@ -26,17 +36,29 @@ export function pathToRippoMediaUrl(absolute: string): string {
 }
 
 export async function fetchMediaFile(absolutePath: string): Promise<Response> {
-  return await net.fetch(pathToFileURL(absolutePath).toString(), { bypassCustomProtocolHandlers: true });
+  return await fetchMediaFileWithDeps(absolutePath, { fetch: net.fetch });
+}
+
+export async function fetchMediaFileWithDeps(absolutePath: string, deps: MediaFetchDeps): Promise<Response> {
+  return await deps.fetch(pathToFileURL(absolutePath).toString(), { bypassCustomProtocolHandlers: true });
 }
 
 export async function extractLibraryThumbnail(filePath: string, time: number): Promise<string | null> {
+  return extractLibraryThumbnailWithDeps(filePath, time, {
+    ffmpeg: ffmpegPath(),
+    cacheDir: libraryThumbCacheDir(),
+  });
+}
+
+export async function extractLibraryThumbnailWithDeps(filePath: string, time: number, deps: LibraryThumbnailDeps): Promise<string | null> {
   if (!filePath) return null;
   const resolved = path.resolve(filePath);
   if (!fs.existsSync(resolved) || !fs.statSync(resolved).isFile()) return null;
-  const ffmpeg = ffmpegPath();
+  const ffmpeg = deps.ffmpeg;
   if (!ffmpeg) return null;
   const safeTime = Number.isFinite(time) && time >= 0 ? time : 0;
-  const cacheDir = libraryThumbCacheDir();
+  const cacheDir = deps.cacheDir;
+  if (!cacheDir) return null;
   await fs.promises.mkdir(cacheDir, { recursive: true });
   const hash = createHash("sha1").update(`${resolved}|${safeTime.toFixed(2)}`).digest("hex").slice(0, 24);
   const out = path.join(cacheDir, `${hash}.jpg`);
@@ -52,7 +74,7 @@ export async function extractLibraryThumbnail(filePath: string, time: number): P
       out,
     ];
     const child = spawn(ffmpeg, args, { stdio: "ignore" });
-    const killer = setTimeout(() => { try { child.kill("SIGKILL"); } catch {} }, 15000);
+    const killer = setTimeout(() => { try { child.kill("SIGKILL"); } catch {} }, deps.timeoutMs ?? 15000);
     child.on("error", () => { clearTimeout(killer); resolve(null); });
     child.on("exit", (code) => {
       clearTimeout(killer);

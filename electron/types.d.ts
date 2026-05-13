@@ -10,9 +10,6 @@ declare global {
       setAiModel: (modelId: string) => Promise<{ model: string; health: EngineHealth; catalog: OpenRouterModelCatalog }>;
       indexStatus: (indexRoot?: string) => Promise<IndexStatusResponse>;
       indexIngest: (payload: IndexIngestRequest) => Promise<IndexIngestResponse>;
-      indexSemanticIngest: (payload: IndexSemanticIngestRequest) => Promise<IndexSemanticIngestResponse>;
-      getIndexIngestSettings: () => Promise<IndexIngestSettingsResponse>;
-      setIndexIngestSettings: (payload: Partial<IndexIngestSettings>) => Promise<IndexIngestSettingsResponse>;
       indexSearch: (payload: IndexSearchRequest) => Promise<IndexSearchResponse>;
       indexUpsert: (payload: IndexUpsertRequest) => Promise<IndexUpsertResponse>;
       fetch: (url: string, provider?: ProviderId | "auto", cookieSource?: CookieSource) => Promise<FetchResponse>;
@@ -312,68 +309,6 @@ export type IndexIngestResponse = IndexStatusResponse & {
   unchanged: number;
   skipped: number;
   skippedEntries: IndexSkippedEntry[];
-};
-
-export type IndexSemanticIngestRequest = {
-  indexRoot?: string;
-  paths: string[];
-  provider?: IndexEmbeddingProvider;
-  chunkDuration?: number;
-  overlap?: number;
-  preprocess?: boolean;
-  skipStill?: boolean;
-  targetResolution?: number;
-  targetFps?: number;
-};
-
-export type IndexEmbeddingProvider = "gemini";
-
-export type IndexNumberLimit = {
-  min: number;
-  max: number;
-  step: number;
-  default: number;
-};
-
-export type IndexIngestLimits = {
-  provider: IndexEmbeddingProvider;
-  label: string;
-  model: string;
-  videoSeconds: number;
-  recommendedDimensions: number[];
-  chunkDuration: IndexNumberLimit;
-  overlap: IndexNumberLimit;
-  targetResolution: IndexNumberLimit;
-  targetFps: IndexNumberLimit;
-};
-
-export type IndexIngestSettings = {
-  provider: IndexEmbeddingProvider;
-  chunkDuration: number;
-  overlap: number;
-  preprocess: boolean;
-  skipStill: boolean;
-  targetResolution: number;
-  targetFps: number;
-};
-
-export type IndexIngestSettingsResponse = IndexIngestSettings & {
-  limits: IndexIngestLimits;
-};
-
-export type IndexSemanticIngestResponse = IndexStatusResponse & {
-  semantic: boolean;
-  embedded: number;
-  videoChunks: number;
-  imageCount: number;
-  failed: number;
-  failedEntries?: IndexSkippedEntry[];
-  skipped: number;
-  skippedEntries: IndexSkippedEntry[];
-  embeddingProvider?: string;
-  embeddingModel?: string;
-  chunkDuration?: number;
-  overlap?: number;
 };
 
 export type IndexSearchRequest = {

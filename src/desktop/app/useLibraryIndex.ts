@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import type { IndexIngestSettings, IndexSearchResponse, IndexStatusResponse } from "../../../electron/types";
+import type { IndexSearchResponse, IndexStatusResponse } from "../../../electron/types";
 import type { DesktopClient } from "../client/desktopClient";
 
 export type IndexBusy = "idle" | "ingesting" | "searching";
@@ -19,14 +19,12 @@ const EMPTY_INDEX_SEARCH: IndexSearchResponse = {
 type UseLibraryIndexOptions = {
   desktop: DesktopClient | null;
   outputRoot: string;
-  indexIngestSettings: IndexIngestSettings;
   consumerErrorMessage: (message: string, fallback?: string) => string;
 };
 
 export function useLibraryIndex({
   desktop,
   outputRoot,
-  indexIngestSettings,
   consumerErrorMessage,
 }: UseLibraryIndexOptions) {
   const [indexStatus, setIndexStatus] = useState<IndexStatusResponse | null>(null);
@@ -40,7 +38,7 @@ export function useLibraryIndex({
   useEffect(() => {
     if (!desktop || typeof desktop.indexStatus !== "function" || !outputRoot) return;
     let cancelled = false;
-    desktop.indexStatus(outputRoot).then((result) => {
+    desktop.indexStatus().then((result) => {
       if (!cancelled) setIndexStatus(result);
     }).catch(() => undefined);
     return () => {
@@ -107,21 +105,12 @@ export function useLibraryIndex({
     setIndexBusy("ingesting");
     setIndexError(null);
     try {
-      const result = typeof desktop.indexSemanticIngest === "function"
-        ? await desktop.indexSemanticIngest({
-            indexRoot: outputRoot,
-            paths: [outputRoot],
-            provider: indexIngestSettings.provider,
-            chunkDuration: indexIngestSettings.chunkDuration,
-            overlap: indexIngestSettings.overlap,
-            preprocess: indexIngestSettings.preprocess,
-            skipStill: indexIngestSettings.skipStill,
-            targetResolution: indexIngestSettings.targetResolution,
-            targetFps: indexIngestSettings.targetFps,
-          })
-        : await desktop.indexIngest({ indexRoot: outputRoot, paths: [outputRoot] });
-      if (result.ok) setIndexStatus(result);
-      else setIndexError(consumerErrorMessage(result.error || "", "Could not index this folder."));
+      const basicResult = await desktop.indexIngest({ paths: [outputRoot] });
+      if (!basicResult.ok) {
+        setIndexError(consumerErrorMessage(basicResult.error || "", "Could not index this folder."));
+        return;
+      }
+      setIndexStatus(basicResult);
     } catch (error) {
       setIndexError(consumerErrorMessage(error instanceof Error ? error.message : String(error), "Could not index this folder."));
     } finally {
@@ -141,7 +130,7 @@ export function useLibraryIndex({
     setIndexBusy("searching");
     setIndexError(null);
     try {
-      const result = await desktop.indexSearch({ indexRoot: outputRoot, query: normalizedQuery, limit: 24 });
+      const result = await desktop.indexSearch({ query: normalizedQuery, limit: 24 });
       setIndexSearch(result);
       setIndexStatus(result);
       if (!result.ok) setIndexError(consumerErrorMessage(result.error || "", "Could not search saved footage."));

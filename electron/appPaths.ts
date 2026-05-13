@@ -3,8 +3,10 @@ import fs from "node:fs";
 import path from "node:path";
 
 export function ffmpegPath(): string | null {
+  const executable = process.platform === "win32" ? "ffmpeg.exe" : "ffmpeg";
+
   if (app.isPackaged) {
-    const unpacked = path.join(process.resourcesPath, "app.asar.unpacked", "node_modules", "ffmpeg-static", "ffmpeg");
+    const unpacked = path.join(process.resourcesPath, "app.asar.unpacked", "node_modules", "ffmpeg-static", executable);
     if (fs.existsSync(unpacked)) return unpacked;
   }
 
@@ -44,4 +46,8 @@ export function bundledQbittorrentPath(): string | null {
 
 export function libraryThumbCacheDir(): string {
   return path.join(app.getPath("userData"), "library-thumbs");
+}
+
+export function libraryIndexRoot(): string {
+  return path.join(app.getPath("userData"), "library-index");
 }

@@ -15,16 +15,19 @@ class CliTests(unittest.TestCase):
         self.assertEqual(slugify(""), "untitled")
 
     def test_presets_are_provider_explicit(self) -> None:
-        self.assertEqual(sorted(PRESETS), ["audio-mp3", "gallery", "mp4-best", "proxy", "thumbnail", "torrent"])
+        self.assertEqual(sorted(PRESETS), ["audio-mp3", "drive-file", "gallery", "mp4-best", "proxy", "thumbnail", "torrent"])
         self.assertEqual(PRESETS["mp4-best"]["provider"], "yt-dlp")
+        self.assertEqual(PRESETS["drive-file"]["provider"], "google-drive")
         self.assertEqual(PRESETS["gallery"]["provider"], "gallery-dl")
         self.assertEqual(PRESETS["torrent"]["provider"], "torrent")
 
     def test_provider_catalog_is_ui_ready(self) -> None:
         catalog = provider_catalog()
         self.assertIn({"id": "yt-dlp", "label": "Video", "defaultPreset": "mp4-best", "supportsBrowserAccess": True}, catalog["providers"])
+        self.assertIn({"id": "google-drive", "label": "Drive", "defaultPreset": "drive-file", "supportsBrowserAccess": True}, catalog["providers"])
         self.assertIn({"id": "gallery-dl", "label": "Images", "defaultPreset": "gallery", "supportsBrowserAccess": False}, catalog["providers"])
         self.assertIn({"id": "torrent", "label": "Torrent", "defaultPreset": "torrent", "supportsBrowserAccess": False}, catalog["providers"])
+        self.assertIn({"id": "drive-file", "label": "Drive", "detail": "Google Drive file", "provider": "google-drive"}, catalog["presets"])
         self.assertIn({"id": "gallery", "label": "Images", "detail": "Image gallery", "provider": "gallery-dl"}, catalog["presets"])
         self.assertIn({"id": "torrent", "label": "Torrent", "detail": "Magnet or torrent file", "provider": "torrent"}, catalog["presets"])
 

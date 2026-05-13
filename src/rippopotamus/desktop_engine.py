@@ -25,8 +25,8 @@ from rippopotamus.metadata_lookup import lookup_media
 from rippopotamus.resolvers import ADAPTERS, resolve_all
 from rippopotamus.search_evidence import search_evidence_status
 from rippopotamus.source_registry import search_sources
-from rippopotamus.footage_index import import_semantic_script_index, index_status, ingest_paths, search_index, upsert_moments
-from rippopotamus.index_worker import SemanticIngestOptions, semantic_ingest_paths
+from rippopotamus.footage_index import index_status, ingest_paths, search_index, upsert_moments
+from rippopotamus.google_drive import download_drive_file, drive_metadata, is_drive_file_url
 from rippopotamus.desktop_runtime import (
     arg_cookies_browser,
     cookie_error_message,
@@ -112,6 +112,11 @@ def command_fetch(args: argparse.Namespace) -> int:
         if is_torrent_input(args.url):
             provider = "torrent"
             output = ""
+        elif is_drive_file_url(args.url):
+            provider = "google-drive"
+            metadata = drive_metadata(args.url, cookies_browser, yt_dlp_base=yt_dlp_base())
+            emit({"ok": True, "url": args.url, "metadata": metadata})
+            return 0
         else:
             try:
                 output = run_text(metadata_command("yt-dlp", args.url, provider_context(cookies_browser)))
@@ -123,6 +128,10 @@ def command_fetch(args: argparse.Namespace) -> int:
                 provider = "gallery-dl"
     elif provider == "torrent":
         output = ""
+    elif provider == "google-drive":
+        metadata = drive_metadata(args.url, cookies_browser, yt_dlp_base=yt_dlp_base())
+        emit({"ok": True, "url": args.url, "metadata": metadata})
+        return 0
     else:
         output = run_text(metadata_command(provider, args.url, provider_context(cookies_browser)))
     metadata = parse_metadata_output(provider, args.url, output)
@@ -178,26 +187,8 @@ def command_index_ingest(args: argparse.Namespace) -> int:
     return 0
 
 
-def command_index_semantic_ingest(args: argparse.Namespace) -> int:
-    options = SemanticIngestOptions(
-        chunk_duration=args.chunk_duration,
-        overlap=args.overlap,
-        preprocess=not args.no_preprocess,
-        target_resolution=args.target_resolution,
-        target_fps=args.target_fps,
-        skip_still=not args.no_skip_still,
-    )
-    emit(semantic_ingest_paths(args.index_root, args.paths, options=options))
-    return 0
-
-
-def command_index_import_semantic_script(args: argparse.Namespace) -> int:
-    emit(import_semantic_script_index(args.index_root, args.semantic_db))
-    return 0
-
-
 def command_index_search(args: argparse.Namespace) -> int:
-    emit(search_index(args.index_root, args.query or "", args.limit))
+    emit(search_index(args.index_root, args.query or "", args.limit, use_vector=False))
     return 0
 
 
@@ -304,6 +295,23 @@ def command_download(args: argparse.Namespace) -> int:
             context=provider_context(cookies_browser),
         )
         return run_torrent_download(args, root, cmd)
+
+    if spec["provider"] == "google-drive":
+        emit({"type": "started", "url": args.url, "preset": args.preset})
+        try:
+            files = download_drive_file(
+                args.url,
+                root / spec["folder"],
+                cookie_browser=cookies_browser,
+                yt_dlp_base=yt_dlp_base(),
+                emit=emit,
+            )
+        except SystemExit as exc:
+            emit({"type": "error", "error": cookie_error_message(str(exc))})
+            return 1
+        relative = sorted(str(Path(path).resolve().relative_to(root)) for path in files)
+        emit({"type": "success", "files": relative, "outputRoot": str(root), "warnings": []})
+        return 0
 
     cmd = desktop_download_command(
         args.url,
@@ -414,26 +422,11 @@ def build_parser() -> argparse.ArgumentParser:
     index_ingest.add_argument("paths", nargs="+")
     index_ingest.set_defaults(func=command_index_ingest)
 
-    index_semantic_ingest = sub.add_parser("index-semantic-ingest")
-    index_semantic_ingest.add_argument("--index-root", required=True)
-    index_semantic_ingest.add_argument("--chunk-duration", type=int, default=30)
-    index_semantic_ingest.add_argument("--overlap", type=int, default=5)
-    index_semantic_ingest.add_argument("--target-resolution", type=int, default=480)
-    index_semantic_ingest.add_argument("--target-fps", type=int, default=5)
-    index_semantic_ingest.add_argument("--no-preprocess", action="store_true")
-    index_semantic_ingest.add_argument("--no-skip-still", action="store_true")
-    index_semantic_ingest.add_argument("paths", nargs="+")
-    index_semantic_ingest.set_defaults(func=command_index_semantic_ingest)
-
-    index_import_semantic = sub.add_parser("index-import-semantic-script")
-    index_import_semantic.add_argument("--index-root", required=True)
-    index_import_semantic.add_argument("--semantic-db", required=True)
-    index_import_semantic.set_defaults(func=command_index_import_semantic_script)
-
     index_search = sub.add_parser("index-search")
     index_search.add_argument("--index-root", required=True)
     index_search.add_argument("--query", default="")
     index_search.add_argument("--limit", type=int, default=20)
+    index_search.add_argument("--no-vector", action="store_true", help="Accepted for clarity; desktop index search is always filename/basic metadata only.")
     index_search.set_defaults(func=command_index_search)
 
     index_upsert = sub.add_parser("index-upsert")

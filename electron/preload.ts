@@ -8,10 +8,6 @@ contextBridge.exposeInMainWorld("rippo", {
   setAiModel: (modelId: string) => ipcRenderer.invoke("ai:set-model", modelId),
   indexStatus: (indexRoot?: string) => ipcRenderer.invoke("engine:index-status", indexRoot),
   indexIngest: (payload: { indexRoot?: string; paths: string[] }) => ipcRenderer.invoke("engine:index-ingest", payload),
-  indexSemanticIngest: (payload: { indexRoot?: string; paths: string[]; provider?: string; chunkDuration?: number; overlap?: number; preprocess?: boolean; skipStill?: boolean; targetResolution?: number; targetFps?: number }) =>
-    ipcRenderer.invoke("engine:index-semantic-ingest", payload),
-  getIndexIngestSettings: () => ipcRenderer.invoke("settings:index-ingest"),
-  setIndexIngestSettings: (payload: unknown) => ipcRenderer.invoke("settings:set-index-ingest", payload),
   indexSearch: (payload: { indexRoot?: string; query?: string; limit?: number }) => ipcRenderer.invoke("engine:index-search", payload),
   indexUpsert: (payload: { indexRoot?: string; moments: unknown[] }) => ipcRenderer.invoke("engine:index-upsert", payload),
   fetch: (url: string, provider?: string, cookieSource?: unknown) => ipcRenderer.invoke("engine:fetch", url, provider, cookieSource),

@@ -55,6 +55,15 @@ PRESETS: dict[str, dict[str, Any]] = {
         "extra": [],
         "extension": None,
     },
+    "drive-file": {
+        "provider": "google-drive",
+        "label": "Drive",
+        "detail": "Google Drive file",
+        "folder": "Files",
+        "format": None,
+        "extra": [],
+        "extension": None,
+    },
     "torrent": {
         "provider": "torrent",
         "label": "Torrent",
@@ -68,6 +77,7 @@ PRESETS: dict[str, dict[str, Any]] = {
 
 PROVIDER_CATALOG: dict[str, dict[str, Any]] = {
     "yt-dlp": {"id": "yt-dlp", "label": "Video", "defaultPreset": "mp4-best", "supportsBrowserAccess": True},
+    "google-drive": {"id": "google-drive", "label": "Drive", "defaultPreset": "drive-file", "supportsBrowserAccess": True},
     "gallery-dl": {"id": "gallery-dl", "label": "Images", "defaultPreset": "gallery", "supportsBrowserAccess": False},
     "torrent": {"id": "torrent", "label": "Torrent", "defaultPreset": "torrent", "supportsBrowserAccess": False},
 }
@@ -190,6 +200,8 @@ def metadata_command(provider: str, url: str, context: ProviderContext | None = 
         return [*yt_dlp_run(context), "--dump-single-json", "--skip-download", "--no-playlist", "--ignore-no-formats-error", url]
     if provider == "gallery-dl":
         return [*gallery_dl_base(), "--dump-json", url]
+    if provider == "google-drive":
+        return []
     if provider == "torrent":
         return []
     raise SystemExit(f"Unknown provider `{provider}`.")
@@ -364,6 +376,8 @@ def parse_metadata_output(provider: str, url: str, output: str) -> dict[str, Any
         return metadata_from_media_raw(json.loads(output), url, provider)
     if provider == "gallery-dl":
         return metadata_from_media_raw(first_json_metadata(output), url, provider)
+    if provider == "google-drive":
+        return metadata_from_media_raw(json.loads(output), url, provider)
     if provider == "torrent":
         return metadata_from_media_raw({"title": torrent_title(url), "extractor": "Torrent", "webpage_url": url}, url, provider)
     raise SystemExit(f"Unknown provider `{provider}`.")

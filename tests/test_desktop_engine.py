@@ -11,9 +11,9 @@ from contextlib import redirect_stdout
 from pathlib import Path
 from unittest import mock
 
-from rippopotamus import desktop_engine, desktop_runtime, footage_index, index_worker, query_intelligence, search_evidence, source_registry, torrent_downloads
+from rippopotamus import desktop_engine, desktop_runtime, footage_index, google_drive, index_worker, query_intelligence, search_evidence, source_registry, torrent_downloads
 from rippopotamus.providers import ProviderContext, desktop_download_command
-from rippopotamus.video_chunker import VideoChunk
+from rippopotamus.video_chunker import VideoChunk, expected_video_spans
 
 
 class FakeProcess:
@@ -561,6 +561,59 @@ class DesktopEngineTests(unittest.TestCase):
             self.assertEqual(results["resultCount"], 1)
             self.assertEqual(results["results"][0]["path"], str(video.resolve()))
             self.assertEqual(results["results"][0]["matchType"], "text")
+            self.assertEqual(results["results"][0]["assetId"], response["indexed"][0]["id"])
+            self.assertEqual(results["results"][0]["file"], "night-rally-flag.mp4")
+            self.assertEqual(results["results"][0]["kind"], "video")
+            self.assertEqual(results["results"][0]["title"], "night rally flag")
+            self.assertEqual(results["results"][0]["start"], 0.0)
+            self.assertIn("score", results["results"][0])
+
+    def test_index_cli_ingest_and_search_emit_ui_result_contract(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "project"
+            media = Path(tmp) / "footage"
+            media.mkdir()
+            video = media / "booth-crowd-line.mp4"
+            image = media / "booth-map.png"
+            video.write_bytes(b"not a real video")
+            image.write_bytes(b"not a real image")
+
+            ingest_stream = io.StringIO()
+            ingest_args = argparse.Namespace(index_root=str(root), paths=[str(media)])
+            with redirect_stdout(ingest_stream):
+                self.assertEqual(desktop_engine.command_index_ingest(ingest_args), 0)
+            ingest_response = json.loads(ingest_stream.getvalue())
+
+            self.assertTrue(ingest_response["ok"])
+            self.assertEqual(ingest_response["assetCount"], 2)
+            self.assertEqual(ingest_response["momentCount"], 2)
+
+            search_stream = io.StringIO()
+            search_args = argparse.Namespace(index_root=str(root), query="booth", limit=10)
+            with redirect_stdout(search_stream):
+                self.assertEqual(desktop_engine.command_index_search(search_args), 0)
+            search_response = json.loads(search_stream.getvalue())
+
+            self.assertTrue(search_response["ok"])
+            self.assertEqual(search_response["query"], "booth")
+            self.assertEqual(search_response["resultCount"], 2)
+            for result in search_response["results"]:
+                self.assertTrue(result["id"])
+                self.assertTrue(result["assetId"])
+                self.assertIn(result["kind"], {"image", "video"})
+                self.assertIn(result["file"], {"booth-crowd-line.mp4", "booth-map.png"})
+                self.assertEqual(result["matchType"], "text")
+                self.assertTrue(Path(result["path"]).is_absolute())
+                self.assertIn("score", result)
+
+    def test_expected_video_spans_keep_overlap_and_tail_stable(self) -> None:
+        self.assertEqual(expected_video_spans(5, chunk_duration=30, overlap=5), [(0.0, 5.0)])
+        self.assertEqual(
+            expected_video_spans(65, chunk_duration=30, overlap=5),
+            [(0.0, 30.0), (25.0, 55.0), (50.0, 65.0)],
+        )
+        with self.assertRaises(ValueError):
+            expected_video_spans(60, chunk_duration=30, overlap=30)
 
     def test_index_upsert_moments_supports_embedding_search(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -598,6 +651,94 @@ class DesktopEngineTests(unittest.TestCase):
             self.assertEqual(results["resultCount"], 1)
             self.assertEqual(results["results"][0]["path"], str(flag.resolve()))
             self.assertEqual(results["results"][0]["matchType"], "embedding")
+
+    def test_index_search_can_disable_vector_path(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "project"
+            media = Path(tmp) / "footage"
+            media.mkdir()
+            video = media / "wide-crowd.mp4"
+            video.write_bytes(b"fake video")
+
+            footage_index.upsert_moments(root, {
+                "moments": [{
+                    "path": str(video),
+                    "start": 0,
+                    "end": 5,
+                    "description": "wide crowd shot near stage",
+                    "tags": ["crowd"],
+                    "embedding": [1.0, 0.0],
+                }],
+            })
+
+            embedded = footage_index.search_index(root, "zeppelin", 5, query_vector=[1.0, 0.0])
+            no_vector = footage_index.search_index(root, "zeppelin", 5, query_vector=[1.0, 0.0], use_vector=False)
+
+            self.assertEqual(embedded["resultCount"], 1)
+            self.assertEqual(embedded["results"][0]["matchType"], "embedding")
+            self.assertEqual(no_vector["resultCount"], 0)
+            self.assertIsNone(no_vector["queryEmbeddingSource"])
+
+    def test_lexical_search_hides_full_asset_moment_when_better_moments_exist(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "project"
+            media = Path(tmp) / "footage"
+            media.mkdir()
+            video = media / "booth-crowd-line.mp4"
+            video.write_bytes(b"fake video")
+
+            footage_index.ingest_paths(root, [media])
+            footage_index.upsert_moments(root, {
+                "moments": [{
+                    "path": str(video),
+                    "start": 0,
+                    "end": 4,
+                    "title": "booth crowd line",
+                    "description": "booth crowd line semantic moment",
+                    "tags": ["booth"],
+                    "embedding": [1.0, 0.0],
+                    "embeddingProvider": "gemini",
+                    "embeddingModel": "gemini-embedding-2",
+                    "embeddingDimensions": 2,
+                }],
+            })
+
+            results = footage_index.search_index(root, "booth", 5)
+
+            self.assertEqual(results["resultCount"], 1)
+            self.assertNotEqual(results["results"][0]["id"], f"{results['results'][0]['assetId']}:full")
+            self.assertEqual(results["results"][0]["embeddingProvider"], "gemini")
+
+    def test_recent_search_hides_full_asset_moment_when_better_moments_exist(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "project"
+            media = Path(tmp) / "footage"
+            media.mkdir()
+            video = media / "booth-crowd-line.mp4"
+            video.write_bytes(b"fake video")
+
+            footage_index.ingest_paths(root, [media])
+            footage_index.upsert_moments(root, {
+                "moments": [{
+                    "path": str(video),
+                    "start": 0,
+                    "end": 4,
+                    "title": "booth crowd line",
+                    "description": "booth crowd line semantic moment",
+                    "tags": ["booth"],
+                    "embedding": [1.0, 0.0],
+                    "embeddingProvider": "gemini",
+                    "embeddingModel": "gemini-embedding-2",
+                    "embeddingDimensions": 2,
+                }],
+            })
+
+            results = footage_index.search_index(root, "", 5)
+
+            self.assertEqual(results["resultCount"], 1)
+            self.assertEqual(results["results"][0]["matchType"], "recent")
+            self.assertNotEqual(results["results"][0]["id"], f"{results['results'][0]['assetId']}:full")
+            self.assertEqual(results["results"][0]["embeddingProvider"], "gemini")
 
     def test_index_search_does_not_return_low_score_vector_noise(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -800,21 +941,55 @@ class DesktopEngineTests(unittest.TestCase):
             self.assertIn("up to 120 seconds", response["error"])
             self.assertEqual(response["embedded"], 0)
 
+    def test_semantic_ingest_without_key_returns_setup_error(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "project"
+            image = Path(tmp) / "field-team.png"
+            image.write_bytes(b"fake image")
+
+            with mock.patch.dict(os.environ, {"GEMINI_API_KEY": "", "GOOGLE_API_KEY": ""}, clear=False):
+                response = index_worker.semantic_ingest_paths(root, [image])
+
+            self.assertFalse(response["ok"])
+            self.assertEqual(response["semantic"], True)
+            self.assertEqual(response["embedded"], 0)
+            self.assertIn("Set GEMINI_API_KEY or GOOGLE_API_KEY", response["error"])
+
+    def test_semantic_ingest_writes_dlq_for_file_failure(self) -> None:
+        class FailingEmbedder:
+            provider = "gemini"
+            model = "gemini-embedding-2"
+            dimensions = 2
+
+            def embed_image_document(self, _path: Path) -> list[float]:
+                raise RuntimeError("provider refused image")
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "project"
+            image = Path(tmp) / "field-team.png"
+            image.write_bytes(b"fake image")
+
+            response = index_worker.semantic_ingest_paths(root, [image], embedder=FailingEmbedder())
+            dlq_path = root / ".rippo" / "index-dlq.jsonl"
+            failures = [json.loads(line) for line in dlq_path.read_text(encoding="utf-8").splitlines()]
+
+            self.assertTrue(response["ok"])
+            self.assertEqual(response["failed"], 1)
+            self.assertEqual(response["failedEntries"], [{"path": str(image.resolve()), "reason": "provider refused image"}])
+            self.assertEqual(failures, response["failedEntries"])
+
     def test_index_commands_parse_backend_routes(self) -> None:
         parser = desktop_engine.build_parser()
         ingest = parser.parse_args(["index-ingest", "--index-root", "/tmp/rippo", "/tmp/media"])
-        semantic = parser.parse_args(["index-semantic-ingest", "--index-root", "/tmp/rippo", "--chunk-duration", "20", "/tmp/media"])
-        semantic_import = parser.parse_args(["index-import-semantic-script", "--index-root", "/tmp/rippo", "--semantic-db", "/tmp/semantic.sqlite3"])
         search = parser.parse_args(["index-search", "--index-root", "/tmp/rippo", "--query", "red car", "--limit", "7"])
+        search_no_vector = parser.parse_args(["index-search", "--no-vector", "--index-root", "/tmp/rippo", "--query", "red car"])
         upsert = parser.parse_args(["index-upsert", "--index-root", "/tmp/rippo", "--payload-json", '{"moments": []}'])
 
         self.assertIs(ingest.func, desktop_engine.command_index_ingest)
-        self.assertIs(semantic.func, desktop_engine.command_index_semantic_ingest)
-        self.assertEqual(semantic.chunk_duration, 20)
-        self.assertIs(semantic_import.func, desktop_engine.command_index_import_semantic_script)
-        self.assertEqual(semantic_import.semantic_db, "/tmp/semantic.sqlite3")
         self.assertIs(search.func, desktop_engine.command_index_search)
         self.assertEqual(search.limit, 7)
+        self.assertFalse(search.no_vector)
+        self.assertTrue(search_no_vector.no_vector)
         self.assertIs(upsert.func, desktop_engine.command_index_upsert)
 
     def test_fetch_auto_uses_yt_dlp_when_supported(self) -> None:
@@ -937,6 +1112,30 @@ class DesktopEngineTests(unittest.TestCase):
         self.assertEqual(payload["metadata"]["provider"], "torrent")
         self.assertEqual(payload["metadata"]["title"], "Example")
 
+    def test_fetch_auto_routes_drive_links_to_drive_provider(self) -> None:
+        url = "https://drive.google.com/file/d/file-123/view?usp=drive_link"
+        args = argparse.Namespace(url=url, provider="auto", cookies_browser="chrome")
+        metadata = {"id": "file-123", "title": "Example", "provider": "google-drive"}
+        with mock.patch("rippopotamus.desktop_engine.yt_dlp_base", return_value=["yt-dlp"]):
+            with mock.patch("rippopotamus.desktop_engine.drive_metadata", return_value=metadata) as drive_metadata:
+                stream = io.StringIO()
+                with redirect_stdout(stream):
+                    self.assertEqual(desktop_engine.command_fetch(args), 0)
+
+        payload = json.loads(stream.getvalue())
+        self.assertEqual(payload["metadata"], metadata)
+        drive_metadata.assert_called_once_with(url, "chrome", yt_dlp_base=["yt-dlp"])
+
+    def test_drive_file_id_accepts_view_and_download_urls(self) -> None:
+        self.assertEqual(
+            google_drive.drive_file_id("https://drive.google.com/file/d/13Ied4_fnmxib2zr_ICxhDGZAp43MtSY1/view?usp=drive_link"),
+            "13Ied4_fnmxib2zr_ICxhDGZAp43MtSY1",
+        )
+        self.assertEqual(
+            google_drive.drive_file_id("https://drive.google.com/uc?export=download&id=13Ied4_fnmxib2zr_ICxhDGZAp43MtSY1"),
+            "13Ied4_fnmxib2zr_ICxhDGZAp43MtSY1",
+        )
+
     def test_gallery_preset_is_explicit_download_path(self) -> None:
         args = argparse.Namespace(
             url="https://example.com/gallery",
@@ -953,6 +1152,32 @@ class DesktopEngineTests(unittest.TestCase):
                     self.assertEqual(desktop_engine.command_download(args), 0)
 
         gallery_download.assert_called_once()
+
+    def test_drive_preset_uses_owned_download_path(self) -> None:
+        args = argparse.Namespace(
+            url="https://drive.google.com/file/d/file-123/view",
+            preset="drive-file",
+            output_root="",
+            item_id="drive",
+            title="Drive",
+            cookies_browser="chrome",
+        )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            args.output_root = tmp
+            saved = Path(tmp) / "Files" / "example.jpg"
+            saved.parent.mkdir(parents=True, exist_ok=True)
+            saved.write_bytes(b"drive")
+            with mock.patch("rippopotamus.desktop_engine.yt_dlp_base", return_value=["yt-dlp"]):
+                with mock.patch("rippopotamus.desktop_engine.download_drive_file", return_value=[str(saved)]) as download_drive_file:
+                    stream = io.StringIO()
+                    with redirect_stdout(stream):
+                        self.assertEqual(desktop_engine.command_download(args), 0)
+
+        events = [json.loads(line) for line in stream.getvalue().splitlines()]
+        self.assertEqual(events[-1]["type"], "success")
+        self.assertEqual(events[-1]["files"], ["Files/example.jpg"])
+        download_drive_file.assert_called_once()
 
     def test_torrent_preset_prefers_qbittorrent_when_available(self) -> None:
         args = argparse.Namespace(

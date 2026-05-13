@@ -9,7 +9,9 @@
     "build:ui": "tsc -p tsconfig.json --noEmit && vite build",
     "build:electron": "tsc -p tsconfig.electron.json",
     "package:mac": "npm run build && electron-builder --mac dir",
-    "test": "PYTHONPATH=src python -m unittest discover -s tests && npm run build && node --test tests/electron_cookie_validation.test.cjs tests/electron_thumbnail_validation.test.cjs tests/electron_page_probe_policy_validation.test.cjs tests/url_parser_validation.test.cjs"
+    "package:win": "npm run build && electron-builder --win dir --x64",
+    "package:win:arm64": "npm run build && electron-builder --win dir --arm64",
+    "test": "PYTHONPATH=src python -m unittest discover -s tests && npm run build && node --test tests/electron_cookie_validation.test.cjs tests/electron_thumbnail_validation.test.cjs tests/electron_media_library_validation.test.cjs tests/electron_page_probe_policy_validation.test.cjs tests/library_preview_contract.test.cjs tests/url_parser_validation.test.cjs"
   },
   "keywords": [],
   "author": "",
@@ -37,6 +39,9 @@
     "appId": "app.rippopotamus.desktop",
     "productName": "Rippopotamus",
     "asar": true,
+    "asarUnpack": [
+      "node_modules/ffmpeg-static/**/*"
+    ],
     "files": [
       "dist/renderer/**/*",
       "dist-electron/**/*",
@@ -58,6 +63,12 @@
     "mac": {
       "icon": "public/brand-logo.png",
       "category": "public.app-category.video",
+      "target": [
+        "dir"
+      ]
+    },
+    "win": {
+      "icon": "public/brand-logo.ico",
       "target": [
         "dir"
       ]
