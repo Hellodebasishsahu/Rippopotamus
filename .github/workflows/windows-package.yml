@@ -2,6 +2,9 @@ name: Windows Package
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - dev/windows-native-support
   pull_request:
     paths:
       - "electron/**"
