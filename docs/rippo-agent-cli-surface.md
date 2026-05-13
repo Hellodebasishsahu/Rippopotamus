@@ -76,12 +76,18 @@ The shortcut commands are just readable names for engine commands:
 | `library-search` | `engine index-search` |
 | `library-upsert` | `engine index-upsert` |
 
-## Local Skill
+## Local Skills
 
-The repo-local agent skill lives at:
+The repo-neutral agent skill lives at:
+
+```text
+skills/rippo-agent/SKILL.md
+```
+
+Claude also has a mirror at:
 
 ```text
 .claude/skills/rippo-agent/SKILL.md
 ```
 
-That skill tells agents to discover capabilities first, use JSON engine routes for desktop/library/search work, and avoid committing generated media/index files unless explicitly asked.
+Both tell agents to discover capabilities first, use JSON engine routes for desktop/library/search work, and avoid committing generated media/index files unless explicitly asked.
