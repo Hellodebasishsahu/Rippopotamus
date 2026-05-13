@@ -4,6 +4,7 @@ const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 const { spawnSync } = require("node:child_process");
+const { pathToFileURL } = require("node:url");
 
 const { decodeMediaPath, extractLibraryThumbnailWithDeps, fetchMediaFileWithDeps, pathToRippoMediaUrl } = require("../dist-electron/mediaLibrary.js");
 
@@ -43,7 +44,7 @@ test("fetchMediaFileWithDeps fetches file urls through custom protocol bypass", 
 
   assert.equal(result, response);
   assert.equal(calls.length, 1);
-  assert.equal(calls[0].url, `file://${media.replace(/ /g, "%20")}`);
+  assert.equal(calls[0].url, pathToFileURL(media).href);
   assert.deepEqual(calls[0].init, { bypassCustomProtocolHandlers: true });
 });
 
