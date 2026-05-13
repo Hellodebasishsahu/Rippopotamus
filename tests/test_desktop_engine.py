@@ -7,7 +7,7 @@ import os
 import sqlite3
 import tempfile
 import unittest
-from contextlib import redirect_stdout
+from contextlib import closing, redirect_stdout
 from pathlib import Path
 from unittest import mock
 
@@ -48,8 +48,9 @@ class DesktopEngineTests(unittest.TestCase):
             binary.chmod(0o644)
 
             with mock.patch.dict(os.environ, {"RIPPO_YTDLP_PATH": str(binary)}):
-                with self.assertRaises(SystemExit):
-                    desktop_runtime.configured_yt_dlp_path()
+                with mock.patch("os.access", return_value=False):
+                    with self.assertRaises(SystemExit):
+                        desktop_runtime.configured_yt_dlp_path()
 
     def test_cookies_browser_args_returns_yt_dlp_flag(self) -> None:
         with mock.patch.dict(os.environ, {"RIPPO_COOKIES_FROM_BROWSER": "chrome"}):
@@ -776,7 +777,7 @@ class DesktopEngineTests(unittest.TestCase):
             video = media / "parking-lot.mp4"
             video.write_bytes(b"fake video")
             semantic_db = Path(tmp) / "semantic-script.sqlite3"
-            with sqlite3.connect(semantic_db) as conn:
+            with closing(sqlite3.connect(semantic_db)) as conn:
                 conn.execute("""
                     CREATE TABLE scripts (
                         id TEXT PRIMARY KEY,
@@ -835,6 +836,7 @@ class DesktopEngineTests(unittest.TestCase):
                         2,
                     ),
                 )
+                conn.commit()
 
             response = footage_index.import_semantic_script_index(root, semantic_db)
 
@@ -1176,7 +1178,7 @@ class DesktopEngineTests(unittest.TestCase):
 
         events = [json.loads(line) for line in stream.getvalue().splitlines()]
         self.assertEqual(events[-1]["type"], "success")
-        self.assertEqual(events[-1]["files"], ["Files/example.jpg"])
+        self.assertEqual([Path(file).as_posix() for file in events[-1]["files"]], ["Files/example.jpg"])
         download_drive_file.assert_called_once()
 
     def test_torrent_preset_prefers_qbittorrent_when_available(self) -> None:
@@ -1257,8 +1259,8 @@ class DesktopEngineTests(unittest.TestCase):
 
         self.assertIn("--dht-file-path", command)
         self.assertIn("--dht-file-path6", command)
-        self.assertTrue(any(".aria2/dht.dat" in value for value in command))
-        self.assertTrue(any(".aria2/dht6.dat" in value for value in command))
+        self.assertTrue(any(".aria2/dht.dat" in Path(value).as_posix() for value in command))
+        self.assertTrue(any(".aria2/dht6.dat" in Path(value).as_posix() for value in command))
 
     def test_snapshot_files_ignores_hidden_runtime_state(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
