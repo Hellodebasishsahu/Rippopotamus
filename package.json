@@ -16,7 +16,7 @@
     "verify:package:win": "node scripts/verify-package-artifact.mjs win",
     "verify:package:mac:engine": "node scripts/verify-packaged-engine-health.mjs mac",
     "verify:package:win:engine": "node scripts/verify-packaged-engine-health.mjs win",
-    "test": "PYTHONPATH=src python -m unittest discover -s tests && npm run build && node --test tests/electron_cookie_validation.test.cjs tests/electron_thumbnail_validation.test.cjs tests/electron_media_library_validation.test.cjs tests/electron_page_probe_policy_validation.test.cjs tests/library_preview_contract.test.cjs tests/url_parser_validation.test.cjs"
+    "test": "node scripts/run-tests.mjs"
   },
   "keywords": [],
   "author": "",
