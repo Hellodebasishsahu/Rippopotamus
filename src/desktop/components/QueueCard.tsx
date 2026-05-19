@@ -1,15 +1,8 @@
-import { ExternalLink, ImageOff, Link2, Loader2, RefreshCcw, Trash2 } from "lucide-react";
+import { ImageOff, Link2, Loader2, RefreshCcw, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import type { BrowserInfo, CookieSource, PresetOption } from "../../../electron/types";
 import { queueItemCanChangeOutput, queueItemCanRefetch, queueItemCanRemove, type QueueItem } from "../app/downloadQueueModel";
 import { getDesktopClient } from "../client/desktopClient";
-
-function formatDuration(seconds?: number) {
-  if (!seconds) return "Unknown length";
-  const minutes = Math.floor(seconds / 60);
-  const rest = Math.floor(seconds % 60).toString().padStart(2, "0");
-  return `${minutes}:${rest}`;
-}
 
 function shortUrl(url: string) {
   try {
@@ -22,15 +15,6 @@ function shortUrl(url: string) {
 
 function sourceUrl(item: QueueItem) {
   return item.metadata?.webpage_url || item.url;
-}
-
-function metaLine(item: QueueItem): string {
-  const parts: string[] = [];
-  if (item.metadata?.extractor) parts.push(item.metadata.extractor);
-  else parts.push(shortUrl(sourceUrl(item)));
-  if (item.metadata?.uploader) parts.push(item.metadata.uploader);
-  if (item.metadata?.duration) parts.push(formatDuration(item.metadata.duration));
-  return parts.join(" · ");
 }
 
 function cookieSourceValue(source: CookieSource | null | undefined): string {
@@ -173,19 +157,16 @@ export function QueueCard({
 }) {
   return (
     <article className={`queue-item ${item.status}`}>
-      <button type="button" className="thumb" onClick={() => openSource(item)} aria-label="Open source page" title="Open source page">
-        {item.metadata ? <ThumbnailImage urls={thumbnailUrls(item)} /> : <Link2 size={28} strokeWidth={1.5} aria-hidden />}
-        <span className="thumb-overlay"><ExternalLink size={20} strokeWidth={2} aria-hidden /></span>
+      <button type="button" className="thumb" onClick={() => openSource(item)} aria-label="Open source" title="Open source">
+        {item.metadata ? <ThumbnailImage urls={thumbnailUrls(item)} /> : <Link2 size={20} strokeWidth={1.5} aria-hidden />}
       </button>
       <div className="item-body">
         <div className="item-head">
           <h3 className="item-title">{item.metadata?.title || shortUrl(item.url)}</h3>
-          <p className="item-meta">{metaLine(item)}</p>
           {item.error ? <p className="item-error">{consumerErrorMessage(item.error)}</p> : null}
-          {visibleNotices.map((notice, i) => (
+          {visibleNotices.slice(0, 1).map((notice, i) => (
             <p key={i} className={notice.level === "error" ? "item-error" : "item-warning"}>{notice.message}</p>
           ))}
-          {item.files?.length && !item.error ? <p className="item-files">{item.files.join(" · ")}</p> : null}
         </div>
         <div className="item-foot">
           <span className={`status-badge status-${item.status}`} data-status={item.status}>

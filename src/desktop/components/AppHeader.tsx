@@ -1,6 +1,9 @@
-import { FolderSearch, Loader2, Search, Settings } from "lucide-react";
+import { Loader2, Search, Settings } from "lucide-react";
 import type { RefObject } from "react";
 import type { IndexStatusResponse, ProviderId, ProviderOption, SourceSearchPack } from "../../../electron/types";
+import { AppHero } from "./AppHero";
+
+const logoUrl = `${import.meta.env.BASE_URL}brand-logo.png`;
 
 export type SearchScope = "library" | "web";
 
@@ -14,16 +17,9 @@ export type ComposerAction = {
   countSuffix?: string;
 };
 
-function indexStatusLine(status: IndexStatusResponse | null): string {
-  if (!status) return "Not scanned yet";
-  if (!status.assetCount && !status.momentCount) return "No saved footage scanned";
-  return `${status.assetCount} files · filename index`;
-}
-
-function savedFootageBadge(status: IndexStatusResponse | null): string {
-  if (!status || !status.assetCount) return "No saved footage";
-  if (status.momentCount) return `${status.assetCount} files`;
-  return "No moments";
+function libraryCount(status: IndexStatusResponse | null): string {
+  if (!status?.assetCount) return "0 files";
+  return `${status.assetCount} files`;
 }
 
 export function AppHeader({
@@ -38,13 +34,16 @@ export function AppHeader({
   providerOptions,
   composerAction,
   activeSearchBusy,
+  pageProbeBusy,
   setInput,
   clearIndexError,
   runComposerAction,
+  sniffPage,
   chooseSearchScope,
   setActiveSourcePack,
   setFetchProvider,
   openSettings,
+  showHero,
 }: {
   input: string;
   textareaRef: RefObject<HTMLTextAreaElement | null>;
@@ -57,97 +56,111 @@ export function AppHeader({
   providerOptions: ProviderOption[];
   composerAction: ComposerAction;
   activeSearchBusy: boolean;
+  pageProbeBusy: boolean;
   setInput: (value: string) => void;
   clearIndexError: () => void;
   runComposerAction: () => void;
+  sniffPage: () => void;
   chooseSearchScope: (scope: SearchScope) => void;
   setActiveSourcePack: (pack: string) => void;
   setFetchProvider: (provider: ProviderId | "auto") => void;
   openSettings: () => void;
+  showHero: boolean;
 }) {
-  return (
-    <header className="app-header">
-      <div className="app-header-inner">
-        <div className="app-titlebar">
-          <div className="brand-lockup">
-            <img className="brand-logo" src={`${import.meta.env.BASE_URL}brand-logo.png`} alt="" width={44} height={44} decoding="async" />
-            <div>
-              <h1 className="brand-name">Rippo</h1>
-              <p className="brand-subtitle">Find, fetch, and save usable media.</p>
-            </div>
-          </div>
-          <button type="button" className="settings-btn" onClick={openSettings} aria-label="Settings" title="Settings">
-            <Settings size={18} strokeWidth={2} aria-hidden />
-          </button>
-        </div>
+  const showSearchControls = detectedCount === 0;
 
-        <div className={`composer ${input ? "has-content" : ""}`}>
-          <textarea
-            id="url-input"
-            ref={textareaRef}
-            className="input-multiline"
-            value={input}
-            onChange={(event) => {
-              setInput(event.target.value);
-              clearIndexError();
-            }}
-            onKeyDown={(event) => {
-              if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
-                event.preventDefault();
-                runComposerAction();
-              }
-            }}
-            placeholder={searchScope === "library" ? "Paste link(s) or search saved videos..." : "Paste link(s) or search the web..."}
-            rows={1}
-            aria-label="Links or search text"
-          />
-          <div className="composer-foot">
-            <div className="composer-tools">
-              {detectedCount === 0 ? (
-                <>
-                  <div className="search-scope-switch" role="group" aria-label="Search source">
-                    <button type="button" className={`search-scope-btn ${searchScope === "library" ? "is-active" : ""}`} onClick={() => chooseSearchScope("library")} aria-pressed={searchScope === "library"}>
-                      <FolderSearch size={13} strokeWidth={2} aria-hidden />
-                      Library
-                    </button>
-                    <button type="button" className={`search-scope-btn ${searchScope === "web" ? "is-active" : ""}`} onClick={() => chooseSearchScope("web")} aria-pressed={searchScope === "web"}>
-                      <Search size={13} strokeWidth={2} aria-hidden />
-                      Web
-                    </button>
-                  </div>
-                  {searchScope === "web" ? (
-                    <div className="pack-select-wrap">
-                      <select className="provider-select" value={activeSourcePack} onChange={(event) => setActiveSourcePack(event.target.value)} aria-label="Web search area">
-                        {sourcePacks.map((pack) => (
-                          <option key={pack.id} value={pack.id}>{pack.label}</option>
-                        ))}
-                      </select>
-                    </div>
-                  ) : (
-                    <span className="composer-index-status" title={indexStatusLine(indexStatus)}>
-                      {savedFootageBadge(indexStatus)}
-                    </span>
-                  )}
-                </>
-              ) : (
-                <select
-                  className="provider-select"
-                  value={selectedFetchProvider}
-                  onChange={(event) => setFetchProvider(event.target.value as ProviderId | "auto")}
-                  disabled={!providerOptions.length}
-                  aria-label="Source type"
-                >
-                  {providerOptions.length === 0 ? <option value="">Loading</option> : null}
-                  {providerOptions.length > 0 ? <option value="auto">Auto</option> : null}
-                  {providerOptions.map((option) => (
-                    <option key={option.id} value={option.id}>{option.label}</option>
-                  ))}
-                </select>
-              )}
-              {detectedCount > 1 ? <span className="link-count">{detectedCount} links</span> : <span className="composer-hint">Cmd+Enter to {composerAction.hint}</span>}
-            </div>
+  return (
+    <header className={`app-header ${showHero ? "has-hero" : "is-compact"}`}>
+      <button type="button" className="settings-btn settings-btn-header" onClick={openSettings} aria-label="Settings" title="Settings">
+        <Settings size={16} strokeWidth={2} aria-hidden />
+      </button>
+
+      {showHero ? (
+        <AppHero />
+      ) : (
+        <div className="app-header-bar">
+          <img className="brand-logo-sm" src={logoUrl} alt="" width={28} height={28} decoding="async" />
+          <span className="brand-name">Rippo</span>
+        </div>
+      )}
+
+      <div className={`composer ${input ? "has-content" : ""}`}>
+        <textarea
+          id="url-input"
+          ref={textareaRef}
+          className="input-multiline"
+          value={input}
+          onChange={(event) => {
+            setInput(event.target.value);
+            clearIndexError();
+          }}
+          onKeyDown={(event) => {
+            if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
+              event.preventDefault();
+              runComposerAction();
+            }
+          }}
+          placeholder={showHero ? "Paste a link, or use Sheet import below" : "Paste links, search library, or search the web"}
+          rows={1}
+          aria-label="Input"
+        />
+        <div className="composer-foot">
+          <div className="composer-tools">
+            {showSearchControls ? (
+              <>
+                <div className="search-scope-switch" role="group" aria-label="Search source">
+                  <button
+                    type="button"
+                    className={`search-scope-btn ${searchScope === "library" ? "is-active" : ""}`}
+                    onClick={() => chooseSearchScope("library")}
+                    aria-pressed={searchScope === "library"}
+                  >
+                    Library
+                  </button>
+                  <button
+                    type="button"
+                    className={`search-scope-btn ${searchScope === "web" ? "is-active" : ""}`}
+                    onClick={() => chooseSearchScope("web")}
+                    aria-pressed={searchScope === "web"}
+                  >
+                    Web
+                  </button>
+                </div>
+                {searchScope === "web" ? (
+                  <select className="provider-select" value={activeSourcePack} onChange={(event) => setActiveSourcePack(event.target.value)} aria-label="Web area">
+                    {sourcePacks.map((pack) => (
+                      <option key={pack.id} value={pack.id}>{pack.label}</option>
+                    ))}
+                  </select>
+                ) : (
+                  <span className="composer-index-status">{libraryCount(indexStatus)}</span>
+                )}
+              </>
+            ) : (
+              <select
+                className="provider-select"
+                value={selectedFetchProvider}
+                onChange={(event) => setFetchProvider(event.target.value as ProviderId | "auto")}
+                disabled={!providerOptions.length}
+                aria-label="Source type"
+              >
+                {providerOptions.length === 0 ? <option value="">…</option> : null}
+                {providerOptions.length > 0 ? <option value="auto">Auto</option> : null}
+                {providerOptions.map((option) => (
+                  <option key={option.id} value={option.id}>{option.label}</option>
+                ))}
+              </select>
+            )}
+            {detectedCount > 1 ? <span className="link-count">{detectedCount}</span> : null}
+          </div>
+          <div className="composer-actions">
+            {detectedCount === 1 ? (
+              <button type="button" className="btn btn-ghost btn-fetch" onClick={sniffPage} disabled={pageProbeBusy}>
+                {pageProbeBusy ? <Loader2 className="spin" size={14} strokeWidth={2} aria-hidden /> : "Sniff"}
+              </button>
+            ) : null}
             <button type="button" className="btn btn-primary btn-fetch" onClick={runComposerAction} disabled={composerAction.disabled}>
-              {activeSearchBusy ? <Loader2 className="spin" size={15} strokeWidth={2} aria-hidden /> : composerAction.icon === "search" ? <Search size={15} strokeWidth={2} aria-hidden /> : null}
+              {activeSearchBusy ? <Loader2 className="spin" size={14} strokeWidth={2} aria-hidden /> : composerAction.icon === "search" ? <Search size={14} strokeWidth={2} aria-hidden /> : null}
               {activeSearchBusy ? composerAction.busyLabel : `${composerAction.label}${composerAction.countSuffix || ""}`}
             </button>
           </div>
