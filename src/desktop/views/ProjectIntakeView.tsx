@@ -11,6 +11,7 @@ import {
   type QueueItem,
 } from "../app/useDownloadQueue";
 import type { DesktopClient } from "../client/desktopClient";
+import { IntakeBentDivider } from "../components/IntakeBentDivider";
 import { QueueCard } from "../components/QueueCard";
 import { QueueMenu } from "../components/QueueMenu";
 import { SheetImportPanel } from "../components/SheetImportPanel";
@@ -165,11 +166,13 @@ export function ProjectIntakeView({
 
   return (
     <section className={`intake${anySelected ? " intake-has-selection" : ""}`}>
+      <div className="intake-main">
       {pageProbeError ? <p className="error-text">{consumerErrorMessage(pageProbeError, "Could not sniff this page.")}</p> : null}
       {pageProbeNotice ? <p className="hint-text">{pageProbeNotice}</p> : null}
 
       {items.length > 0 ? (
         <>
+          <IntakeBentDivider />
           <div className={`queue-toolbar${anySelected ? " is-bulk" : ""}`}>
             {anySelected ? (
               <>
@@ -266,15 +269,17 @@ export function ProjectIntakeView({
         input={input}
         openExternal={(url) => desktop?.openExternal(url)}
       />
+      </div>
 
-      <SheetImportPanel
-        desktop={desktop}
-        outputRoot={activeOutputRoot}
-        cookieSource={cookieSource}
-        libraryIndexRoot={libraryIndexRoot}
-        formatError={consumerErrorMessage}
-        defaultOpen={showIntakeEmptyHint}
-      />
+      <footer className="intake-sheet-footer">
+        <SheetImportPanel
+          desktop={desktop}
+          outputRoot={activeOutputRoot}
+          cookieSource={cookieSource}
+          libraryIndexRoot={libraryIndexRoot}
+          formatError={consumerErrorMessage}
+        />
+      </footer>
     </section>
   );
 }

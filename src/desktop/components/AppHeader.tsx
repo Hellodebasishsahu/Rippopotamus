@@ -100,7 +100,7 @@ export function AppHeader({
               runComposerAction();
             }
           }}
-          placeholder={showHero ? "Paste a link, or use Sheet import below" : "Paste links, search library, or search the web"}
+          placeholder={showHero ? "Paste a link" : "Paste links, search library, or search the web"}
           rows={1}
           aria-label="Input"
         />
