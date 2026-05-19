@@ -1,0 +1,40 @@
+name: macOS Package
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "electron/**"
+      - "src/**"
+      - "tests/**"
+      - "scripts/**"
+      - "package.json"
+      - "package-lock.json"
+      - "pyproject.toml"
+      - ".github/workflows/macos-package.yml"
+
+jobs:
+  package-macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - run: python -m pip install -e .
+      - run: npm ci
+      - run: npm test
+      - run: npm run prepare:ffmpeg:mac
+      - run: npm run build && npx electron-builder --mac dir
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: rippopotamus-mac-dir
+          path: release/mac-arm64

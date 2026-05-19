@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import { spawnSync } from "node:child_process";
 
 const target = process.argv[2];
 const root = process.cwd();
@@ -35,6 +36,17 @@ function readPrefix(filePath, length) {
   }
 }
 
+function assertDmg(filePath) {
+  const absolute = assertFile(filePath, "macOS DMG artifact");
+  if (process.platform !== "darwin") return absolute;
+
+  const result = spawnSync("hdiutil", ["imageinfo", absolute], { encoding: "utf8" });
+  if (result.status !== 0) {
+    fail(`macOS DMG is not readable by hdiutil: ${filePath}\n${result.stderr || result.stdout}`);
+  }
+  return absolute;
+}
+
 if (target === "win") {
   const appExe = assertFile("release/win-unpacked/Rippopotamus.exe", "Windows app executable");
   assertFile("release/win-unpacked/resources/app.asar", "Windows app asar");
@@ -50,6 +62,7 @@ if (target === "win") {
   }
   console.log("Windows package artifact shape is valid.");
 } else if (target === "mac") {
+  assertDmg("release/Rippopotamus-0.1.0-arm64.dmg");
   const appBinary = assertFile("release/mac-arm64/Rippopotamus.app/Contents/MacOS/Rippopotamus", "macOS app executable");
   assertFile("release/mac-arm64/Rippopotamus.app/Contents/Resources/app.asar", "macOS app asar");
   assertDir("release/mac-arm64/Rippopotamus.app/Contents/Resources/app.asar.unpacked", "macOS unpacked resources");
