@@ -48,6 +48,27 @@ test("extractUrls accepts explicit URLs with uncommon valid TLDs", () => {
   );
 });
 
+test("extractUrls accepts real pasted bare links on uncommon domains when they include a path", () => {
+  assert.deepEqual(
+    Array.from(extractUrls("xhamster.desi/search/indian+cuckold+threesome")),
+    ["https://xhamster.desi/search/indian+cuckold+threesome"],
+  );
+});
+
+test("extractUrls accepts escaped JSON urls and html entities", () => {
+  assert.deepEqual(
+    Array.from(extractUrls('{"pageURL":"https:\\/\\/example.desi\\/videos\\/demo?x=1\\u0026y=2"}')),
+    ["https://example.desi/videos/demo?x=1&y=2"],
+  );
+});
+
+test("extractUrls accepts protocol relative links", () => {
+  assert.deepEqual(
+    Array.from(extractUrls("//cdn.example.com/video.mp4")),
+    ["https://cdn.example.com/video.mp4"],
+  );
+});
+
 test("extractUrls handles markdown links and trailing punctuation", () => {
   assert.deepEqual(
     Array.from(extractUrls("watch [this](https://www.youtube.com/watch?v=TQd2k1pEXp4), then https://commons.wikimedia.org/wiki/File:Example.jpg.")),
