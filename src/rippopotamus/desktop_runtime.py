@@ -118,11 +118,16 @@ def provider_context(cookies_browser: str | None = None) -> ProviderContext:
         yt_dlp_base=tuple(yt_dlp_base()),
         cookies_browser=(cookies_browser or "").strip() or None,
         ffmpeg_path=ffmpeg_path(),
+        network_proxy=network_proxy(),
     )
 
 
 def arg_cookies_browser(args: argparse.Namespace) -> str | None:
     return (getattr(args, "cookies_browser", "") or "").strip() or None
+
+
+def network_proxy() -> str | None:
+    return os.environ.get("RIPPO_NETWORK_PROXY", "").strip() or None
 
 
 def gallery_dl_status() -> dict[str, Any]:

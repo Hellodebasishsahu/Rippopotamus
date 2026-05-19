@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import re
 import subprocess
@@ -25,7 +26,8 @@ from rippopotamus.metadata_lookup import lookup_media
 from rippopotamus.resolvers import ADAPTERS, resolve_all
 from rippopotamus.search_evidence import search_evidence_status
 from rippopotamus.source_registry import search_sources
-from rippopotamus.footage_index import index_status, ingest_paths, search_index, upsert_moments
+from rippopotamus.footage_index import index_status, ingest_paths, search_index, upsert_moments, insert_moment, connect_index, index_counts, moment_id
+from rippopotamus.eval_harness import load_queries, run_eval, format_table
 from rippopotamus.google_drive import download_drive_file, drive_metadata, is_drive_file_url
 from rippopotamus.desktop_runtime import (
     arg_cookies_browser,
@@ -33,6 +35,7 @@ from rippopotamus.desktop_runtime import (
     ffmpeg_path,
     gallery_dl_status,
     is_torrent_input,
+    network_proxy,
     provider_context,
     run_text,
     torrent_engine_status,
@@ -40,15 +43,119 @@ from rippopotamus.desktop_runtime import (
     yt_dlp_base,
 )
 from rippopotamus.torrent_downloads import run_torrent_download
+from rippopotamus.sheet_import import run_sheet_import_pipeline
 
 
 def emit(payload: dict[str, Any]) -> None:
     print(json.dumps(payload, sort_keys=True), flush=True)
 
 
+def download_ledger_path(root: Path) -> Path:
+    return root / ".rippo-downloads.json"
+
+
+def download_key(url: str, preset: str) -> str:
+    basis = json.dumps({"preset": preset, "url": url.strip()}, sort_keys=True)
+    return hashlib.sha1(basis.encode("utf-8")).hexdigest()[:24]
+
+
+def load_download_ledger(root: Path) -> dict[str, Any]:
+    path = download_ledger_path(root)
+    if not path.exists():
+        return {}
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    return payload if isinstance(payload, dict) else {}
+
+
+def write_download_ledger(root: Path, ledger: dict[str, Any]) -> None:
+    path = download_ledger_path(root)
+    path.write_text(json.dumps(ledger, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+
+def existing_download(root: Path, key: str) -> list[dict[str, Any]] | None:
+    record = load_download_ledger(root).get(key)
+    if not isinstance(record, dict):
+        return None
+    paths = record.get("files")
+    if not isinstance(paths, list) or not paths:
+        return None
+    files: list[dict[str, Any]] = []
+    for rel in paths:
+        if not isinstance(rel, str) or Path(rel).is_absolute():
+            return None
+        path = (root / rel).resolve()
+        try:
+            path.relative_to(root)
+        except ValueError:
+            return None
+        if not path.is_file():
+            return None
+        files.append(file_result(root, path))
+    return sorted(files, key=lambda item: item["path"])
+
+
+def remember_download(root: Path, key: str, files: list[dict[str, Any]], *, url: str, preset: str) -> None:
+    if not files:
+        return
+    ledger = load_download_ledger(root)
+    ledger[key] = {
+        "url": url,
+        "preset": preset,
+        "files": [item["path"] for item in files if isinstance(item.get("path"), str)],
+    }
+    write_download_ledger(root, ledger)
+
+
+def emit_duplicate_download(root: Path, files: list[dict[str, Any]], *, url: str, preset: str) -> None:
+    emit({"type": "started", "url": url, "preset": preset})
+    emit({"type": "stage", "message": "Already saved", "finalizing": False})
+    emit({"type": "success", "files": files, "outputRoot": str(root), "warnings": ["Already saved; skipped duplicate download."]})
+
+
+def command_sheet_import(args: argparse.Namespace) -> int:
+    job_id = (args.job_id or "").strip()
+    cookies_browser = arg_cookies_browser(args)
+    proxy = network_proxy()
+
+    def sheet_emit(payload: dict[str, Any]) -> None:
+        emit({"jobId": job_id, "type": "sheet-import", **payload})
+
+    sheet_emit({"phase": "queued", "sheetUrl": args.sheet_url, "projectName": args.project_name})
+    index_arg = (args.index_root or "").strip()
+    index_root = Path(index_arg) if index_arg else None
+    try:
+        run_sheet_import_pipeline(
+            sheet_url=args.sheet_url.strip(),
+            output_root=Path(args.output_root),
+            project_name=(args.project_name or "sheet-import").strip(),
+            sheet_name=(args.sheet_name or "Tracker").strip(),
+            browser=cookies_browser,
+            yt_dlp_base=yt_dlp_base(),
+            network_proxy=proxy,
+            state_filter=(args.state or "").strip(),
+            pc_filter=(args.pc or "").strip(),
+            status_filter=(args.status or "").strip(),
+            limit=int(args.limit or 0),
+            require_master=bool(args.require_master),
+            download_master=bool(args.download_master),
+            index_root=index_root,
+            emit=sheet_emit,
+            ingest_paths_fn=ingest_paths,
+        )
+    except SystemExit as exc:
+        err = cookie_error_message(str(exc))
+        sheet_emit({"phase": "error", "error": err, "ok": False})
+        return 1
+    return 0
+
+
 def command_health(args: argparse.Namespace) -> int:
     base = yt_dlp_base()
     cookies_browser = arg_cookies_browser(args)
+    proxy = network_proxy()
     ffmpeg = ffmpeg_path()
     yt_dlp_version = "unknown"
     try:
@@ -98,6 +205,8 @@ def command_health(args: argparse.Namespace) -> int:
         "ffmpegVersion": ffmpeg_version,
         "cookiesBrowser": cookies_browser,
         "cookies": verify_cookies_browser(base, cookies_browser),
+        "networkProxy": proxy,
+        "networkProxyEnabled": bool(proxy),
         "providers": catalog["providers"],
         "presets": catalog["presets"],
         "searchEvidence": search_evidence_status(),
@@ -114,7 +223,7 @@ def command_fetch(args: argparse.Namespace) -> int:
             output = ""
         elif is_drive_file_url(args.url):
             provider = "google-drive"
-            metadata = drive_metadata(args.url, cookies_browser, yt_dlp_base=yt_dlp_base())
+            metadata = drive_metadata(args.url, cookies_browser, yt_dlp_base=yt_dlp_base(), network_proxy=network_proxy())
             emit({"ok": True, "url": args.url, "metadata": metadata})
             return 0
         else:
@@ -129,7 +238,7 @@ def command_fetch(args: argparse.Namespace) -> int:
     elif provider == "torrent":
         output = ""
     elif provider == "google-drive":
-        metadata = drive_metadata(args.url, cookies_browser, yt_dlp_base=yt_dlp_base())
+        metadata = drive_metadata(args.url, cookies_browser, yt_dlp_base=yt_dlp_base(), network_proxy=network_proxy())
         emit({"ok": True, "url": args.url, "metadata": metadata})
         return 0
     else:
@@ -177,6 +286,46 @@ def command_ai_models(args: argparse.Namespace) -> int:
     return 0
 
 
+def command_proxy_check(args: argparse.Namespace) -> int:
+    proxy = (args.proxy or "").strip()
+    if not proxy:
+        emit({"ok": False, "proxy": "", "error": "Paste a proxy URL first."})
+        return 1
+    command = [
+        "curl",
+        "--silent",
+        "--show-error",
+        "--max-time",
+        "12",
+        "--proxy",
+        proxy,
+        "https://api.ipify.org?format=json",
+    ]
+    try:
+        result = subprocess.run(command, capture_output=True, text=True, timeout=15)
+    except FileNotFoundError:
+        emit({"ok": False, "proxy": proxy, "error": "curl is not available to test this proxy."})
+        return 1
+    except subprocess.TimeoutExpired:
+        emit({"ok": False, "proxy": proxy, "error": "Proxy test timed out."})
+        return 1
+
+    output = (result.stdout or "").strip()
+    if result.returncode != 0:
+        detail = (result.stderr or output or "Proxy test failed.").strip()
+        emit({"ok": False, "proxy": proxy, "error": friendly_error(detail)})
+        return 1
+
+    try:
+        payload = json.loads(output)
+    except json.JSONDecodeError:
+        emit({"ok": True, "proxy": proxy, "ip": output[:120]})
+        return 0
+
+    emit({"ok": True, "proxy": proxy, "ip": payload.get("ip")})
+    return 0
+
+
 def command_index_status(args: argparse.Namespace) -> int:
     emit(index_status(args.index_root))
     return 0
@@ -206,8 +355,83 @@ def command_index_upsert(args: argparse.Namespace) -> int:
     return 0
 
 
+def command_index_narrate(args: argparse.Namespace) -> int:
+    from contextlib import closing
+    from rippopotamus.gemini_captioner import narrate_video
+
+    root = Path(args.index_root).expanduser().resolve()
+    asset_id = args.asset_id
+
+    with closing(connect_index(root)) as conn:
+        row = conn.execute("SELECT path, duration FROM assets WHERE id = ?", (asset_id,)).fetchone()
+        if not row:
+            emit({"ok": False, "error": f"Asset not found: {asset_id}"})
+            return 1
+        asset_path = Path(row["path"])
+
+    moments = narrate_video(
+        asset_path,
+        model=args.model or None,
+        emit=lambda msg: print(json.dumps(msg), file=sys.stderr, flush=True),
+    )
+
+    with closing(connect_index(root)) as conn:
+        for idx, m in enumerate(moments):
+            mid = f"{asset_id}:narr:{idx:04d}"
+            desc = m.visual
+            if m.audio:
+                desc += f" | Audio: {m.audio}"
+            insert_moment(conn, {
+                "id": mid,
+                "asset_id": asset_id,
+                "path": str(asset_path),
+                "start": m.start,
+                "end": m.end,
+                "title": m.visual[:80],
+                "description": desc,
+                "tags": ["source:narration", *m.search_terms[:15]],
+            })
+        conn.commit()
+        counts = index_counts(conn)
+
+    emit({
+        "ok": True,
+        "assetId": asset_id,
+        "path": str(asset_path),
+        "moments": len(moments),
+        **counts,
+    })
+    return 0
+
+
+def command_eval_run(args: argparse.Namespace) -> int:
+    queries_path = Path(args.queries).expanduser().resolve()
+    queries = load_queries(queries_path)
+    result = run_eval(args.index_root, queries, limit=args.limit)
+
+    print(format_table(result), file=sys.stderr, flush=True)
+
+    if args.out:
+        out_path = Path(args.out).expanduser()
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        out_path.write_text(json.dumps(result, indent=2, ensure_ascii=False), encoding="utf-8")
+        print(f"\nRun saved: {out_path}", file=sys.stderr, flush=True)
+
+    emit({"ok": True, "recall_at_k": result["recall_at_k"], "mrr": result["mrr"], "hits": result["hits"], "scorable": result["scorableQueries"]})
+    return 0
+
+
 def snapshot_files(root: Path) -> set[Path]:
     return {path for path in root.rglob("*") if path.is_file() and not any(part.startswith(".") for part in path.relative_to(root).parts)}
+
+
+def file_result(root: Path, path: Path) -> dict[str, Any]:
+    relative = str(path.relative_to(root))
+    try:
+        size = path.stat().st_size
+    except OSError:
+        size = None
+    return {"path": relative, "size": size}
 
 
 def parse_progress(line: str) -> dict[str, Any] | None:
@@ -267,7 +491,7 @@ def run_ytdlp_download_command(cmd: list[str], root: Path, before: set[Path]) ->
     code = process.wait()
     if code == 0:
         after = snapshot_files(root)
-        files = sorted(str(path.relative_to(root)) for path in after - before)
+        files = sorted((file_result(root, path) for path in after - before), key=lambda item: item["path"])
         emit({"type": "success", "files": files, "outputRoot": str(root), "warnings": [n for n in notices if n.startswith("WARNING:")]})
     return code, last_line, notices
 
@@ -280,6 +504,12 @@ def command_download(args: argparse.Namespace) -> int:
     for folder in ["Source", "Audio", "Images", "Files", "Thumbnails", "Clips", "Exports"]:
         (root / folder).mkdir(parents=True, exist_ok=True)
 
+    dedupe_key = download_key(args.url, args.preset)
+    duplicate_files = existing_download(root, dedupe_key)
+    if duplicate_files:
+        emit_duplicate_download(root, duplicate_files, url=args.url, preset=args.preset)
+        return 0
+
     item_id = args.item_id or uuid.uuid4().hex[:10]
     spec = PRESETS[args.preset]
     cookies_browser = arg_cookies_browser(args)
@@ -287,6 +517,7 @@ def command_download(args: argparse.Namespace) -> int:
     output_template = str(root / spec["folder"] / f"{title}--{item_id}.%(ext)s")
 
     if spec["provider"] == "torrent":
+        before = snapshot_files(root)
         cmd = desktop_download_command(
             args.url,
             args.preset,
@@ -294,7 +525,12 @@ def command_download(args: argparse.Namespace) -> int:
             output_dir=root / spec["folder"],
             context=provider_context(cookies_browser),
         )
-        return run_torrent_download(args, root, cmd)
+        code = run_torrent_download(args, root, cmd)
+        if code == 0:
+            after = snapshot_files(root)
+            files = sorted((file_result(root, path) for path in after - before), key=lambda item: item["path"])
+            remember_download(root, dedupe_key, files, url=args.url, preset=args.preset)
+        return code
 
     if spec["provider"] == "google-drive":
         emit({"type": "started", "url": args.url, "preset": args.preset})
@@ -304,12 +540,14 @@ def command_download(args: argparse.Namespace) -> int:
                 root / spec["folder"],
                 cookie_browser=cookies_browser,
                 yt_dlp_base=yt_dlp_base(),
+                network_proxy=network_proxy(),
                 emit=emit,
             )
         except SystemExit as exc:
             emit({"type": "error", "error": cookie_error_message(str(exc))})
             return 1
-        relative = sorted(str(Path(path).resolve().relative_to(root)) for path in files)
+        relative = sorted((file_result(root, Path(path).resolve()) for path in files), key=lambda item: item["path"])
+        remember_download(root, dedupe_key, relative, url=args.url, preset=args.preset)
         emit({"type": "success", "files": relative, "outputRoot": str(root), "warnings": []})
         return 0
 
@@ -334,6 +572,9 @@ def command_download(args: argparse.Namespace) -> int:
         emit({"type": "error", "error": cookie_error_message(detail)})
         return code
 
+    after = snapshot_files(root)
+    files = sorted((file_result(root, path) for path in after - before), key=lambda item: item["path"])
+    remember_download(root, dedupe_key, files, url=args.url, preset=args.preset)
     return 0
 
 
@@ -374,7 +615,8 @@ def command_gallery_download(args: argparse.Namespace, root: Path, cmd: list[str
         return code
 
     after = snapshot_files(root)
-    files = sorted(str(path.relative_to(root)) for path in after - before)
+    files = sorted((file_result(root, path) for path in after - before), key=lambda item: item["path"])
+    remember_download(root, download_key(args.url, args.preset), files, url=args.url, preset=args.preset)
     emit({"type": "success", "files": files, "outputRoot": str(root), "warnings": [n for n in notices if n.startswith("WARNING:")]})
     return 0
 
@@ -413,6 +655,10 @@ def build_parser() -> argparse.ArgumentParser:
     ai_models.add_argument("--selected-model", default="")
     ai_models.set_defaults(func=command_ai_models)
 
+    proxy_check = sub.add_parser("proxy-check")
+    proxy_check.add_argument("--proxy", required=True)
+    proxy_check.set_defaults(func=command_proxy_check)
+
     index_status_cmd = sub.add_parser("index-status")
     index_status_cmd.add_argument("--index-root", required=True)
     index_status_cmd.set_defaults(func=command_index_status)
@@ -434,6 +680,36 @@ def build_parser() -> argparse.ArgumentParser:
     index_upsert.add_argument("--input", default="-")
     index_upsert.add_argument("--payload-json", default="")
     index_upsert.set_defaults(func=command_index_upsert)
+
+    index_narrate = sub.add_parser("index-narrate")
+    index_narrate.add_argument("--index-root", required=True)
+    index_narrate.add_argument("--asset-id", required=True)
+    index_narrate.add_argument("--model", default="")
+    index_narrate.set_defaults(func=command_index_narrate)
+
+    eval_run = sub.add_parser("eval-run")
+    eval_run.add_argument("--index-root", required=True)
+    eval_run.add_argument("--queries", required=True)
+    eval_run.add_argument("--limit", type=int, default=5)
+    eval_run.add_argument("--out", default="")
+    eval_run.set_defaults(func=command_eval_run)
+
+    sheet_import_cmd = sub.add_parser("sheet-import")
+    sheet_import_cmd.add_argument("--sheet-url", required=True)
+    sheet_import_cmd.add_argument("--output-root", required=True)
+    sheet_import_cmd.add_argument("--project-name", default="sheet-import")
+    sheet_import_cmd.add_argument("--sheet-name", default="Tracker")
+    sheet_import_cmd.add_argument("--job-id", default="")
+    sheet_import_cmd.add_argument("--cookies-browser", default="")
+    sheet_import_cmd.add_argument("--state", default="")
+    sheet_import_cmd.add_argument("--pc", default="")
+    sheet_import_cmd.add_argument("--status", default="")
+    sheet_import_cmd.add_argument("--limit", type=int, default=0)
+    sheet_import_cmd.add_argument("--require-master", action="store_true")
+    sheet_import_cmd.add_argument("--download-master", action="store_true")
+    sheet_import_cmd.add_argument("--index-root", default="")
+    sheet_import_cmd.set_defaults(func=command_sheet_import)
+
     return parser
 
 

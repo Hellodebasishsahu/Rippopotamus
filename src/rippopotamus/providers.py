@@ -15,7 +15,7 @@ PRESETS: dict[str, dict[str, Any]] = {
         "label": "MP4",
         "detail": "Best MP4",
         "folder": "Source",
-        "format": "bv*[ext=mp4]+ba[ext=m4a]/b[ext=mp4]",
+        "format": "bv*[ext=mp4]+ba[ext=m4a]/b[ext=mp4]/bv*+ba/best",
         "extra": ["--merge-output-format", "mp4"],
         "extension": "mp4",
     },
@@ -42,7 +42,7 @@ PRESETS: dict[str, dict[str, Any]] = {
         "label": "Proxy",
         "detail": "720p MP4",
         "folder": "Source",
-        "format": "bv*[height<=720][ext=mp4]+ba[ext=m4a]/b[height<=720][ext=mp4]",
+        "format": "bv*[height<=720][ext=mp4]+ba[ext=m4a]/b[height<=720][ext=mp4]/bv*[height<=720]+ba/b[height<=720]/best",
         "extra": ["--merge-output-format", "mp4"],
         "extension": "mp4",
     },
@@ -92,6 +92,7 @@ class ProviderContext:
     yt_dlp_base: tuple[str, ...] | None = None
     cookies_browser: str | None = None
     ffmpeg_path: str | None = None
+    network_proxy: str | None = None
 
 
 def provider_catalog() -> dict[str, list[dict[str, Any]]]:
@@ -119,6 +120,13 @@ def gallery_dl_base() -> list[str]:
         if executable:
             return [executable]
         raise SystemExit("Missing gallery-dl. Install the Python package or place gallery-dl on PATH.")
+
+
+def gallery_dl_run(context: ProviderContext | None = None) -> list[str]:
+    command = gallery_dl_base()
+    if context and context.network_proxy:
+        command += ["--proxy", context.network_proxy]
+    return command
 
 
 def aria2c_base() -> list[str]:
@@ -176,6 +184,8 @@ def yt_dlp_base(context: ProviderContext | None = None) -> list[str]:
 
 def yt_dlp_run(context: ProviderContext | None = None) -> list[str]:
     command = [*yt_dlp_base(context), "--ignore-config"]
+    if context and context.network_proxy:
+        command += ["--proxy", context.network_proxy]
     if context and context.cookies_browser:
         command += ["--cookies-from-browser", context.cookies_browser]
     return command
@@ -199,7 +209,7 @@ def metadata_command(provider: str, url: str, context: ProviderContext | None = 
     if provider == "yt-dlp":
         return [*yt_dlp_run(context), "--dump-single-json", "--skip-download", "--no-playlist", "--ignore-no-formats-error", url]
     if provider == "gallery-dl":
-        return [*gallery_dl_base(), "--dump-json", url]
+        return [*gallery_dl_run(context), "--dump-json", url]
     if provider == "google-drive":
         return []
     if provider == "torrent":
@@ -244,13 +254,15 @@ def download_command(
     if spec["provider"] == "gallery-dl":
         if output_dir is None:
             raise SystemExit("Gallery downloads need an output directory.")
-        return [*gallery_dl_base(), "--dest", str(output_dir), "--write-metadata", url]
+        return [*gallery_dl_run(context), "--dest", str(output_dir), "--write-metadata", url]
 
     if output_template is None:
         raise SystemExit("yt-dlp downloads need an output template.")
     command = [*yt_dlp_run(context), "--no-playlist", "-o", output_template]
     if context and context.ffmpeg_path:
         command += ["--ffmpeg-location", str(Path(context.ffmpeg_path).parent)]
+        if "--skip-download" not in spec["extra"]:
+            command += ["--downloader", "m3u8:ffmpeg", "--hls-use-mpegts"]
     if spec["format"]:
         command += ["-f", spec["format"]]
     command += spec["extra"]
@@ -351,11 +363,54 @@ def first_json_metadata(output: str) -> dict[str, Any]:
     raise SystemExit("No JSON metadata was returned.")
 
 
+def numeric_size(value: Any) -> int | None:
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int) and value > 0:
+        return value
+    if isinstance(value, float) and value > 0:
+        return int(value)
+    if isinstance(value, str) and value.isdigit():
+        parsed = int(value)
+        return parsed if parsed > 0 else None
+    return None
+
+
+def format_size_fields(raw: dict[str, Any]) -> tuple[int | None, int | None]:
+    exact = numeric_size(raw.get("filesize") or raw.get("file_size") or raw.get("size"))
+    approx = numeric_size(raw.get("filesize_approx") or raw.get("size_approx"))
+    if exact:
+        return exact, approx
+
+    requested = raw.get("requested_formats")
+    if isinstance(requested, list) and requested:
+        exact_parts = [numeric_size(item.get("filesize")) for item in requested if isinstance(item, dict)]
+        approx_parts = [numeric_size(item.get("filesize") or item.get("filesize_approx")) for item in requested if isinstance(item, dict)]
+        if exact_parts and len(exact_parts) == len(requested):
+            return sum(exact_parts), approx
+        if approx_parts:
+            return None, sum(approx_parts)
+
+    formats = raw.get("formats")
+    if isinstance(formats, list):
+        sizes = [
+            numeric_size(item.get("filesize") or item.get("filesize_approx"))
+            for item in formats
+            if isinstance(item, dict)
+        ]
+        sizes = [size for size in sizes if size]
+        if sizes:
+            return None, max(sizes)
+
+    return None, approx
+
+
 def metadata_from_media_raw(raw: dict[str, Any], url: str, provider: str = "yt-dlp") -> dict[str, Any]:
     thumbnails = thumbnail_candidates(raw)
     uploader = raw.get("uploader") or raw.get("username") or raw.get("author") or raw.get("artist")
     if isinstance(uploader, dict):
         uploader = uploader.get("artistName") or uploader.get("name") or uploader.get("username")
+    filesize, filesize_approx = format_size_fields(raw)
     return {
         "id": raw.get("id") or raw.get("post_id") or raw.get("filename"),
         "title": raw.get("title") or raw.get("filename") or raw.get("id"),
@@ -368,6 +423,8 @@ def metadata_from_media_raw(raw: dict[str, Any], url: str, provider: str = "yt-d
         "thumbnails": thumbnails,
         "description": raw.get("description"),
         "provider": provider,
+        "filesize": filesize,
+        "filesize_approx": filesize_approx,
     }
 
 

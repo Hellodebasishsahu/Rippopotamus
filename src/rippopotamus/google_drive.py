@@ -46,9 +46,9 @@ def drive_view_url(file_id: str) -> str:
     return f"https://drive.google.com/file/d/{urllib.parse.quote(file_id)}/view"
 
 
-def drive_metadata(url: str, cookie_browser: str | None = None, yt_dlp_base: list[str] | None = None) -> dict[str, Any]:
+def drive_metadata(url: str, cookie_browser: str | None = None, yt_dlp_base: list[str] | None = None, network_proxy: str | None = None) -> dict[str, Any]:
     file_id = require_drive_file_id(url)
-    with drive_opener(cookie_browser, yt_dlp_base, drive_view_url(file_id)) as opener:
+    with drive_opener(cookie_browser, yt_dlp_base, drive_view_url(file_id), network_proxy) as opener:
         response = open_drive_response(opener, drive_download_url(file_id), method="HEAD")
         ensure_download_response(response.headers)
         return metadata_from_response(file_id, url, response.headers)
@@ -60,12 +60,13 @@ def download_drive_file(
     *,
     cookie_browser: str | None = None,
     yt_dlp_base: list[str] | None = None,
+    network_proxy: str | None = None,
     emit: Callable[[dict[str, Any]], None] | None = None,
 ) -> list[str]:
     file_id = require_drive_file_id(url)
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    with drive_opener(cookie_browser, yt_dlp_base, drive_view_url(file_id)) as opener:
+    with drive_opener(cookie_browser, yt_dlp_base, drive_view_url(file_id), network_proxy) as opener:
         response = open_drive_response(opener, drive_download_url(file_id))
         headers = response.headers
         disposition = headers.get("Content-Disposition", "")
@@ -113,13 +114,16 @@ class DriveOpener:
             self.cookie_file.unlink(missing_ok=True)
 
 
-def drive_opener(cookie_browser: str | None, yt_dlp_base: list[str] | None, seed_url: str) -> DriveOpener:
+def drive_opener(cookie_browser: str | None, yt_dlp_base: list[str] | None, seed_url: str, network_proxy: str | None = None) -> DriveOpener:
     jar = http.cookiejar.MozillaCookieJar()
     cookie_file: Path | None = None
     if cookie_browser:
         cookie_file = export_browser_cookie_file(cookie_browser, yt_dlp_base, seed_url)
         jar.load(str(cookie_file), ignore_discard=True, ignore_expires=True)
-    opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(jar))
+    handlers: list[Any] = [urllib.request.HTTPCookieProcessor(jar)]
+    if network_proxy:
+        handlers.append(urllib.request.ProxyHandler({"http": network_proxy, "https": network_proxy}))
+    opener = urllib.request.build_opener(*handlers)
     opener.addheaders = [
         ("User-Agent", "Mozilla/5.0 Rippopotamus/0.1"),
         ("Accept", "*/*"),
