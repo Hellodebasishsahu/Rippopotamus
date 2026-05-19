@@ -8,6 +8,15 @@ const { pathToFileURL } = require("node:url");
 
 const { decodeMediaPath, extractLibraryThumbnailWithDeps, fetchMediaFileWithDeps, pathToRippoMediaUrl } = require("../dist-electron/mediaLibrary.js");
 
+function usableFfmpeg() {
+  const bundled = require("ffmpeg-static");
+  if (bundled && fs.existsSync(bundled)) return bundled;
+
+  const executable = process.platform === "win32" ? "ffmpeg.exe" : "ffmpeg";
+  const result = spawnSync(executable, ["-version"], { encoding: "utf8" });
+  return result.status === 0 ? executable : null;
+}
+
 test("pathToRippoMediaUrl round trips absolute media paths", () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "rippo-media-"));
   const media = path.join(dir, "booth crowd line.mp4");
@@ -49,7 +58,7 @@ test("fetchMediaFileWithDeps fetches file urls through custom protocol bypass", 
 });
 
 test("extractLibraryThumbnailWithDeps creates and reuses a cached thumbnail", async () => {
-  const ffmpeg = require("ffmpeg-static");
+  const ffmpeg = usableFfmpeg();
   assert.ok(ffmpeg, "ffmpeg-static should resolve a binary");
 
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "rippo-thumb-"));
@@ -74,7 +83,7 @@ test("extractLibraryThumbnailWithDeps creates and reuses a cached thumbnail", as
 });
 
 test("extractLibraryThumbnailWithDeps creates a thumbnail for image results", async () => {
-  const ffmpeg = require("ffmpeg-static");
+  const ffmpeg = usableFfmpeg();
   assert.ok(ffmpeg, "ffmpeg-static should resolve a binary");
 
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "rippo-image-thumb-"));

@@ -5,6 +5,7 @@ import io
 import json
 import os
 import sqlite3
+import subprocess
 import tempfile
 import unittest
 from contextlib import closing, redirect_stdout
@@ -103,7 +104,7 @@ class DesktopEngineTests(unittest.TestCase):
         self.assertIn("--ignore-config", command)
         self.assertIn("--newline", command)
         self.assertEqual(command.count("-f"), 1)
-        self.assertIn("bv*[ext=mp4]+ba[ext=m4a]/b[ext=mp4]", command)
+        self.assertIn("bv*[ext=mp4]+ba[ext=m4a]/b[ext=mp4]/bv*+ba/best", command)
         self.assertEqual(command[-1], "https://www.youtube.com/watch?v=TQd2k1pEXp4")
 
     def test_fetch_metadata_ignores_formats_and_external_config(self) -> None:
@@ -1092,6 +1093,65 @@ class DesktopEngineTests(unittest.TestCase):
 
         self.assertLess(command.index("--ignore-config"), command.index("--cookies-from-browser"))
 
+    def test_build_download_command_adds_network_proxy_after_config_ignore(self) -> None:
+        command = desktop_download_command(
+            "https://www.youtube.com/watch?v=TQd2k1pEXp4",
+            "mp4-best",
+            output_template="/tmp/out.%(ext)s",
+            context=ProviderContext(yt_dlp_base=("yt-dlp",), network_proxy="socks5://127.0.0.1:9050"),
+        )
+
+        self.assertIn("--proxy", command)
+        self.assertLess(command.index("--ignore-config"), command.index("--proxy"))
+        self.assertEqual(command[command.index("--proxy") + 1], "socks5://127.0.0.1:9050")
+
+    def test_build_download_command_uses_ffmpeg_for_hls_when_available(self) -> None:
+        command = desktop_download_command(
+            "https://example.com/live",
+            "mp4-best",
+            output_template="/tmp/out.%(ext)s",
+            context=ProviderContext(yt_dlp_base=("yt-dlp",), ffmpeg_path="/opt/ffmpeg/bin/ffmpeg"),
+        )
+
+        self.assertIn("--ffmpeg-location", command)
+        self.assertEqual(command[command.index("--ffmpeg-location") + 1], "/opt/ffmpeg/bin")
+        self.assertIn("--downloader", command)
+        self.assertEqual(command[command.index("--downloader") + 1], "m3u8:ffmpeg")
+        self.assertIn("--hls-use-mpegts", command)
+
+    def test_gallery_download_command_adds_network_proxy(self) -> None:
+        with mock.patch("rippopotamus.providers.gallery_dl_base", return_value=["gallery-dl"]):
+            command = desktop_download_command(
+                "https://example.com/gallery",
+                "gallery",
+                output_dir="/tmp/images",
+                context=ProviderContext(network_proxy="http://127.0.0.1:8080"),
+            )
+
+        self.assertEqual(command[:3], ["gallery-dl", "--proxy", "http://127.0.0.1:8080"])
+
+    def test_file_result_includes_relative_path_and_size(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            asset = root / "Source" / "clip.mp4"
+            asset.parent.mkdir()
+            asset.write_bytes(b"12345")
+
+            self.assertEqual(desktop_engine.file_result(root, asset), {"path": "Source/clip.mp4", "size": 5})
+
+    def test_proxy_check_reports_exit_ip(self) -> None:
+        args = argparse.Namespace(proxy="socks5://127.0.0.1:9050")
+        completed = subprocess.CompletedProcess(args=[], returncode=0, stdout='{"ip":"203.0.113.7"}', stderr="")
+        with mock.patch("rippopotamus.desktop_engine.subprocess.run", return_value=completed) as run:
+            stream = io.StringIO()
+            with redirect_stdout(stream):
+                self.assertEqual(desktop_engine.command_proxy_check(args), 0)
+
+        payload = json.loads(stream.getvalue())
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["ip"], "203.0.113.7")
+        self.assertIn("--proxy", run.call_args.args[0])
+
     def test_fetch_uses_explicit_gallery_provider(self) -> None:
         args = argparse.Namespace(url="https://example.com/gallery", provider="gallery-dl")
         with mock.patch("rippopotamus.providers.gallery_dl_base", return_value=["gallery-dl"]):
@@ -1126,7 +1186,7 @@ class DesktopEngineTests(unittest.TestCase):
 
         payload = json.loads(stream.getvalue())
         self.assertEqual(payload["metadata"], metadata)
-        drive_metadata.assert_called_once_with(url, "chrome", yt_dlp_base=["yt-dlp"])
+        drive_metadata.assert_called_once_with(url, "chrome", yt_dlp_base=["yt-dlp"], network_proxy=None)
 
     def test_drive_file_id_accepts_view_and_download_urls(self) -> None:
         self.assertEqual(
@@ -1178,8 +1238,66 @@ class DesktopEngineTests(unittest.TestCase):
 
         events = [json.loads(line) for line in stream.getvalue().splitlines()]
         self.assertEqual(events[-1]["type"], "success")
-        self.assertEqual([Path(file).as_posix() for file in events[-1]["files"]], ["Files/example.jpg"])
+        self.assertEqual(events[-1]["files"], [{"path": "Files/example.jpg", "size": 5}])
         download_drive_file.assert_called_once()
+
+    def test_download_skips_existing_ledger_match(self) -> None:
+        args = argparse.Namespace(
+            url="https://drive.google.com/file/d/file-123/view",
+            preset="drive-file",
+            output_root="",
+            item_id="drive-again",
+            title="Drive Again",
+            cookies_browser="chrome",
+        )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            args.output_root = tmp
+            saved = root / "Files" / "example.jpg"
+            saved.parent.mkdir(parents=True, exist_ok=True)
+            saved.write_bytes(b"drive")
+            key = desktop_engine.download_key(args.url, args.preset)
+            desktop_engine.write_download_ledger(root, {
+                key: {"url": args.url, "preset": args.preset, "files": ["Files/example.jpg"]}
+            })
+
+            with mock.patch("rippopotamus.desktop_engine.download_drive_file") as download_drive_file:
+                stream = io.StringIO()
+                with redirect_stdout(stream):
+                    self.assertEqual(desktop_engine.command_download(args), 0)
+
+        events = [json.loads(line) for line in stream.getvalue().splitlines()]
+        self.assertEqual(events[-1]["type"], "success")
+        self.assertEqual(events[-1]["files"], [{"path": "Files/example.jpg", "size": 5}])
+        self.assertEqual(events[-1]["warnings"], ["Already saved; skipped duplicate download."])
+        download_drive_file.assert_not_called()
+
+    def test_drive_download_records_ledger_for_later_dedupe(self) -> None:
+        args = argparse.Namespace(
+            url="https://drive.google.com/file/d/file-123/view",
+            preset="drive-file",
+            output_root="",
+            item_id="drive",
+            title="Drive",
+            cookies_browser="chrome",
+        )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            args.output_root = tmp
+            saved = root / "Files" / "example.jpg"
+            saved.parent.mkdir(parents=True, exist_ok=True)
+            saved.write_bytes(b"drive")
+            with mock.patch("rippopotamus.desktop_engine.yt_dlp_base", return_value=["yt-dlp"]):
+                with mock.patch("rippopotamus.desktop_engine.download_drive_file", return_value=[str(saved)]):
+                    stream = io.StringIO()
+                    with redirect_stdout(stream):
+                        self.assertEqual(desktop_engine.command_download(args), 0)
+
+            ledger = desktop_engine.load_download_ledger(root)
+
+        self.assertEqual(ledger[desktop_engine.download_key(args.url, args.preset)]["files"], ["Files/example.jpg"])
 
     def test_torrent_preset_prefers_qbittorrent_when_available(self) -> None:
         args = argparse.Namespace(
