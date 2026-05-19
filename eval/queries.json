@@ -1,0 +1,108 @@
+[
+  {
+    "query": "aerial shot of crowd gathering",
+    "expected": [{"path": "DJI_0857.MP4"}, {"path": "DJI_0858.MP4"}],
+    "note": "Drone footage of campus/complex area"
+  },
+  {
+    "query": "person speaking into mic",
+    "expected": [{"path": "C0608.MP4"}, {"path": "C0609.MP4"}],
+    "note": "Vox pop interviews"
+  },
+  {
+    "query": "wide shot of rally stage",
+    "expected": [],
+    "allowZero": true,
+    "note": "No rally stage in test corpus"
+  },
+  {
+    "query": "close up of speaker face",
+    "expected": [{"path": "C0608.MP4"}],
+    "note": "Vox pop has speaker close-ups in visual captions"
+  },
+  {
+    "query": "crowd reaction clapping",
+    "expected": [],
+    "allowZero": true,
+    "note": "May or may not be in B-roll"
+  },
+  {
+    "query": "drone flyover of city",
+    "expected": [{"path": "DJI_0857.MP4"}, {"path": "DJI_0858.MP4"}],
+    "note": "Drone shots clearly described as aerial"
+  },
+  {
+    "query": "people walking on street",
+    "expected": [{"path": "C0617.MP4"}, {"path": "C0618.MP4"}],
+    "note": "B-roll footage of daily life"
+  },
+  {
+    "query": "buildings parking cars",
+    "expected": [{"path": "DJI_0857.MP4"}, {"path": "DJI_0858.MP4"}],
+    "note": "Drone captions mention buildings, parking lots, cars"
+  },
+  {
+    "query": "Haryana village rural",
+    "expected": [{"path": "DJI_0857.MP4"}, {"path": "C0608.MP4"}],
+    "note": "Location-based: Hisar/Rohtak are in Haryana"
+  },
+  {
+    "query": "interview government jobs transparency",
+    "expected": [{"path": "C0608.MP4"}, {"path": "C0609.MP4"}],
+    "note": "ASR transcripts discuss government jobs"
+  },
+  {
+    "query": "woman giving interview",
+    "expected": [],
+    "allowZero": true,
+    "note": "May or may not have female interviewees"
+  },
+  {
+    "query": "traffic road vehicles",
+    "expected": [{"path": "C0617.MP4"}, {"path": "C0618.MP4"}],
+    "note": "B-roll may show roads/traffic"
+  },
+  {
+    "query": "flags banners political",
+    "expected": [],
+    "allowZero": true,
+    "note": "May be visible in b-roll or vox-pop background"
+  },
+  {
+    "query": "agricultural fields water",
+    "expected": [{"path": "DJI_0857.MP4"}, {"path": "DJI_0858.MP4"}],
+    "note": "Drone captions explicitly mention fields, water bodies"
+  },
+  {
+    "query": "man mustache sunglasses microphone",
+    "expected": [{"path": "C0608.MP4"}],
+    "note": "Visual caption specifically describes this person"
+  },
+  {
+    "query": "handheld camera movement",
+    "expected": [],
+    "allowZero": true,
+    "note": "Shot style search - may not match"
+  },
+  {
+    "query": "campus complex modern buildings",
+    "expected": [{"path": "DJI_0857.MP4"}, {"path": "DJI_0858.MP4"}],
+    "note": "Drone captions describe campus-like complex"
+  },
+  {
+    "query": "marketplace shopkeeper",
+    "expected": [],
+    "allowZero": true,
+    "note": "No marketplace footage in test set"
+  },
+  {
+    "query": "farmer agriculture field",
+    "expected": [{"path": "DJI_0857.MP4"}],
+    "note": "Drone captions mention agricultural fields"
+  },
+  {
+    "query": "institutional hospital university",
+    "expected": [{"path": "DJI_0858.MP4"}],
+    "note": "Caption says 'possibly a hospital or university'"
+  }
+]
