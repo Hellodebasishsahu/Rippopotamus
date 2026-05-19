@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
 import type { CookieSource, DownloadEvent, PresetOption, ProviderId, ProviderOption } from "../../../electron/types";
 import type { DesktopClient } from "../client/desktopClient";
-import { QUEUE_STATUS, type QueueItem } from "./downloadQueueModel";
+import { QUEUE_STATUS, queueItemCanChangeOutput, type QueueItem } from "./downloadQueueModel";
+import { defaultPresetForProvider, preferredPresetForProvider } from "./downloadQueuePrefs";
 
 export type { QueueItem } from "./downloadQueueModel";
-export { queueStatusLabels, queueItemProgress, queueItemStatusText } from "./downloadQueueModel";
+export { queueStatusLabels, queueItemProgress, queueItemStatusText, queueItemStatusParts } from "./downloadQueueModel";
 
 const FETCH_CONCURRENCY = 6;
 const DOWNLOAD_CONCURRENCY = 3;
@@ -14,6 +15,7 @@ type UseDownloadQueueOptions = {
   selectedFetchProvider: ProviderId | "auto";
   providerOptions: ProviderOption[];
   presetOptions: PresetOption[];
+  preferredPresets: Partial<Record<ProviderId, string>>;
   cookieSource: CookieSource;
   outputRoot: string;
   fetchWorkerCount?: number;
@@ -42,8 +44,25 @@ export function presetsForItem(item: QueueItem, presets: PresetOption[], provide
   return presets.filter((preset) => preset.provider === provider);
 }
 
-function defaultPresetForProvider(provider: ProviderId, providers: ProviderOption[]): string {
-  return providers.find((option) => option.id === provider)?.defaultPreset || providers[0]?.defaultPreset || "";
+function resolvePresetAfterFetch(
+  item: QueueItem,
+  resolvedProvider: ProviderId,
+  presetOptions: PresetOption[],
+  providerOptions: ProviderOption[],
+  preferredPresets: Partial<Record<ProviderId, string>>,
+  fetchProviderUsed: ProviderId | "auto",
+): string {
+  if (item.presetUserSet) return item.preset;
+  const validPreset = Boolean(item.preset && presetOptions.some((p) => p.id === item.preset && p.provider === resolvedProvider));
+  if (!validPreset) {
+    return preferredPresetForProvider(resolvedProvider, presetOptions, providerOptions, preferredPresets);
+  }
+  const guessed: ProviderId = fetchProviderUsed === "auto" ? (providerOptions[0]?.id || resolvedProvider) : fetchProviderUsed;
+  const prevDefault = defaultPresetForProvider(guessed, providerOptions);
+  if (!item.preset || item.preset === prevDefault) {
+    return preferredPresetForProvider(resolvedProvider, presetOptions, providerOptions, preferredPresets);
+  }
+  return item.preset;
 }
 
 function workerCount(value: number | undefined, fallback: number): number {
@@ -92,6 +111,7 @@ export function useDownloadQueue({
   selectedFetchProvider,
   providerOptions,
   presetOptions,
+  preferredPresets,
   cookieSource,
   outputRoot,
   fetchWorkerCount,
@@ -143,7 +163,9 @@ export function useDownloadQueue({
   async function queueUrls(urls: string[], providerOverride: ProviderId | "auto" = selectedFetchProvider) {
     if (!urls.length || !desktop || !providerOverride) return;
     const provider = providerOverride;
-    const initialPreset = provider === "auto" ? "" : defaultPresetForProvider(provider, providerOptions);
+    const initialPreset = provider === "auto"
+      ? ""
+      : preferredPresetForProvider(provider, presetOptions, providerOptions, preferredPresets);
     const initialCookieSource = cookieSource;
 
     const seen = new Set(items.map((item) => item.url));
@@ -151,7 +173,7 @@ export function useDownloadQueue({
     for (const url of urls) {
       if (seen.has(url)) continue;
       seen.add(url);
-      fresh.push({ localId: crypto.randomUUID().slice(0, 10), url, status: QUEUE_STATUS.queued, preset: initialPreset, cookieSource: initialCookieSource });
+      fresh.push({ localId: crypto.randomUUID().slice(0, 10), url, status: QUEUE_STATUS.queued, preset: initialPreset, cookieSource: initialCookieSource, fetchProvider: provider });
     }
 
     if (!fresh.length) return;
@@ -164,7 +186,11 @@ export function useDownloadQueue({
         const result = await desktop.fetch(item.url, provider, item.cookieSource);
         if (result.ok) {
           const resolvedProvider = result.metadata.provider || (provider === "auto" ? providerOptions[0]?.id : provider) || "";
-          setItems((current) => current.map((candidate) => candidate.localId === item.localId ? { ...candidate, status: QUEUE_STATUS.ready, preset: defaultPresetForProvider(resolvedProvider, providerOptions), metadata: result.metadata, error: undefined } : candidate));
+          setItems((current) => current.map((candidate) => {
+            if (candidate.localId !== item.localId) return candidate;
+            const nextPreset = resolvePresetAfterFetch(candidate, resolvedProvider, presetOptions, providerOptions, preferredPresets, candidate.fetchProvider ?? provider);
+            return { ...candidate, status: QUEUE_STATUS.ready, preset: nextPreset, metadata: result.metadata, error: undefined };
+          }));
         } else {
           setItems((current) => current.map((candidate) => candidate.localId === item.localId ? { ...candidate, status: QUEUE_STATUS.failed, error: fetchErrorMessage(result.error, consumerErrorMessage, item.url) } : candidate));
         }
@@ -223,7 +249,12 @@ export function useDownloadQueue({
     try {
       const result = await desktop.fetch(item.url, provider, item.cookieSource);
       if (result.ok) {
-        setItems((current) => current.map((candidate) => candidate.localId === item.localId ? { ...candidate, status: QUEUE_STATUS.ready, preset: defaultPresetForProvider(result.metadata.provider || provider, providerOptions), metadata: result.metadata, error: undefined } : candidate));
+        setItems((current) => current.map((candidate) => {
+          if (candidate.localId !== item.localId) return candidate;
+          const resolvedProvider = result.metadata.provider || provider || "";
+          const nextPreset = resolvePresetAfterFetch(candidate, resolvedProvider, presetOptions, providerOptions, preferredPresets, candidate.fetchProvider ?? provider);
+          return { ...candidate, status: QUEUE_STATUS.ready, preset: nextPreset, metadata: result.metadata, error: undefined };
+        }));
       } else {
         setItems((current) => current.map((candidate) => candidate.localId === item.localId ? { ...candidate, status: QUEUE_STATUS.failed, error: fetchErrorMessage(result.error, consumerErrorMessage, item.url) } : candidate));
       }
@@ -237,7 +268,12 @@ export function useDownloadQueue({
   }
 
   function setItemPreset(id: string, preset: string) {
-    setItems((current) => current.map((item) => item.localId === id ? { ...item, preset } : item));
+    setItems((current) => current.map((item) => item.localId === id ? { ...item, preset, presetUserSet: true } : item));
+  }
+
+  function bulkSetPreset(ids: Iterable<string>, preset: string) {
+    const idSet = new Set(ids);
+    setItems((current) => current.map((item) => (idSet.has(item.localId) && queueItemCanChangeOutput(item) ? { ...item, preset, presetUserSet: true } : item)));
   }
 
   function setItemCookieSource(id: string, source: CookieSource) {
@@ -254,5 +290,6 @@ export function useDownloadQueue({
     removeItem,
     setItemPreset,
     setItemCookieSource,
+    bulkSetPreset,
   };
 }

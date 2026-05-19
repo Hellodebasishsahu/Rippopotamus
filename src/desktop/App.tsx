@@ -1,6 +1,7 @@
 import { Cookie, Download, ExternalLink, FolderOpen, FolderSearch, Globe2, Loader2, Radar as RadarIcon, RefreshCcw, RotateCcw, Search, X } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { AppUpdateInfo, BrowserInfo, CookieSource, EngineHealth, GalleryDlUpdateInfo, IndexSearchResponse, IndexStatusResponse, OpenRouterModelCatalog, PageProbeCandidate, PresetOption, ProviderId, ProviderOption, YtDlpUpdateInfo } from "../../electron/types";
+import { readPreferredPresets, writePreferredPresets } from "./app/downloadQueuePrefs";
 import { sourceUrl, useDownloadQueue } from "./app/useDownloadQueue";
 import type { QueueItem } from "./app/useDownloadQueue";
 import { useLibraryIndex } from "./app/useLibraryIndex";
@@ -343,6 +344,7 @@ export function App() {
   const [pageProbeIncognito, setPageProbeIncognito] = useState(() => localStorage.getItem("rippo:sniff:incognito") === "true");
   const [fetchWorkerCount, setFetchWorkerCount] = useState(() => readWorkerSetting("rippo:queue:fetchWorkers", FETCH_WORKER_DEFAULT, FETCH_WORKER_MIN, FETCH_WORKER_MAX));
   const [downloadWorkerCount, setDownloadWorkerCount] = useState(() => readWorkerSetting("rippo:queue:downloadWorkers", DOWNLOAD_WORKER_DEFAULT, DOWNLOAD_WORKER_MIN, DOWNLOAD_WORKER_MAX));
+  const [preferredPresets, setPreferredPresets] = useState<Partial<Record<ProviderId, string>>>(() => readPreferredPresets());
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const {
     activeSourcePack,
@@ -388,6 +390,10 @@ export function App() {
   useEffect(() => {
     localStorage.setItem("rippo:queue:downloadWorkers", String(downloadWorkerCount));
   }, [downloadWorkerCount]);
+
+  useEffect(() => {
+    writePreferredPresets(preferredPresets);
+  }, [preferredPresets]);
 
   useEffect(() => {
     if (!settingsOpen) return;
@@ -676,6 +682,9 @@ export function App() {
   const defaultSiteAccess = siteAccessStatus(cookieSource, browsers, health);
   const selectedFetchProvider = fetchProvider || AUTO_PROVIDER;
   const activeOutputRoot = pageProbeIncognito ? privateOutputRoot(outputRoot) : outputRoot;
+  const setPreferredPreset = useCallback((provider: ProviderId, presetId: string) => {
+    setPreferredPresets((current) => ({ ...current, [provider]: presetId }));
+  }, []);
   const {
     items,
     busy,
@@ -686,11 +695,13 @@ export function App() {
     removeItem,
     setItemPreset,
     setItemCookieSource,
+    bulkSetPreset,
   } = useDownloadQueue({
     desktop,
     selectedFetchProvider,
     providerOptions,
     presetOptions,
+    preferredPresets,
     cookieSource,
     outputRoot: activeOutputRoot,
     fetchWorkerCount,
@@ -885,12 +896,16 @@ export function App() {
             browsers={browsers}
             presetOptions={presetOptions}
             providerOptions={providerOptions}
+            selectedFetchProvider={selectedFetchProvider}
+            preferredPresets={preferredPresets}
+            setPreferredPreset={setPreferredPreset}
             downloadReady={downloadReady}
             openSource={openSource}
             setItemPreset={setItemPreset}
             setItemCookieSource={setItemCookieSource}
             refetch={refetch}
             removeItem={removeItem}
+            bulkSetPreset={bulkSetPreset}
           />
         </section>
 

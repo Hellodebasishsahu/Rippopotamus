@@ -1,4 +1,4 @@
-import type { CookieSource, FetchResponse } from "../../../electron/types";
+import type { CookieSource, FetchResponse, ProviderId } from "../../../electron/types";
 
 export const QUEUE_STATUS = {
   queued: "queued",
@@ -24,6 +24,10 @@ export type QueueItem = {
   url: string;
   status: QueueStatus;
   preset: string;
+  /** Provider passed to fetch when this item was queued (for preset defaulting). */
+  fetchProvider?: ProviderId | "auto";
+  /** True after user (or bulk) picks a quality; fetch/refetch must not overwrite preset. */
+  presetUserSet?: boolean;
   metadata?: Extract<FetchResponse, { ok: true }>["metadata"];
   error?: string;
   progress?: number;
@@ -52,13 +56,30 @@ export function queueItemProgress(item: QueueItem): number | null {
   return Math.max(2, Math.round(item.progress || 0));
 }
 
-export function queueItemStatusText(item: QueueItem): string {
-  if (item.status !== QUEUE_STATUS.downloading) return queueStatusLabels[item.status];
+export type QueueItemStatusParts = { label: string; detail: string };
 
+/** Split download progress line: label (percent / phase) vs detail (speed · ETA from stage). */
+export function queueItemStatusParts(item: QueueItem): QueueItemStatusParts {
+  if (item.status !== QUEUE_STATUS.downloading) {
+    return { label: queueStatusLabels[item.status], detail: "" };
+  }
   const progress = queueItemProgress(item);
-  if (item.finalizing) return item.stage || "Finalizing...";
-  if (item.phase) return `${item.phase} · ${progress}%`;
-  return `${progress}%`;
+  if (item.finalizing) {
+    return { label: item.stage || "Finalizing...", detail: "" };
+  }
+  let detail = "";
+  const stage = item.stage?.trim();
+  if (stage) {
+    const comma = stage.indexOf(",");
+    detail = comma >= 0 ? `${stage.slice(0, comma).trim()} · ${stage.slice(comma + 1).trim()}` : stage;
+  }
+  if (item.phase) return { label: `${item.phase} · ${progress}%`, detail };
+  return { label: `${progress}%`, detail };
+}
+
+export function queueItemStatusText(item: QueueItem): string {
+  const { label, detail } = queueItemStatusParts(item);
+  return detail ? `${label} — ${detail}` : label;
 }
 
 export function queueItemCanChangeOutput(item: QueueItem): boolean {
