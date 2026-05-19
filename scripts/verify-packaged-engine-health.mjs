@@ -70,6 +70,29 @@ requireDir(paths.engine, "packaged engine resources");
 requireFile(path.join(paths.engine, "rippopotamus", "desktop_engine.py"), "packaged desktop engine");
 requireFile(paths.ffmpeg, "packaged ffmpeg binary");
 
+const bundledEngine = path.join(paths.resources, "bin", paths.platform === "win32" ? "rippo-engine.exe" : "rippo-engine");
+if (fs.existsSync(bundledEngine)) {
+  const bundledResult = spawnSync(bundledEngine, ["health"], {
+    cwd: paths.resources,
+    env,
+    encoding: "utf8",
+    maxBuffer: 1024 * 1024,
+  });
+  if (!bundledResult.error && bundledResult.status === 0) {
+    let payload;
+    try {
+      payload = JSON.parse(bundledResult.stdout.trim().split(/\r?\n/).filter(Boolean).at(-1) || "{}");
+    } catch {
+      payload = {};
+    }
+    if (payload.ok && payload.ytDlp && payload.ffmpegOk) {
+      console.log(`Packaged ${target} rippo-engine binary health is valid on ${os.platform()}.`);
+      process.exit(0);
+    }
+  }
+  console.warn(`Note: ${path.relative(root, bundledEngine)} exists but health check did not pass; falling back to Python engine.`);
+}
+
 const env = {
   ...process.env,
   PYTHONPATH: [paths.engine, process.env.PYTHONPATH].filter(Boolean).join(path.delimiter),

@@ -12,6 +12,23 @@ import {
 } from "./appPaths";
 import { currentOpenRouterModel } from "./settingsStore";
 
+function bundledEngineExecutable(): string | null {
+  const name = process.platform === "win32" ? "rippo-engine.exe" : "rippo-engine";
+  const candidates = [
+    process.env.RIPPO_ENGINE_BINARY?.trim(),
+    path.join(process.resourcesPath, "bin", name),
+    path.join(app.getAppPath(), "bin", name),
+  ].filter(Boolean) as string[];
+  for (const candidate of candidates) {
+    try {
+      if (candidate && fs.existsSync(candidate)) return candidate;
+    } catch {
+      undefined;
+    }
+  }
+  return null;
+}
+
 function candidatePythons(): string[] {
   const configured = process.env.RIPPO_PYTHON;
   const platformCandidates = process.platform === "win32"
@@ -84,6 +101,19 @@ function engineEnv(): NodeJS.ProcessEnv {
   };
 }
 
+function errorMessageFromJson(payload: unknown): string | null {
+  if (!payload || typeof payload !== "object") return null;
+  const record = payload as Record<string, unknown>;
+  const type = typeof record.type === "string" ? record.type : "";
+  const ok = typeof record.ok === "boolean" ? record.ok : undefined;
+  if (type !== "error" && ok !== false) return null;
+  for (const key of ["error", "message", "reason"]) {
+    const value = record[key];
+    if (typeof value === "string" && value.trim()) return value.trim();
+  }
+  return null;
+}
+
 export function runPython(args: string[], env: NodeJS.ProcessEnv = engineEnv()): Promise<void> {
   const pythons = candidatePythons();
 
@@ -131,8 +161,73 @@ export function runPython(args: string[], env: NodeJS.ProcessEnv = engineEnv()):
   });
 }
 
+function runBundledEngine(
+  executable: string,
+  args: string[],
+  env: NodeJS.ProcessEnv,
+  onJson?: (payload: unknown) => void,
+): Promise<unknown> {
+  return new Promise((resolve, reject) => {
+    const child = spawn(executable, args, { env, cwd: engineCwd() });
+
+    let stdout = "";
+    let stderr = "";
+    let lastJson: unknown = null;
+
+    child.stdout.on("data", (chunk: Buffer) => {
+      stdout += chunk.toString();
+      const lines = stdout.split(/\r?\n/);
+      stdout = lines.pop() || "";
+      for (const line of lines) {
+        if (!line.trim()) continue;
+        try {
+          const payload = JSON.parse(line);
+          lastJson = payload;
+          onJson?.(payload);
+        } catch {
+          stderr += `${line}\n`;
+        }
+      }
+    });
+
+    child.stderr.on("data", (chunk: Buffer) => {
+      stderr += chunk.toString();
+    });
+
+    child.on("error", (err) => {
+      reject(err);
+    });
+
+    child.on("close", (code) => {
+      if (stdout.trim()) {
+        for (const line of stdout.split(/\r?\n/)) {
+          if (!line.trim()) continue;
+          try {
+            const payload = JSON.parse(line);
+            lastJson = payload;
+            onJson?.(payload);
+          } catch {
+            stderr += `${line}\n`;
+          }
+        }
+      }
+
+      if (code === 0) {
+        resolve(lastJson);
+        return;
+      }
+
+      reject(new Error(errorMessageFromJson(lastJson) || stderr.trim() || `Engine exited with code ${code}`));
+    });
+  });
+}
+
 export function runEngine(args: string[], onJson?: (payload: unknown) => void, envOverride: NodeJS.ProcessEnv = {}): Promise<unknown> {
   const env = { ...engineEnv(), ...envOverride };
+  const bundled = bundledEngineExecutable();
+  if (bundled && (app.isPackaged || process.env.RIPPO_ENGINE_BINARY)) {
+    return runBundledEngine(bundled, args, env, onJson);
+  }
   const pythons = candidatePythons();
 
   return new Promise((resolve, reject) => {
@@ -202,7 +297,7 @@ export function runEngine(args: string[], onJson?: (payload: unknown) => void, e
           return;
         }
 
-        reject(new Error(stderr.trim() || `Engine exited with code ${code}`));
+        reject(new Error(errorMessageFromJson(lastJson) || stderr.trim() || `Engine exited with code ${code}`));
       });
     };
 

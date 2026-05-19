@@ -95,7 +95,7 @@ open release/mac-arm64/Rippopotamus.app
 npm run package:win
 ```
 
-The macOS and Windows app packages currently include the renderer, Electron main process, Python engine source, and bundled `ffmpeg-static`. The remaining distribution step is freezing the Python engine/provider runtime into a standalone binary so friends do not need a local Python install. Windows x64 test builds land at `release/win-unpacked/Rippopotamus.exe`.
+The macOS and Windows app packages currently include the renderer, Electron main process, Python engine source, and bundled `ffmpeg-static`. Set `RIPPO_ENGINE_BINARY` to a `rippo-engine` PyInstaller binary (see `scripts/build-engine.sh` and `pip install -e ".[engine-build]"`) to run without a system Python install. The remaining distribution step is freezing provider runtimes (`yt-dlp`, `gallery-dl`) for friends who do not already use them.
 
 ## Search Routing
 
