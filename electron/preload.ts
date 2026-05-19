@@ -2,10 +2,13 @@ import { contextBridge, ipcRenderer } from "electron";
 
 contextBridge.exposeInMainWorld("rippo", {
   health: () => ipcRenderer.invoke("engine:health"),
-  probePage: (url: string) => ipcRenderer.invoke("page:probe", url),
+  probePage: (url: string, options?: { incognito?: boolean }) => ipcRenderer.invoke("page:probe", url, options),
+  clearSniffCache: () => ipcRenderer.invoke("page:clear-probe-cache"),
   searchSources: (query?: string, pack?: string) => ipcRenderer.invoke("engine:source-search", query, pack),
   listAiModels: (refresh?: boolean) => ipcRenderer.invoke("ai:models", refresh),
   setAiModel: (modelId: string) => ipcRenderer.invoke("ai:set-model", modelId),
+  setNetworkProxy: (proxy: string) => ipcRenderer.invoke("network:set-proxy", proxy),
+  checkNetworkProxy: (proxy: string) => ipcRenderer.invoke("network:check-proxy", proxy),
   indexStatus: (indexRoot?: string) => ipcRenderer.invoke("engine:index-status", indexRoot),
   indexIngest: (payload: { indexRoot?: string; paths: string[] }) => ipcRenderer.invoke("engine:index-ingest", payload),
   indexSearch: (payload: { indexRoot?: string; query?: string; limit?: number }) => ipcRenderer.invoke("engine:index-search", payload),
@@ -25,11 +28,18 @@ contextBridge.exposeInMainWorld("rippo", {
   updateYtDlp: () => ipcRenderer.invoke("ytdlp:update"),
   checkGalleryDlUpdate: () => ipcRenderer.invoke("gallerydl:check-update"),
   updateGalleryDl: () => ipcRenderer.invoke("gallerydl:update"),
+  checkAppUpdate: () => ipcRenderer.invoke("app-update:check"),
   chooseOutputRoot: () => ipcRenderer.invoke("output:choose"),
   resetOutputRoot: () => ipcRenderer.invoke("output:reset"),
   onDownloadEvent: (callback: (event: unknown) => void) => {
     const listener = (_event: Electron.IpcRendererEvent, payload: unknown) => callback(payload);
     ipcRenderer.on("engine:download-event", listener);
     return () => ipcRenderer.removeListener("engine:download-event", listener);
+  },
+  importSheet: (payload: Record<string, unknown>) => ipcRenderer.invoke("engine:sheet-import", payload),
+  onSheetImportEvent: (callback: (event: unknown) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, payload: unknown) => callback(payload);
+    ipcRenderer.on("engine:sheet-import-event", listener);
+    return () => ipcRenderer.removeListener("engine:sheet-import-event", listener);
   },
 });

@@ -4,10 +4,13 @@ declare global {
   interface Window {
     rippo: {
       health: () => Promise<EngineHealth>;
-      probePage: (url: string) => Promise<PageProbeResponse>;
+      probePage: (url: string, options?: PageProbeOptions) => Promise<PageProbeResponse>;
+      clearSniffCache: () => Promise<{ ok: boolean }>;
       searchSources: (query?: string, pack?: string) => Promise<SourceSearchResponse>;
       listAiModels: (refresh?: boolean) => Promise<OpenRouterModelCatalog>;
       setAiModel: (modelId: string) => Promise<{ model: string; health: EngineHealth; catalog: OpenRouterModelCatalog }>;
+      setNetworkProxy: (proxy: string) => Promise<{ networkProxy: string; health: EngineHealth }>;
+      checkNetworkProxy: (proxy: string) => Promise<NetworkProxyCheckResponse>;
       indexStatus: (indexRoot?: string) => Promise<IndexStatusResponse>;
       indexIngest: (payload: IndexIngestRequest) => Promise<IndexIngestResponse>;
       indexSearch: (payload: IndexSearchRequest) => Promise<IndexSearchResponse>;
@@ -26,9 +29,12 @@ declare global {
       updateYtDlp: () => Promise<YtDlpUpdateResult>;
       checkGalleryDlUpdate: () => Promise<GalleryDlUpdateInfo>;
       updateGalleryDl: () => Promise<GalleryDlUpdateResult>;
+      checkAppUpdate: () => Promise<AppUpdateInfo>;
       chooseOutputRoot: () => Promise<{ outputRoot: string; canceled: boolean }>;
       resetOutputRoot: () => Promise<{ outputRoot: string }>;
       onDownloadEvent: (callback: (event: DownloadEvent) => void) => () => void;
+      importSheet: (payload: SheetImportRequest) => Promise<SheetImportResponse>;
+      onSheetImportEvent: (callback: (event: SheetImportEvent) => void) => () => void;
     };
   }
 }
@@ -66,6 +72,10 @@ export type EngineHealth = {
   outputRoot: string;
   openRouterModel?: string;
   openRouterKeyPresent?: boolean;
+  /** App-managed SQLite library root (for sheet import indexing). */
+  libraryIndexRoot?: string;
+  networkProxy?: string;
+  networkProxyEnabled?: boolean;
   searchEvidence?: SearchEvidenceStatus;
   packaged: boolean;
   error?: string;
@@ -91,7 +101,26 @@ export type OpenRouterModelCatalog = {
   error?: string | null;
 };
 
+export type AppUpdateInfo = {
+  currentVersion: string;
+  latestVersion: string | null;
+  updateAvailable: boolean;
+  configured: boolean;
+  manifestUrl: string | null;
+  dmgUrl: string | null;
+  date?: string;
+  notes: string[];
+  error?: string;
+};
+
 export type BrowserInfo = { id: string; label: string; appPath: string };
+
+export type NetworkProxyCheckResponse = {
+  ok: boolean;
+  proxy: string;
+  ip?: string | null;
+  error?: string;
+};
 
 export type SearchEvidenceResult = {
   title: string;
@@ -167,10 +196,20 @@ export type PageProbeCandidate = {
   kind: PageProbeCandidateKind;
   type: PageProbeCandidateKind;
   label: string;
-  source: "network" | "dom";
+  source: "network" | "dom" | "meta";
   method: string;
   score: number;
   contentType?: string;
+  resolution?: string;
+};
+
+export type PageProbeOptions = {
+  incognito?: boolean;
+};
+
+export type PageProbeLink = {
+  url: string;
+  text?: string;
 };
 
 export type PageProbeResponse = {
@@ -178,13 +217,25 @@ export type PageProbeResponse = {
   url: string;
   finalUrl: string;
   candidates: PageProbeCandidate[];
+  pageLinks?: PageProbeLink[];
+  crawledLinks?: number;
   timedOut: boolean;
+  fastSettled?: boolean;
+  elapsedMs?: number;
+  cached?: boolean;
+  cachedAt?: number;
 } | {
   ok: false;
   url: string;
   error: string;
   candidates: PageProbeCandidate[];
+  pageLinks?: PageProbeLink[];
+  crawledLinks?: number;
   timedOut?: boolean;
+  fastSettled?: boolean;
+  elapsedMs?: number;
+  cached?: boolean;
+  cachedAt?: number;
 };
 
 export type SourceSearchPack = {
@@ -406,6 +457,8 @@ export type FetchResponse = {
     thumbnails?: string[];
     description?: string;
     provider?: ProviderId;
+    filesize?: number | null;
+    filesize_approx?: number | null;
   };
 } | {
   ok: false;
@@ -427,6 +480,48 @@ export type DownloadResponse = {
   result: unknown;
 };
 
+export type SheetImportRequest = {
+  sheetUrl: string;
+  outputRoot: string;
+  projectName?: string;
+  sheetName?: string;
+  jobId?: string;
+  cookieSource?: CookieSource;
+  state?: string;
+  pc?: string;
+  status?: string;
+  limit?: number;
+  requireMaster?: boolean;
+  downloadMaster?: boolean;
+  indexToLibrary?: boolean;
+};
+
+export type SheetImportResponse = {
+  jobId: string;
+  ok: boolean;
+  result?: unknown;
+  error?: string;
+};
+
+export type SheetImportEvent = {
+  jobId?: string;
+  type?: string;
+  phase?: string;
+  sheetUrl?: string;
+  projectName?: string;
+  message?: string;
+  error?: string;
+  ok?: boolean;
+  projectRoot?: string;
+  manifestPath?: string;
+  totalRows?: number;
+  selectedRows?: number;
+  row?: number;
+  pcName?: string;
+  percent?: number;
+  [key: string]: unknown;
+};
+
 export type DownloadEvent = {
   jobId: string;
   type: "started" | "progress" | "stage" | "phase" | "success" | "error" | "notice";
@@ -439,7 +534,7 @@ export type DownloadEvent = {
   finalizing?: boolean;
   kind?: string;
   destination?: string;
-  files?: string[];
+  files?: Array<string | { path: string; size?: number | null }>;
   outputRoot?: string;
   error?: string;
 };
