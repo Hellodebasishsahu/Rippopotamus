@@ -4,11 +4,12 @@
   "description": "Feed it links. It spits out assets.",
   "main": "dist-electron/main.js",
   "scripts": {
-    "dev": "npm run build:electron && concurrently -k \"vite --host 127.0.0.1 --strictPort\" \"wait-on http://127.0.0.1:5173 && VITE_DEV_SERVER_URL=http://127.0.0.1:5173 electron .\"",
+    "dev": "npm run build:electron && concurrently -k \"vite --host 127.0.0.1 --port 5174 --strictPort\" \"wait-on http://127.0.0.1:5174 && VITE_DEV_SERVER_URL=http://127.0.0.1:5174 electron .\"",
     "build": "npm run build:ui && npm run build:electron",
     "build:ui": "tsc -p tsconfig.json --noEmit && vite build",
     "build:electron": "tsc -p tsconfig.electron.json",
-    "package:mac": "npm run build && electron-builder --mac dir",
+    "prepare:ffmpeg:mac": "node scripts/install-ffmpeg-static-target.mjs darwin arm64",
+    "package:mac": "npm run prepare:ffmpeg:mac && npm run build && electron-builder --mac dmg",
     "prepare:ffmpeg:win": "node scripts/install-ffmpeg-static-target.mjs win32 x64",
     "package:win": "npm run prepare:ffmpeg:win && npm run build && electron-builder --win dir --x64",
     "package:win:ci": "npm run package:win && npm run verify:package:win",
@@ -16,14 +17,18 @@
     "verify:package:win": "node scripts/verify-package-artifact.mjs win",
     "verify:package:mac:engine": "node scripts/verify-packaged-engine-health.mjs mac",
     "verify:package:win:engine": "node scripts/verify-packaged-engine-health.mjs win",
+    "build:engine": "bash scripts/build-engine.sh",
     "test": "node scripts/run-tests.mjs"
   },
   "keywords": [],
   "author": "",
   "license": "UNLICENSED",
+  "packageManager": "npm@11.12.1",
   "type": "commonjs",
   "dependencies": {
-    "ffmpeg-static": "^5.3.0"
+    "@ghostery/adblocker-electron": "^2.17.0",
+    "ffmpeg-static": "^5.3.0",
+    "simple-icons": "^16.20.0"
   },
   "devDependencies": {
     "@types/node": "^25.6.2",
@@ -70,7 +75,7 @@
       "icon": "public/brand-logo.png",
       "category": "public.app-category.video",
       "target": [
-        "dir"
+        "dmg"
       ]
     },
     "win": {
