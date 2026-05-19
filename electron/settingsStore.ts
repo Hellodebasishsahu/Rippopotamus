@@ -6,6 +6,7 @@ import type { CookieSource } from "./cookies";
 export type Settings = {
   cookieSource?: CookieSource;
   cookiesBrowser?: string;
+  networkProxy?: string;
   outputRoot?: string;
   openRouterModel?: string;
 };
@@ -41,4 +42,19 @@ export function currentOpenRouterModel(): string {
   const saved = readSettings().openRouterModel;
   if (saved && typeof saved === "string" && saved.trim()) return saved;
   return process.env.OPENROUTER_MODEL || "openrouter/free";
+}
+
+export function currentNetworkProxy(): string {
+  const saved = readSettings().networkProxy;
+  if (saved && typeof saved === "string" && saved.trim()) return saved.trim().slice(0, 400);
+  return process.env.RIPPO_NETWORK_PROXY || "";
+}
+
+export function writeNetworkProxy(proxy: string): string {
+  const normalized = proxy.trim().slice(0, 400);
+  const settings = readSettings();
+  if (normalized) settings.networkProxy = normalized;
+  else delete settings.networkProxy;
+  writeSettings(settings);
+  return normalized;
 }

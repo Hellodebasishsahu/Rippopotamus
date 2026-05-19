@@ -1,4 +1,5 @@
 import { app } from "electron";
+import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 
@@ -13,10 +14,14 @@ export function ffmpegPath(): string | null {
   try {
     // ffmpeg-static resolves to the bundled platform binary in dev and packaged builds.
     // eslint-disable-next-line @typescript-eslint/no-var-requires
-    return require("ffmpeg-static") || null;
+    const bundled = require("ffmpeg-static") || null;
+    if (bundled && fs.existsSync(bundled)) return bundled;
   } catch {
-    return null;
+    // Fall through to PATH lookup.
   }
+
+  const result = spawnSync(executable, ["-version"], { encoding: "utf8" });
+  return result.status === 0 ? executable : null;
 }
 
 export function appManagedYtDlpPath(): string {
