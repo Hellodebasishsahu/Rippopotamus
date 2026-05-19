@@ -2,9 +2,12 @@ import type { CookieSource, FetchResponse } from "../../../electron/types";
 
 export const QUEUE_STATUS = {
   queued: "queued",
-  fetching: "fetching",
+  /** Metadata / URL resolution (was "fetching" in older builds). */
+  resolving: "resolving",
   ready: "ready",
   downloading: "downloading",
+  /** yt-dlp/gallery final mux pass */
+  finalizing: "finalizing",
   done: "done",
   failed: "failed",
 } as const;
@@ -28,7 +31,7 @@ export type QueueItem = {
   phase?: string;
   phaseIndex?: number;
   finalizing?: boolean;
-  files?: string[];
+  files?: Array<string | { path: string; size?: number | null }>;
   jobId?: string;
   notices?: QueueNotice[];
   cookieSource: CookieSource;
@@ -36,9 +39,10 @@ export type QueueItem = {
 
 export const queueStatusLabels: Record<QueueStatus, string> = {
   [QUEUE_STATUS.queued]: "Queued",
-  [QUEUE_STATUS.fetching]: "Fetching...",
+  [QUEUE_STATUS.resolving]: "Resolving...",
   [QUEUE_STATUS.ready]: "Ready",
   [QUEUE_STATUS.downloading]: "Downloading",
+  [QUEUE_STATUS.finalizing]: "Finalizing...",
   [QUEUE_STATUS.done]: "Saved",
   [QUEUE_STATUS.failed]: "Failed",
 };
@@ -62,7 +66,7 @@ export function queueItemCanChangeOutput(item: QueueItem): boolean {
 }
 
 export function queueItemCanRefetch(item: QueueItem): boolean {
-  return item.status !== QUEUE_STATUS.fetching && item.status !== QUEUE_STATUS.downloading;
+  return item.status !== QUEUE_STATUS.resolving && item.status !== QUEUE_STATUS.downloading;
 }
 
 export function queueItemCanRemove(item: QueueItem): boolean {

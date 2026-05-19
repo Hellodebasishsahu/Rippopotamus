@@ -6,6 +6,9 @@ import { QUEUE_STATUS, type QueueItem } from "./downloadQueueModel";
 export type { QueueItem } from "./downloadQueueModel";
 export { queueStatusLabels, queueItemProgress, queueItemStatusText } from "./downloadQueueModel";
 
+const FETCH_CONCURRENCY = 6;
+const DOWNLOAD_CONCURRENCY = 3;
+
 type UseDownloadQueueOptions = {
   desktop: DesktopClient | null;
   selectedFetchProvider: ProviderId | "auto";
@@ -13,6 +16,10 @@ type UseDownloadQueueOptions = {
   presetOptions: PresetOption[];
   cookieSource: CookieSource;
   outputRoot: string;
+  fetchWorkerCount?: number;
+  downloadWorkerCount?: number;
+  /** When true, ingest the output folder into the app library after a batch download completes. */
+  autoIndexLibraryAfterDownloads?: boolean;
   consumerErrorMessage: (message: string, fallback?: string) => string;
   consumerNoticeMessage: (message: string) => string | null;
 };
@@ -26,7 +33,7 @@ export function providerForItem(item: QueueItem, presets: PresetOption[], provid
 }
 
 export function itemSupportsBrowserAccess(item: QueueItem, presets: PresetOption[], providers: ProviderOption[]): boolean {
-  if (item.status === QUEUE_STATUS.queued || item.status === QUEUE_STATUS.fetching || item.status === QUEUE_STATUS.failed) return true;
+  if (item.status === QUEUE_STATUS.queued || item.status === QUEUE_STATUS.resolving || item.status === QUEUE_STATUS.failed) return true;
   return providers.find((provider) => provider.id === providerForItem(item, presets, providers))?.supportsBrowserAccess === true;
 }
 
@@ -39,13 +46,45 @@ function defaultPresetForProvider(provider: ProviderId, providers: ProviderOptio
   return providers.find((option) => option.id === provider)?.defaultPreset || providers[0]?.defaultPreset || "";
 }
 
-function fetchErrorMessage(error: unknown, consumerErrorMessage: (message: string, fallback?: string) => string): string {
+function workerCount(value: number | undefined, fallback: number): number {
+  if (!Number.isFinite(value)) return fallback;
+  return Math.max(1, Math.floor(value || fallback));
+}
+
+function isSiteRootUrl(url: string): boolean {
+  try {
+    const parsed = new URL(url);
+    return (parsed.protocol === "http:" || parsed.protocol === "https:") && parsed.pathname === "/" && !parsed.search && !parsed.hash;
+  } catch {
+    return false;
+  }
+}
+
+function fetchErrorMessage(error: unknown, consumerErrorMessage: (message: string, fallback?: string) => string, url?: string): string {
   const raw = error instanceof Error ? error.message : String(error);
   const message = raw
     .replace(/^Error invoking remote method '[^']+':\s*/i, "")
     .replace(/^Error:\s*/i, "")
     .trim();
+  if (/^Engine exited with code \d+$/i.test(message)) {
+    return "Download failed before Rippo received details. Retry the source page or use Sniff page.";
+  }
+  if (url && isSiteRootUrl(url)) {
+    return "This looks like a site homepage. Use Sniff page or paste a video page.";
+  }
   return consumerErrorMessage(message, "Could not read this link. Try another link.");
+}
+
+async function runWithConcurrency<T>(values: T[], limit: number, worker: (value: T) => Promise<void>) {
+  let index = 0;
+  const workers = Array.from({ length: Math.min(limit, values.length) }, async () => {
+    while (index < values.length) {
+      const current = values[index];
+      index += 1;
+      await worker(current);
+    }
+  });
+  await Promise.all(workers);
 }
 
 export function useDownloadQueue({
@@ -55,6 +94,9 @@ export function useDownloadQueue({
   presetOptions,
   cookieSource,
   outputRoot,
+  fetchWorkerCount,
+  downloadWorkerCount,
+  autoIndexLibraryAfterDownloads = true,
   consumerErrorMessage,
   consumerNoticeMessage,
 }: UseDownloadQueueOptions) {
@@ -86,7 +128,7 @@ export function useDownloadQueue({
           return { ...item, stage: event.message, finalizing: event.finalizing ? true : item.finalizing, progress: event.finalizing ? 100 : item.progress };
         }
         if (event.type === "success") return { ...item, status: QUEUE_STATUS.done, progress: 100, files: event.files, stage: "Saved", finalizing: false };
-        if (event.type === "error") return { ...item, status: QUEUE_STATUS.failed, error: consumerErrorMessage(event.error || ""), finalizing: false, notices: [] };
+        if (event.type === "error") return { ...item, status: QUEUE_STATUS.failed, error: fetchErrorMessage(event.error || "", consumerErrorMessage, item.url), finalizing: false, notices: [] };
         return item;
       }));
     });
@@ -104,36 +146,41 @@ export function useDownloadQueue({
     const initialPreset = provider === "auto" ? "" : defaultPresetForProvider(provider, providerOptions);
     const initialCookieSource = cookieSource;
 
-    const existing = new Set(items.map((item) => item.url));
-    const fresh = urls
-      .filter((url) => !existing.has(url))
-      .map((url) => ({ localId: crypto.randomUUID().slice(0, 10), url, status: QUEUE_STATUS.queued, preset: initialPreset, cookieSource: initialCookieSource }));
+    const seen = new Set(items.map((item) => item.url));
+    const fresh: QueueItem[] = [];
+    for (const url of urls) {
+      if (seen.has(url)) continue;
+      seen.add(url);
+      fresh.push({ localId: crypto.randomUUID().slice(0, 10), url, status: QUEUE_STATUS.queued, preset: initialPreset, cookieSource: initialCookieSource });
+    }
 
     if (!fresh.length) return;
 
     setItems((current) => [...fresh, ...current]);
 
-    for (const item of fresh) {
-      setItems((current) => current.map((candidate) => candidate.localId === item.localId ? { ...candidate, status: QUEUE_STATUS.fetching } : candidate));
+    await runWithConcurrency(fresh, workerCount(fetchWorkerCount, FETCH_CONCURRENCY), async (item) => {
+      setItems((current) => current.map((candidate) => candidate.localId === item.localId ? { ...candidate, status: QUEUE_STATUS.resolving } : candidate));
       try {
         const result = await desktop.fetch(item.url, provider, item.cookieSource);
         if (result.ok) {
           const resolvedProvider = result.metadata.provider || (provider === "auto" ? providerOptions[0]?.id : provider) || "";
           setItems((current) => current.map((candidate) => candidate.localId === item.localId ? { ...candidate, status: QUEUE_STATUS.ready, preset: defaultPresetForProvider(resolvedProvider, providerOptions), metadata: result.metadata, error: undefined } : candidate));
         } else {
-          setItems((current) => current.map((candidate) => candidate.localId === item.localId ? { ...candidate, status: QUEUE_STATUS.failed, error: fetchErrorMessage(result.error, consumerErrorMessage) } : candidate));
+          setItems((current) => current.map((candidate) => candidate.localId === item.localId ? { ...candidate, status: QUEUE_STATUS.failed, error: fetchErrorMessage(result.error, consumerErrorMessage, item.url) } : candidate));
         }
       } catch (error) {
-        setItems((current) => current.map((candidate) => candidate.localId === item.localId ? { ...candidate, status: QUEUE_STATUS.failed, error: fetchErrorMessage(error, consumerErrorMessage) } : candidate));
+        setItems((current) => current.map((candidate) => candidate.localId === item.localId ? { ...candidate, status: QUEUE_STATUS.failed, error: fetchErrorMessage(error, consumerErrorMessage, item.url) } : candidate));
       }
-    }
+    });
   }
 
   async function downloadReady() {
     const ready = items.filter((item) => item.status === QUEUE_STATUS.ready);
     if (!ready.length || busy || !desktop) return;
     setBusy(true);
-    for (const item of ready) {
+
+    let anySuccess = false;
+    await runWithConcurrency(ready, workerCount(downloadWorkerCount, DOWNLOAD_CONCURRENCY), async (item) => {
       const jobId = item.localId;
       setItems((current) => current.map((candidate) => candidate.localId === item.localId ? { ...candidate, status: QUEUE_STATUS.downloading, progress: 0, error: undefined, jobId, phase: undefined, phaseIndex: 0, finalizing: false, stage: undefined, notices: [] } : candidate));
       try {
@@ -145,14 +192,24 @@ export function useDownloadQueue({
           title: item.metadata?.title || item.localId,
           cookieSource: item.cookieSource,
         });
-        const result = response.result as { type?: string; files?: string[] } | undefined;
+        const result = response.result as { type?: string; files?: QueueItem["files"]; error?: string } | undefined;
         if (result?.type === "success") {
+          anySuccess = true;
           setItems((current) => current.map((candidate) => candidate.localId === item.localId ? { ...candidate, status: QUEUE_STATUS.done, progress: 100, files: result.files, stage: "Saved", jobId: response.jobId } : candidate));
+        } else if (result?.type === "error") {
+          setItems((current) => current.map((candidate) => candidate.localId === item.localId ? { ...candidate, status: QUEUE_STATUS.failed, error: fetchErrorMessage(result.error || "Download failed.", consumerErrorMessage, item.url), notices: [], finalizing: false, jobId: response.jobId } : candidate));
         } else {
           setItems((current) => current.map((candidate) => candidate.localId === item.localId ? { ...candidate, jobId: response.jobId } : candidate));
         }
       } catch (error) {
-        setItems((current) => current.map((candidate) => candidate.localId === item.localId ? { ...candidate, status: QUEUE_STATUS.failed, error: consumerErrorMessage(error instanceof Error ? error.message : String(error)), notices: [] } : candidate));
+        setItems((current) => current.map((candidate) => candidate.localId === item.localId ? { ...candidate, status: QUEUE_STATUS.failed, error: fetchErrorMessage(error, consumerErrorMessage, item.url), notices: [] } : candidate));
+      }
+    });
+    if (anySuccess && autoIndexLibraryAfterDownloads && desktop) {
+      try {
+        await desktop.indexIngest({ paths: [outputRoot] });
+      } catch {
+        undefined;
       }
     }
     setBusy(false);
@@ -162,16 +219,16 @@ export function useDownloadQueue({
     if (!desktop) return;
     const provider = providerForItem(item, presetOptions, providerOptions);
     if (!provider) return;
-    setItems((current) => current.map((candidate) => candidate.localId === item.localId ? { ...candidate, status: QUEUE_STATUS.fetching, error: undefined, notices: [] } : candidate));
+    setItems((current) => current.map((candidate) => candidate.localId === item.localId ? { ...candidate, status: QUEUE_STATUS.resolving, error: undefined, notices: [] } : candidate));
     try {
       const result = await desktop.fetch(item.url, provider, item.cookieSource);
       if (result.ok) {
         setItems((current) => current.map((candidate) => candidate.localId === item.localId ? { ...candidate, status: QUEUE_STATUS.ready, preset: defaultPresetForProvider(result.metadata.provider || provider, providerOptions), metadata: result.metadata, error: undefined } : candidate));
       } else {
-        setItems((current) => current.map((candidate) => candidate.localId === item.localId ? { ...candidate, status: QUEUE_STATUS.failed, error: fetchErrorMessage(result.error, consumerErrorMessage) } : candidate));
+        setItems((current) => current.map((candidate) => candidate.localId === item.localId ? { ...candidate, status: QUEUE_STATUS.failed, error: fetchErrorMessage(result.error, consumerErrorMessage, item.url) } : candidate));
       }
     } catch (error) {
-      setItems((current) => current.map((candidate) => candidate.localId === item.localId ? { ...candidate, status: QUEUE_STATUS.failed, error: fetchErrorMessage(error, consumerErrorMessage) } : candidate));
+      setItems((current) => current.map((candidate) => candidate.localId === item.localId ? { ...candidate, status: QUEUE_STATUS.failed, error: fetchErrorMessage(error, consumerErrorMessage, item.url) } : candidate));
     }
   }
 
