@@ -58,8 +58,8 @@ export function App() {
                 className="logo-mark"
                 src="/brand-logo.png"
                 alt=""
-                width={280}
-                height={280}
+                width={360}
+                height={360}
                 decoding="async"
               />
             </div>

@@ -124,7 +124,7 @@ main {
   max-width: var(--content);
   margin: 0 auto;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(200px, 0.85fr);
+  grid-template-columns: minmax(0, 1fr) minmax(240px, 1fr);
   align-items: center;
   gap: clamp(32px, 6vw, 72px);
 }
@@ -134,7 +134,7 @@ main {
   display: grid;
   place-items: center;
   justify-self: end;
-  width: min(100%, 320px);
+  width: min(100%, 400px);
   aspect-ratio: 1;
 }
 
@@ -345,7 +345,7 @@ main {
   .hero-brand {
     order: -1;
     justify-self: start;
-    width: min(72vw, 220px);
+    width: min(78vw, 260px);
     margin-bottom: 8px;
   }
 }
