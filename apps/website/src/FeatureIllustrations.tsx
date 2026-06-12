@@ -1,189 +1,114 @@
-type IllustrationProps = {
+type IconProps = {
   className?: string;
 };
 
-export function BatchQueueIllustration({ className }: IllustrationProps) {
+const stroke = {
+  round: { strokeLinecap: "round" as const, strokeLinejoin: "round" as const },
+};
+
+function IconFrame({ className, children, accent }: IconProps & { accent: "coral" | "mint"; children: React.ReactNode }) {
+  const glow = accent === "coral" ? "rgba(255,107,74,0.14)" : "rgba(93,255,177,0.12)";
+  const ring = accent === "coral" ? "rgba(255,107,74,0.35)" : "rgba(93,255,177,0.32)";
+
   return (
-    <svg className={className} viewBox="0 0 320 200" fill="none" aria-hidden="true">
-      <rect width="320" height="200" rx="12" fill="#0d1613" />
-      <rect x="20" y="24" width="180" height="152" rx="10" fill="#101a16" stroke="rgba(168,210,188,0.18)" />
-      <rect x="36" y="44" width="148" height="28" rx="6" fill="#0a1210" stroke="rgba(168,210,188,0.12)" />
-      <rect x="44" y="52" width="72" height="4" rx="2" fill="rgba(127,154,140,0.5)" />
-      <rect x="44" y="60" width="48" height="3" rx="1.5" fill="rgba(77,99,88,0.6)" />
-      <circle cx="168" cy="58" r="6" fill="#5dffb1" opacity="0.9" />
-      <rect x="36" y="80" width="148" height="28" rx="6" fill="#0a1210" stroke="rgba(168,210,188,0.12)" />
-      <rect x="44" y="88" width="88" height="4" rx="2" fill="rgba(127,154,140,0.5)" />
-      <circle cx="168" cy="94" r="6" fill="#ff6b4a" opacity="0.85" />
-      <rect x="36" y="116" width="148" height="28" rx="6" fill="#0a1210" stroke="rgba(168,210,188,0.12)" />
-      <rect x="44" y="124" width="64" height="4" rx="2" fill="rgba(127,154,140,0.5)" />
-      <circle cx="168" cy="130" r="6" stroke="rgba(168,210,188,0.3)" strokeWidth="2" />
-      <rect x="216" y="44" width="84" height="36" rx="8" fill="rgba(255,107,74,0.12)" stroke="rgba(255,107,74,0.35)" />
-      <text x="228" y="66" fill="#ff6b4a" fontFamily="ui-monospace, monospace" fontSize="10" fontWeight="600">
-        ×4 fetch
-      </text>
-      <rect x="216" y="92" width="84" height="36" rx="8" fill="rgba(93,255,177,0.1)" stroke="rgba(93,255,177,0.3)" />
-      <text x="224" y="114" fill="#5dffb1" fontFamily="ui-monospace, monospace" fontSize="10" fontWeight="600">
-        ×2 save
-      </text>
-      <path d="M196 58h16M196 94h16" stroke="rgba(168,210,188,0.25)" strokeWidth="1.5" strokeDasharray="3 3" />
+    <svg
+      className={className}
+      viewBox="0 0 96 96"
+      fill="none"
+      aria-hidden="true"
+      shapeRendering="geometricPrecision"
+    >
+      <circle cx="48" cy="48" r="40" fill={glow} />
+      <circle cx="48" cy="48" r="40" stroke={ring} strokeWidth="1.5" opacity="0.7" />
+      {children}
     </svg>
   );
 }
 
-export function PreviewIllustration({ className }: IllustrationProps) {
+export function BatchQueueIllustration({ className }: IconProps) {
   return (
-    <svg className={className} viewBox="0 0 320 200" fill="none" aria-hidden="true">
-      <rect width="320" height="200" rx="12" fill="#0d1613" />
-      <rect x="28" y="32" width="112" height="72" rx="8" fill="#101a16" stroke="rgba(168,210,188,0.2)" />
-      <rect x="36" y="40" width="96" height="48" rx="4" fill="#1a2822" />
-      <circle cx="84" cy="64" r="14" fill="rgba(255,107,74,0.85)" />
-      <path d="M80 58l10 6-10 6V58z" fill="#0a1210" />
-      <rect x="28" y="112" width="112" height="8" rx="3" fill="rgba(230,239,233,0.7)" />
-      <rect x="28" y="126" width="72" height="6" rx="3" fill="rgba(127,154,140,0.45)" />
-      <rect x="156" y="32" width="136" height="136" rx="10" fill="#101a16" stroke="rgba(168,210,188,0.15)" />
-      <rect x="172" y="48" width="56" height="6" rx="3" fill="#5dffb1" opacity="0.8" />
-      <rect x="172" y="62" width="88" height="5" rx="2.5" fill="rgba(127,154,140,0.5)" />
-      <rect x="172" y="74" width="64" height="5" rx="2.5" fill="rgba(77,99,88,0.55)" />
-      <rect x="172" y="96" width="40" height="18" rx="9" fill="rgba(93,255,177,0.12)" stroke="rgba(93,255,177,0.35)" />
-      <text x="182" y="109" fill="#5dffb1" fontFamily="ui-monospace, monospace" fontSize="8">
-        12:04
-      </text>
-      <rect x="220" y="96" width="52" height="18" rx="9" fill="rgba(255,107,74,0.1)" stroke="rgba(255,107,74,0.3)" />
-      <text x="230" y="109" fill="#ff6b4a" fontFamily="ui-monospace, monospace" fontSize="8">
-        youtube
-      </text>
-      <rect x="172" y="128" width="104" height="24" rx="6" fill="#0a1210" stroke="rgba(168,210,188,0.12)" />
-      <text x="184" y="144" fill="rgba(127,154,140,0.8)" fontFamily="ui-monospace, monospace" fontSize="8">
-        ready to save
-      </text>
-    </svg>
+    <IconFrame className={className} accent="coral">
+      <rect x="26" y="30" width="44" height="10" rx="3" stroke="#e6efe9" strokeWidth="2.5" opacity="0.35" {...stroke.round} />
+      <rect x="26" y="44" width="44" height="10" rx="3" stroke="#e6efe9" strokeWidth="2.5" opacity="0.55" {...stroke.round} />
+      <rect x="26" y="58" width="44" height="10" rx="3" stroke="#ff6b4a" strokeWidth="2.5" {...stroke.round} />
+      <path d="M74 35h10M74 49h10M74 63h10" stroke="#5dffb1" strokeWidth="2.5" {...stroke.round} />
+      <circle cx="68" cy="35" r="3" fill="#5dffb1" />
+      <circle cx="68" cy="49" r="3" fill="#ff6b4a" />
+      <circle cx="68" cy="63" r="3" fill="#5dffb1" />
+    </IconFrame>
   );
 }
 
-export function PresetsIllustration({ className }: IllustrationProps) {
+export function PreviewIllustration({ className }: IconProps) {
   return (
-    <svg className={className} viewBox="0 0 320 200" fill="none" aria-hidden="true">
-      <rect width="320" height="200" rx="12" fill="#0d1613" />
-      <rect x="32" y="36" width="256" height="128" rx="12" fill="#101a16" stroke="rgba(168,210,188,0.15)" />
-      <rect x="48" y="56" width="52" height="28" rx="14" fill="rgba(255,107,74,0.18)" stroke="#ff6b4a" strokeWidth="1.5" />
-      <text x="62" y="74" fill="#ff6b4a" fontFamily="ui-monospace, monospace" fontSize="10" fontWeight="600">
-        MP4
-      </text>
-      <rect x="112" y="56" width="52" height="28" rx="14" fill="rgba(93,255,177,0.12)" stroke="rgba(93,255,177,0.45)" />
-      <text x="126" y="74" fill="#5dffb1" fontFamily="ui-monospace, monospace" fontSize="10" fontWeight="600">
-        MP3
-      </text>
-      <rect x="176" y="56" width="60" height="28" rx="14" fill="#0a1210" stroke="rgba(168,210,188,0.2)" />
-      <text x="186" y="74" fill="rgba(230,239,233,0.7)" fontFamily="ui-monospace, monospace" fontSize="10">
-        720p
-      </text>
-      <rect x="248" y="56" width="24" height="28" rx="14" fill="#0a1210" stroke="rgba(168,210,188,0.2)" />
-      <rect x="48" y="104" width="224" height="8" rx="4" fill="rgba(168,210,188,0.1)" />
-      <rect x="48" y="104" width="148" height="8" rx="4" fill="linear-gradient" />
-      <rect x="48" y="104" width="148" height="8" rx="4" fill="url(#presetGrad)" />
-      <circle cx="196" cy="108" r="10" fill="#ff6b4a" stroke="#0a1210" strokeWidth="3" />
-      <rect x="48" y="128" width="88" height="20" rx="6" fill="rgba(93,255,177,0.08)" stroke="rgba(93,255,177,0.25)" />
-      <text x="58" y="142" fill="#5dffb1" fontFamily="ui-monospace, monospace" fontSize="8">
-        thumb only
-      </text>
-      <rect x="148" y="128" width="72" height="20" rx="6" fill="rgba(255,107,74,0.08)" stroke="rgba(255,107,74,0.25)" />
-      <text x="158" y="142" fill="#ff6b4a" fontFamily="ui-monospace, monospace" fontSize="8">
-        magnet
-      </text>
-      <defs>
-        <linearGradient id="presetGrad" x1="48" y1="108" x2="196" y2="108" gradientUnits="userSpaceOnUse">
-          <stop stopColor="#5dffb1" />
-          <stop offset="1" stopColor="#ff6b4a" />
-        </linearGradient>
-      </defs>
-    </svg>
+    <IconFrame className={className} accent="mint">
+      <rect x="24" y="28" width="48" height="36" rx="6" stroke="#e6efe9" strokeWidth="2.5" {...stroke.round} />
+      <path d="M42 40l14 8-14 8V40z" fill="#ff6b4a" />
+      <path d="M24 68h48" stroke="#5dffb1" strokeWidth="2.5" {...stroke.round} />
+      <circle cx="34" cy="68" r="3" fill="#5dffb1" />
+      <circle cx="48" cy="68" r="3" fill="#e6efe9" opacity="0.4" />
+    </IconFrame>
   );
 }
 
-export function SniffIllustration({ className }: IllustrationProps) {
+export function PresetsIllustration({ className }: IconProps) {
   return (
-    <svg className={className} viewBox="0 0 320 200" fill="none" aria-hidden="true">
-      <rect width="320" height="200" rx="12" fill="#0d1613" />
-      <rect x="24" y="28" width="272" height="144" rx="10" fill="#101a16" stroke="rgba(168,210,188,0.18)" />
-      <rect x="24" y="28" width="272" height="24" rx="10" fill="#0a1210" />
-      <circle cx="44" cy="40" r="4" fill="#ff6b4a" opacity="0.7" />
-      <circle cx="58" cy="40" r="4" fill="rgba(127,154,140,0.4)" />
-      <circle cx="72" cy="40" r="4" fill="rgba(127,154,140,0.4)" />
-      <rect x="40" y="68" width="120" height="8" rx="3" fill="rgba(127,154,140,0.35)" />
-      <rect x="40" y="84" width="88" height="6" rx="3" fill="rgba(77,99,88,0.5)" />
-      <rect x="40" y="100" width="96" height="40" rx="6" fill="#1a2822" stroke="rgba(168,210,188,0.12)" />
-      <circle cx="88" cy="120" r="12" fill="rgba(255,107,74,0.9)" />
-      <path d="M84 114l8 6-8 6v-12z" fill="#0a1210" />
-      <circle cx="200" cy="108" r="36" fill="rgba(93,255,177,0.06)" stroke="rgba(93,255,177,0.35)" strokeWidth="1.5" strokeDasharray="4 4" />
-      <circle cx="200" cy="108" r="22" fill="none" stroke="#5dffb1" strokeWidth="2" opacity="0.6" />
-      <path d="M218 126l18 18" stroke="#5dffb1" strokeWidth="3" strokeLinecap="round" />
-      <circle cx="236" cy="144" r="6" fill="#5dffb1" opacity="0.8" />
-      <rect x="176" y="148" width="96" height="16" rx="8" fill="rgba(93,255,177,0.12)" stroke="rgba(93,255,177,0.35)" />
-      <text x="188" y="160" fill="#5dffb1" fontFamily="ui-monospace, monospace" fontSize="8" fontWeight="600">
-        12 found
-      </text>
-    </svg>
+    <IconFrame className={className} accent="mint">
+      <path d="M22 36h52" stroke="#e6efe9" strokeWidth="2.5" opacity="0.35" {...stroke.round} />
+      <circle cx="38" cy="36" r="6" fill="#5dffb1" stroke="#0a1210" strokeWidth="2" />
+      <path d="M22 48h52" stroke="#e6efe9" strokeWidth="2.5" opacity="0.55" {...stroke.round} />
+      <circle cx="58" cy="48" r="6" fill="#ff6b4a" stroke="#0a1210" strokeWidth="2" />
+      <path d="M22 60h52" stroke="#e6efe9" strokeWidth="2.5" {...stroke.round} />
+      <circle cx="44" cy="60" r="6" fill="#e6efe9" stroke="#0a1210" strokeWidth="2" />
+    </IconFrame>
   );
 }
 
-export function LocalSaveIllustration({ className }: IllustrationProps) {
+export function SniffIllustration({ className }: IconProps) {
   return (
-    <svg className={className} viewBox="0 0 320 200" fill="none" aria-hidden="true">
-      <rect width="320" height="200" rx="12" fill="#0d1613" />
-      <path d="M48 56h72l16 16h120v88H48V56z" fill="#101a16" stroke="rgba(168,210,188,0.2)" strokeLinejoin="round" />
-      <path d="M72 96h176M72 116h140M72 136h96" stroke="rgba(168,210,188,0.15)" strokeWidth="1.5" strokeLinecap="round" />
-      <rect x="180" y="32" width="108" height="136" rx="10" fill="#0a1210" stroke="rgba(168,210,188,0.15)" />
-      <text x="196" y="56" fill="#5dffb1" fontFamily="ui-monospace, monospace" fontSize="9" fontWeight="600">
-        ~/Downloads/Rippo
-      </text>
-      <rect x="196" y="68" width="76" height="18" rx="4" fill="rgba(93,255,177,0.08)" />
-      <text x="204" y="81" fill="rgba(230,239,233,0.75)" fontFamily="ui-monospace, monospace" fontSize="8">
-        Source/
-      </text>
-      <rect x="196" y="92" width="76" height="18" rx="4" fill="rgba(255,107,74,0.08)" />
-      <text x="204" y="105" fill="rgba(230,239,233,0.75)" fontFamily="ui-monospace, monospace" fontSize="8">
-        Audio/
-      </text>
-      <rect x="196" y="116" width="76" height="18" rx="4" fill="rgba(168,210,188,0.06)" />
-      <text x="204" y="129" fill="rgba(230,239,233,0.75)" fontFamily="ui-monospace, monospace" fontSize="8">
-        Images/
-      </text>
-      <circle cx="148" cy="148" r="14" fill="rgba(93,255,177,0.15)" stroke="#5dffb1" strokeWidth="1.5" />
-      <path d="M142 148l4 4 8-8" stroke="#5dffb1" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-      <text x="108" y="178" fill="rgba(127,154,140,0.7)" fontFamily="ui-monospace, monospace" fontSize="8">
-        skip dupes
-      </text>
-    </svg>
+    <IconFrame className={className} accent="coral">
+      <rect x="22" y="30" width="36" height="28" rx="5" stroke="#e6efe9" strokeWidth="2.5" opacity="0.45" {...stroke.round} />
+      <circle cx="40" cy="44" r="8" fill="#ff6b4a" />
+      <path d="M37 41l6 4-6 4V41z" fill="#0a1210" />
+      <circle cx="62" cy="56" r="14" stroke="#5dffb1" strokeWidth="2.5" {...stroke.round} />
+      <path d="M72 66l12 12" stroke="#5dffb1" strokeWidth="3" {...stroke.round} />
+      <circle cx="84" cy="78" r="4" fill="#5dffb1" />
+    </IconFrame>
   );
 }
 
-export function AccessIllustration({ className }: IllustrationProps) {
+export function LocalSaveIllustration({ className }: IconProps) {
   return (
-    <svg className={className} viewBox="0 0 320 200" fill="none" aria-hidden="true">
-      <rect width="320" height="200" rx="12" fill="#0d1613" />
-      <rect x="40" y="48" width="88" height="104" rx="12" fill="#101a16" stroke="rgba(168,210,188,0.15)" />
-      <ellipse cx="84" cy="88" rx="24" ry="20" fill="rgba(255,107,74,0.12)" stroke="rgba(255,107,74,0.4)" />
-      <circle cx="76" cy="84" r="4" fill="#ff6b4a" />
-      <circle cx="92" cy="84" r="4" fill="#ff6b4a" />
-      <path d="M72 96c4 6 20 6 24 0" stroke="#ff6b4a" strokeWidth="1.5" strokeLinecap="round" />
-      <text x="58" y="132" fill="rgba(127,154,140,0.8)" fontFamily="ui-monospace, monospace" fontSize="8">
-        cookies
-      </text>
-      <rect x="148" y="64" width="124" height="16" rx="8" fill="rgba(93,255,177,0.1)" stroke="rgba(93,255,177,0.3)" />
-      <circle cx="160" cy="72" r="5" fill="#5dffb1" />
-      <rect x="172" y="69" width="48" height="6" rx="3" fill="rgba(127,154,140,0.4)" />
-      <path d="M148 120c40-24 80-24 124 0" stroke="rgba(93,255,177,0.35)" strokeWidth="2" strokeDasharray="6 4" />
-      <text x="188" y="108" fill="#5dffb1" fontFamily="ui-monospace, monospace" fontSize="8">
-        proxy
-      </text>
-      <rect x="148" y="136" width="124" height="40" rx="10" fill="rgba(255,107,74,0.08)" stroke="rgba(255,107,74,0.3)" />
-      <rect x="164" y="148" width="20" height="16" rx="4" fill="none" stroke="#ff6b4a" strokeWidth="1.5" />
-      <path d="M172 156v4" stroke="#ff6b4a" strokeWidth="1.5" strokeLinecap="round" />
-      <circle cx="172" cy="152" r="2" fill="#ff6b4a" />
-      <text x="192" y="162" fill="#ff6b4a" fontFamily="ui-monospace, monospace" fontSize="9" fontWeight="600">
-        private mode
-      </text>
-    </svg>
+    <IconFrame className={className} accent="mint">
+      <path
+        d="M24 34h28l8 10h24v30H24V34z"
+        stroke="#e6efe9"
+        strokeWidth="2.5"
+        {...stroke.round}
+      />
+      <path d="M48 52v18M42 64l6 6 6-6" stroke="#5dffb1" strokeWidth="2.5" {...stroke.round} />
+      <circle cx="68" cy="62" r="10" fill="rgba(93,255,177,0.15)" stroke="#5dffb1" strokeWidth="2" />
+      <path d="M64 62l3 3 7-7" stroke="#5dffb1" strokeWidth="2.5" {...stroke.round} />
+    </IconFrame>
+  );
+}
+
+export function AccessIllustration({ className }: IconProps) {
+  return (
+    <IconFrame className={className} accent="coral">
+      <path
+        d="M48 24c-8 0-14 6-14 14v6h28v-6c0-8-6-14-14-14z"
+        stroke="#ff6b4a"
+        strokeWidth="2.5"
+        {...stroke.round}
+      />
+      <rect x="30" y="44" width="36" height="28" rx="6" stroke="#e6efe9" strokeWidth="2.5" {...stroke.round} />
+      <circle cx="40" cy="58" r="3" fill="#ff6b4a" />
+      <circle cx="48" cy="58" r="3" fill="#ff6b4a" />
+      <circle cx="56" cy="58" r="3" fill="#ff6b4a" />
+      <path d="M48 66v6" stroke="#5dffb1" strokeWidth="2.5" {...stroke.round} />
+      <circle cx="48" cy="74" r="2.5" fill="#5dffb1" />
+    </IconFrame>
   );
 }
 

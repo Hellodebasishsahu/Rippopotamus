@@ -303,21 +303,22 @@ main {
 }
 
 .feature-art {
-  position: relative;
-  aspect-ratio: 16 / 10;
-  overflow: hidden;
-  background: radial-gradient(ellipse 90% 80% at 50% 0%, rgba(93, 255, 177, 0.04), transparent 70%);
+  display: grid;
+  place-items: center;
+  aspect-ratio: 1;
+  padding: clamp(28px, 8vw, 48px);
+  background: radial-gradient(circle at 50% 45%, rgba(93, 255, 177, 0.05), transparent 68%);
 }
 
 .feature-card--coral .feature-art {
-  background: radial-gradient(ellipse 90% 80% at 50% 0%, rgba(255, 107, 74, 0.06), transparent 70%);
+  background: radial-gradient(circle at 50% 45%, rgba(255, 107, 74, 0.07), transparent 68%);
 }
 
 .feature-illustration {
-  width: 100%;
-  height: 100%;
+  width: min(72%, 120px);
+  height: auto;
   display: block;
-  object-fit: cover;
+  flex-shrink: 0;
 }
 
 .feature-copy {
