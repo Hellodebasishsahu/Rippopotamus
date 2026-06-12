@@ -119,6 +119,8 @@ def provider_context(cookies_browser: str | None = None) -> ProviderContext:
         cookies_browser=(cookies_browser or "").strip() or None,
         ffmpeg_path=ffmpeg_path(),
         aria2c_path=aria["path"] if aria["ok"] else None,
+        aria2_max_connections=aria2_max_connections(),
+        aria2_download_limit=aria2_download_limit(),
         network_proxy=network_proxy(),
     )
 
@@ -129,6 +131,21 @@ def arg_cookies_browser(args: argparse.Namespace) -> str | None:
 
 def network_proxy() -> str | None:
     return os.environ.get("RIPPO_NETWORK_PROXY", "").strip() or None
+
+
+def aria2_max_connections() -> int:
+    try:
+        value = int(os.environ.get("RIPPO_ARIA2_MAX_CONNECTIONS", "8") or 8)
+    except ValueError:
+        value = 8
+    return max(1, min(16, value))
+
+
+def aria2_download_limit() -> str | None:
+    value = os.environ.get("RIPPO_ARIA2_DOWNLOAD_LIMIT", "").strip().upper()
+    if not value:
+        return None
+    return value if re.match(r"^\d+(?:K|M)?$", value) else None
 
 
 def gallery_dl_status() -> dict[str, Any]:

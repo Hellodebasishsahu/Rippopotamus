@@ -28,6 +28,7 @@ export type DesktopClient = {
   clearSniffCache: RippoBridge["clearSniffCache"];
   setNetworkProxy: RippoBridge["setNetworkProxy"];
   checkNetworkProxy: RippoBridge["checkNetworkProxy"];
+  setTransferSettings: RippoBridge["setTransferSettings"];
   fetch: RippoBridge["fetch"];
   download: (payload: DownloadRequest) => Promise<DownloadResponse>;
   cancelDownload: (jobId: string) => Promise<DownloadCancelResponse>;
@@ -59,6 +60,7 @@ export function createDesktopClient(bridge?: RippoBridge): DesktopClient | null 
     clearSniffCache: bridge.clearSniffCache,
     setNetworkProxy: bridge.setNetworkProxy,
     checkNetworkProxy: bridge.checkNetworkProxy,
+    setTransferSettings: bridge.setTransferSettings,
     fetch: bridge.fetch,
     download: bridge.download,
     cancelDownload: bridge.cancelDownload,

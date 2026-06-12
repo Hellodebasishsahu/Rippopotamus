@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import sys
 from dataclasses import dataclass
@@ -93,6 +94,8 @@ class ProviderContext:
     cookies_browser: str | None = None
     ffmpeg_path: str | None = None
     aria2c_path: str | None = None
+    aria2_max_connections: int = 8
+    aria2_download_limit: str | None = None
     network_proxy: str | None = None
 
 
@@ -142,6 +145,42 @@ def aria2c_base() -> list[str]:
     if executable:
         return [executable]
     raise SystemExit("Missing aria2c. Install aria2c or place aria2c on PATH.")
+
+
+def aria2_max_connections(context: ProviderContext | None = None) -> int:
+    raw = context.aria2_max_connections if context else os.environ.get("RIPPO_ARIA2_MAX_CONNECTIONS", "8")
+    try:
+        value = int(raw or 8)
+    except (TypeError, ValueError):
+        value = 8
+    return max(1, min(16, value))
+
+
+def aria2_download_limit(context: ProviderContext | None = None) -> str | None:
+    raw = (context.aria2_download_limit if context else os.environ.get("RIPPO_ARIA2_DOWNLOAD_LIMIT", "")) or ""
+    value = str(raw).strip().upper()
+    if not value:
+        return None
+    return value if re.match(r"^\d+(?:K|M)?$", value) else None
+
+
+def aria2_transfer_args(context: ProviderContext | None = None) -> list[str]:
+    connections = aria2_max_connections(context)
+    args = [
+        "-x",
+        str(connections),
+        "-s",
+        str(connections),
+        "-k",
+        "1M",
+        "--continue=true",
+        "--max-tries=5",
+        "--retry-wait=3",
+    ]
+    limit = aria2_download_limit(context)
+    if limit:
+        args.append(f"--max-download-limit={limit}")
+    return args
 
 
 def torrent_title(url: str) -> str:
@@ -232,7 +271,7 @@ def download_command(
             "--dir",
             str(output_dir),
             "--follow-torrent=mem",
-            "--continue=true",
+            *aria2_transfer_args(context),
             "--seed-time=0",
             "--dht-file-path",
             str(aria_state_dir / "dht.dat"),
@@ -262,7 +301,7 @@ def download_command(
             "--downloader",
             f"http,https:{context.aria2c_path}",
             "--downloader-args",
-            "aria2c:-x 8 -s 8 -k 1M --continue=true --max-tries=5 --retry-wait=3",
+            f"aria2c:{' '.join(aria2_transfer_args(context))}",
         ]
     if spec["format"]:
         command += ["-f", spec["format"]]

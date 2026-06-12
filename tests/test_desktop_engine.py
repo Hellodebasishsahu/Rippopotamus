@@ -273,13 +273,17 @@ class DesktopEngineTests(unittest.TestCase):
             "https://example.com/video.mp4",
             "mp4-best",
             output_template="/tmp/out.%(ext)s",
-            context=ProviderContext(yt_dlp_base=("yt-dlp",), aria2c_path="/usr/local/bin/aria2c"),
+            context=ProviderContext(yt_dlp_base=("yt-dlp",), aria2c_path="/usr/local/bin/aria2c", aria2_max_connections=12, aria2_download_limit="5M"),
         )
 
         self.assertIn("--downloader", command)
         self.assertEqual(command[command.index("--downloader") + 1], "http,https:/usr/local/bin/aria2c")
         self.assertIn("--downloader-args", command)
-        self.assertIn("--continue=true", command[command.index("--downloader-args") + 1])
+        downloader_args = command[command.index("--downloader-args") + 1]
+        self.assertIn("-x 12", downloader_args)
+        self.assertIn("-s 12", downloader_args)
+        self.assertIn("--continue=true", downloader_args)
+        self.assertIn("--max-download-limit=5M", downloader_args)
 
     def test_gallery_download_command_adds_network_proxy(self) -> None:
         with mock.patch("rippopotamus.providers.gallery_dl_base", return_value=["gallery-dl"]):
@@ -497,6 +501,8 @@ class DesktopEngineTests(unittest.TestCase):
         self.assertIn("--dht-file-path", command)
         self.assertIn("--dht-file-path6", command)
         self.assertIn("--continue=true", command)
+        self.assertIn("-x", command)
+        self.assertIn("-s", command)
         self.assertTrue(any(".aria2/dht.dat" in Path(value).as_posix() for value in command))
         self.assertTrue(any(".aria2/dht6.dat" in Path(value).as_posix() for value in command))
 

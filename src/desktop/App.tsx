@@ -247,6 +247,10 @@ export function App() {
   const [networkProxyStatus, setNetworkProxyStatus] = useState<"idle" | "saving" | "testing">("idle");
   const [networkProxyError, setNetworkProxyError] = useState<string | null>(null);
   const [networkProxyResult, setNetworkProxyResult] = useState<string | null>(null);
+  const [aria2MaxConnectionsDraft, setAria2MaxConnectionsDraft] = useState(8);
+  const [aria2DownloadLimitDraft, setAria2DownloadLimitDraft] = useState("");
+  const [transferStatus, setTransferStatus] = useState<"idle" | "saving">("idle");
+  const [transferError, setTransferError] = useState<string | null>(null);
   const [ytDlpUpdate, setYtDlpUpdate] = useState<YtDlpUpdateInfo | null>(null);
   const [ytDlpStatus, setYtDlpStatus] = useState<"idle" | "checking" | "updating">("idle");
   const [ytDlpError, setYtDlpError] = useState<string | null>(null);
@@ -313,6 +317,8 @@ export function App() {
       setHealth(nextHealth);
       if (nextHealth.outputRoot) setOutputRoot(nextHealth.outputRoot);
       setNetworkProxyDraft(nextHealth.networkProxy || "");
+      setAria2MaxConnectionsDraft(nextHealth.transfer?.aria2MaxConnections || nextHealth.aria2MaxConnections || 8);
+      setAria2DownloadLimitDraft(nextHealth.transfer?.aria2DownloadLimit || nextHealth.aria2DownloadLimit || "");
       setHealthError(null);
       return nextHealth;
     } catch (error) {
@@ -361,6 +367,26 @@ export function App() {
       setNetworkProxyError(error instanceof Error ? error.message : String(error));
     } finally {
       setNetworkProxyStatus("idle");
+    }
+  }
+
+  async function saveTransferSettings() {
+    if (!desktop || typeof desktop.setTransferSettings !== "function" || transferStatus !== "idle") return;
+    setTransferStatus("saving");
+    setTransferError(null);
+    try {
+      const result = await desktop.setTransferSettings({
+        aria2MaxConnections: aria2MaxConnectionsDraft,
+        aria2DownloadLimit: aria2DownloadLimitDraft,
+      });
+      setAria2MaxConnectionsDraft(result.transfer.aria2MaxConnections);
+      setAria2DownloadLimitDraft(result.transfer.aria2DownloadLimit);
+      setHealth(result.health);
+      if (result.health.outputRoot) setOutputRoot(result.health.outputRoot);
+    } catch (error) {
+      setTransferError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setTransferStatus("idle");
     }
   }
 
@@ -894,6 +920,51 @@ export function App() {
                   />
                 </label>
               </div>
+              <div className="settings-subsection-head">
+                <h4 className="settings-subsection-title">aria2 transfer</h4>
+                <p className="settings-hint">Native aria2 controls for parallel chunks, resume, retries, and optional speed caps.</p>
+              </div>
+              <div className="worker-control-list">
+                <label className="worker-field">
+                  <span className="worker-field-head">
+                    <b>Connections per file</b>
+                    <strong>{aria2MaxConnectionsDraft}</strong>
+                  </span>
+                  <input
+                    type="range"
+                    min={1}
+                    max={16}
+                    step={1}
+                    value={aria2MaxConnectionsDraft}
+                    onChange={(event) => setAria2MaxConnectionsDraft(Number(event.target.value))}
+                    aria-label="aria2 connections per file"
+                  />
+                </label>
+                <label className="worker-field">
+                  <span className="worker-field-head">
+                    <b>Speed cap</b>
+                    <strong>{aria2DownloadLimitDraft || "Off"}</strong>
+                  </span>
+                  <input
+                    type="text"
+                    className="settings-text-input"
+                    value={aria2DownloadLimitDraft}
+                    onChange={(event) => setAria2DownloadLimitDraft(event.target.value)}
+                    onKeyDown={(event) => { if (event.key === "Enter") void saveTransferSettings(); }}
+                    placeholder="Off, 500K, 5M"
+                    aria-label="aria2 download speed cap"
+                    disabled={!desktop || transferStatus !== "idle"}
+                  />
+                </label>
+              </div>
+              <div className="settings-inline-control">
+                <button type="button" className="btn btn-primary btn-footer" onClick={saveTransferSettings} disabled={!desktop || transferStatus !== "idle"}>
+                  {transferStatus === "saving" ? <Loader2 className="spin" size={14} strokeWidth={2} aria-hidden /> : null}
+                  Save transfer
+                </button>
+                <span className="settings-hint">Blank speed cap means unlimited.</span>
+              </div>
+              {transferError ? <p className="settings-warning">{consumerErrorMessage(transferError, "Could not save transfer settings.")}</p> : null}
               <div className="settings-subsection-head">
                 <h4 className="settings-subsection-title">Save engines</h4>
                 <p className="settings-hint">Local binaries Rippo calls for metadata, downloads, and transcoding.</p>

@@ -6,6 +6,7 @@ contextBridge.exposeInMainWorld("rippo", {
   clearSniffCache: () => ipcRenderer.invoke("page:clear-probe-cache"),
   setNetworkProxy: (proxy: string) => ipcRenderer.invoke("network:set-proxy", proxy),
   checkNetworkProxy: (proxy: string) => ipcRenderer.invoke("network:check-proxy", proxy),
+  setTransferSettings: (payload: { aria2MaxConnections?: number; aria2DownloadLimit?: string }) => ipcRenderer.invoke("transfer:set-settings", payload),
   fetch: (url: string, provider?: string, cookieSource?: unknown) => ipcRenderer.invoke("engine:fetch", url, provider, cookieSource),
   download: (payload: { url: string; preset: string; outputRoot?: string; itemId?: string; title?: string; cookieSource?: unknown }) =>
     ipcRenderer.invoke("engine:download", payload),

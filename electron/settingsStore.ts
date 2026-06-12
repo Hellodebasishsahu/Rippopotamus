@@ -8,6 +8,8 @@ export type Settings = {
   cookiesBrowser?: string;
   networkProxy?: string;
   outputRoot?: string;
+  aria2MaxConnections?: number;
+  aria2DownloadLimit?: string;
 };
 
 function settingsPath(): string {
@@ -50,4 +52,50 @@ export function writeNetworkProxy(proxy: string): string {
   else delete settings.networkProxy;
   writeSettings(settings);
   return normalized;
+}
+
+export type TransferSettings = {
+  aria2MaxConnections: number;
+  aria2DownloadLimit: string;
+};
+
+export function normalizeAria2MaxConnections(value: unknown): number {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return 8;
+  return Math.max(1, Math.min(16, Math.floor(parsed)));
+}
+
+export function normalizeAria2DownloadLimit(value: unknown): string {
+  const normalized = typeof value === "string" ? value.trim().slice(0, 24) : "";
+  if (!normalized) return "";
+  if (/^\d+(?:K|M)?$/i.test(normalized)) return normalized.toUpperCase();
+  return "";
+}
+
+export function currentTransferSettings(): TransferSettings {
+  const settings = readSettings();
+  return {
+    aria2MaxConnections: normalizeAria2MaxConnections(settings.aria2MaxConnections),
+    aria2DownloadLimit: normalizeAria2DownloadLimit(settings.aria2DownloadLimit),
+  };
+}
+
+export function writeTransferSettings(input: Partial<TransferSettings>): TransferSettings {
+  const next = {
+    aria2MaxConnections: normalizeAria2MaxConnections(input.aria2MaxConnections),
+    aria2DownloadLimit: normalizeAria2DownloadLimit(input.aria2DownloadLimit),
+  };
+  const settings = readSettings();
+  settings.aria2MaxConnections = next.aria2MaxConnections;
+  if (next.aria2DownloadLimit) settings.aria2DownloadLimit = next.aria2DownloadLimit;
+  else delete settings.aria2DownloadLimit;
+  writeSettings(settings);
+  return next;
+}
+
+export function transferEnv(settings: TransferSettings = currentTransferSettings()): NodeJS.ProcessEnv {
+  return {
+    RIPPO_ARIA2_MAX_CONNECTIONS: String(settings.aria2MaxConnections),
+    RIPPO_ARIA2_DOWNLOAD_LIMIT: settings.aria2DownloadLimit,
+  };
 }

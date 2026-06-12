@@ -168,6 +168,7 @@ def command_health(args: argparse.Namespace) -> int:
     gallery = gallery_dl_status()
     torrent = torrent_engine_status()
     aria = torrent["aria2c"]
+    context = provider_context(cookies_browser)
     emit({
         "ok": True,
         "python": sys.executable,
@@ -191,6 +192,8 @@ def command_health(args: argparse.Namespace) -> int:
         "cookies": verify_cookies_browser(base, cookies_browser),
         "networkProxy": proxy,
         "networkProxyEnabled": bool(proxy),
+        "aria2MaxConnections": context.aria2_max_connections,
+        "aria2DownloadLimit": context.aria2_download_limit or "",
         "providers": catalog["providers"],
         "presets": catalog["presets"],
     })

@@ -5,6 +5,9 @@ import { runEngine } from "./engineProcess";
 import {
   currentNetworkProxy,
   currentOutputRoot,
+  currentTransferSettings,
+  transferEnv,
+  writeTransferSettings,
   writeNetworkProxy,
 } from "./settingsStore";
 import {
@@ -32,7 +35,8 @@ export function createEngineIpc() {
     const browsers = detectBrowsers();
     const source = defaultCookieSource(browsers);
     const proxy = currentNetworkProxy();
-    const health = (await runEngine(["health", ...cookieSourceArgs(source)], undefined, proxy ? { RIPPO_NETWORK_PROXY: proxy } : undefined)) as Record<string, unknown>;
+    const transfer = currentTransferSettings();
+    const health = (await runEngine(["health", ...cookieSourceArgs(source)], undefined, { ...(proxy ? { RIPPO_NETWORK_PROXY: proxy } : {}), ...transferEnv(transfer) })) as Record<string, unknown>;
     return {
       ...health,
       cookiesSupported: cookiesSupported(),
@@ -41,6 +45,7 @@ export function createEngineIpc() {
       cookieSource: source,
       networkProxy: proxy,
       networkProxyEnabled: Boolean(proxy),
+      transfer,
       outputRoot: currentOutputRoot(),
       packaged: app.isPackaged,
     };
@@ -67,14 +72,23 @@ export function createEngineIpc() {
       }
     });
 
+    ipcMain.handle("transfer:set-settings", async (_event, payload?: { aria2MaxConnections?: number; aria2DownloadLimit?: string }) => {
+      const transfer = writeTransferSettings(payload || {});
+      return {
+        transfer,
+        health: await engineHealthPayload(),
+      };
+    });
+
     ipcMain.handle("engine:fetch", async (_event, url: string, provider?: string, cookieSourceInput?: unknown) => {
       const cookieSource = cookieSourceFromInput(cookieSourceInput);
       const proxy = currentNetworkProxy();
+      const transfer = currentTransferSettings();
       const args = ["fetch", "--url", url];
       if (provider) args.push("--provider", provider);
       args.push(...cookieSourceArgs(cookieSource));
       try {
-        return await runEngine(args, undefined, proxy ? { RIPPO_NETWORK_PROXY: proxy } : undefined);
+        return await runEngine(args, undefined, { ...(proxy ? { RIPPO_NETWORK_PROXY: proxy } : {}), ...transferEnv(transfer) });
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         return {
@@ -103,6 +117,7 @@ export function createEngineIpc() {
       }) => {
         const cookieSource = cookieSourceFromInput(payload.cookieSource);
         const proxy = currentNetworkProxy();
+        const transfer = currentTransferSettings();
         const jobId = typeof payload.jobId === "string" && payload.jobId.trim() ? payload.jobId.trim() : randomUUID();
         const sheetUrl = typeof payload.sheetUrl === "string" ? payload.sheetUrl.trim() : "";
         const outputRoot = typeof payload.outputRoot === "string" ? payload.outputRoot.trim() : "";
@@ -133,7 +148,7 @@ export function createEngineIpc() {
         try {
           const result = await runEngine(args, (engineEvent) => {
             event.sender.send("engine:sheet-import-event", { jobId, ...(engineEvent as Record<string, unknown>) });
-          }, proxy ? { RIPPO_NETWORK_PROXY: proxy } : undefined);
+          }, { ...(proxy ? { RIPPO_NETWORK_PROXY: proxy } : {}), ...transferEnv(transfer) });
           return { jobId, ok: true, result };
         } catch (error) {
           const message = error instanceof Error ? error.message : String(error || "");
@@ -146,6 +161,7 @@ export function createEngineIpc() {
     ipcMain.handle("engine:download", async (event, payload: { url: string; preset: string; outputRoot?: string; itemId?: string; title?: string; cookieSource?: unknown }) => {
       const cookieSource = cookieSourceFromInput(payload.cookieSource);
       const proxy = currentNetworkProxy();
+      const transfer = currentTransferSettings();
       const jobId = payload.itemId || randomUUID();
       const outputRoot = payload.outputRoot || currentOutputRoot();
       fs.mkdirSync(outputRoot, { recursive: true });
@@ -174,7 +190,7 @@ export function createEngineIpc() {
         });
         const result = await runEngine(args, (engineEvent) => {
           event.sender.send("engine:download-event", { jobId, ...engineEvent as Record<string, unknown> });
-        }, proxy ? { RIPPO_NETWORK_PROXY: proxy } : undefined, (cancel) => {
+        }, { ...(proxy ? { RIPPO_NETWORK_PROXY: proxy } : {}), ...transferEnv(transfer) }, (cancel) => {
           cancelRun = cancel;
           if (cancelRequested) cancel();
           activeDownloads.set(jobId, { cancel });

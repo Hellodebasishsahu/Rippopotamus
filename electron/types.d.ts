@@ -8,6 +8,7 @@ declare global {
       clearSniffCache: () => Promise<{ ok: boolean }>;
       setNetworkProxy: (proxy: string) => Promise<{ networkProxy: string; health: EngineHealth }>;
       checkNetworkProxy: (proxy: string) => Promise<NetworkProxyCheckResponse>;
+      setTransferSettings: (payload: Partial<TransferSettings>) => Promise<{ transfer: TransferSettings; health: EngineHealth }>;
       fetch: (url: string, provider?: ProviderId | "auto", cookieSource?: CookieSource) => Promise<FetchResponse>;
       download: (payload: DownloadRequest) => Promise<DownloadResponse>;
       cancelDownload: (jobId: string) => Promise<DownloadCancelResponse>;
@@ -60,8 +61,16 @@ export type EngineHealth = {
   outputRoot: string;
   networkProxy?: string;
   networkProxyEnabled?: boolean;
+  transfer?: TransferSettings;
+  aria2MaxConnections?: number;
+  aria2DownloadLimit?: string;
   packaged: boolean;
   error?: string;
+};
+
+export type TransferSettings = {
+  aria2MaxConnections: number;
+  aria2DownloadLimit: string;
 };
 
 export type AppUpdateInfo = {
