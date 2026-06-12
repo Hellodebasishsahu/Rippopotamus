@@ -72,6 +72,17 @@ class CliTests(unittest.TestCase):
 
         self.assertEqual(metadata["filesize"], 45_000_000)
 
+    def test_metadata_ignores_missing_requested_format_sizes(self) -> None:
+        metadata = metadata_from_media_raw({
+            "requested_formats": [
+                {"format_id": "video", "filesize": None, "filesize_approx": 40_000_000},
+                {"format_id": "audio", "filesize": None},
+            ],
+        }, "https://x.com/example/status/1", "yt-dlp")
+
+        self.assertIsNone(metadata["filesize"])
+        self.assertEqual(metadata["filesize_approx"], 40_000_000)
+
     def test_gallery_metadata_accepts_event_output(self) -> None:
         self.assertEqual(
             first_json_metadata('[[2, {"category": "wikiart"}], [3, "https://img.example/a.jpg", {"filename": "asset"}]]'),

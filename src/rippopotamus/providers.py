@@ -424,10 +424,19 @@ def format_size_fields(raw: dict[str, Any]) -> tuple[int | None, int | None]:
 
     requested = raw.get("requested_formats")
     if isinstance(requested, list) and requested:
-        exact_parts = [numeric_size(item.get("filesize")) for item in requested if isinstance(item, dict)]
-        approx_parts = [numeric_size(item.get("filesize") or item.get("filesize_approx")) for item in requested if isinstance(item, dict)]
-        if exact_parts and len(exact_parts) == len(requested):
+        exact_parts = [
+            numeric_size(item.get("filesize"))
+            for item in requested
+            if isinstance(item, dict)
+        ]
+        approx_parts = [
+            numeric_size(item.get("filesize") or item.get("filesize_approx"))
+            for item in requested
+            if isinstance(item, dict)
+        ]
+        if exact_parts and all(size is not None for size in exact_parts) and len(exact_parts) == len(requested):
             return sum(exact_parts), approx
+        approx_parts = [size for size in approx_parts if size is not None]
         if approx_parts:
             return None, sum(approx_parts)
 

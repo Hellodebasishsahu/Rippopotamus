@@ -23,6 +23,7 @@
   --mono: "JetBrains Mono", ui-monospace, monospace;
   --gutter: clamp(24px, 5vw, 80px);
   --content: min(1120px, 100% - 2 * var(--gutter));
+  --foot-height: clamp(120px, 16.5vw, 230px);
 }
 
 *,
@@ -38,7 +39,7 @@ html {
 body {
   margin: 0;
   min-width: 320px;
-  background: var(--ink);
+  background: var(--deep);
   color: var(--text);
   font-family: var(--display);
   font-synthesis: none;
@@ -117,10 +118,12 @@ img {
   to { transform: translate(6vw, 4vh) scale(1.1); }
 }
 
-main {
+main.main-content {
   position: relative;
-  z-index: 1;
+  z-index: 2;
   flex: 1;
+  background: var(--ink);
+  margin-bottom: var(--foot-height);
 }
 
 /* Typography & Kicker */
@@ -276,6 +279,173 @@ main {
   opacity: 0.85;
 }
 
+/* Marquee Section */
+.marquee-section {
+  position: relative;
+  width: 100%;
+  height: clamp(120px, 15vw, 180px);
+  overflow: hidden;
+}
+
+.marquee-curve-container {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  width: 100%;
+  height: clamp(40px, 5vw, 70px);
+  pointer-events: none;
+  overflow: visible;
+  z-index: 10; /* Ensure it stays above the features section wave */
+}
+
+.marquee-curve-wrapper {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 44px;
+  height: 44px;
+  pointer-events: none;
+  animation: marquee-motion 36s linear infinite;
+  offset-rotate: 0deg; /* Keep upright, do not tilt */
+  will-change: transform, offset-distance;
+}
+
+.marquee-curve-icon {
+  pointer-events: auto;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--muted);
+  opacity: 0.55;
+  transition: opacity 0.3s ease, color 0.3s ease, transform 0.3s ease, filter 0.3s ease;
+}
+
+.marquee-curve-icon:hover {
+  opacity: 1;
+  transform: scale(1.25) rotate(5deg);
+  z-index: 10;
+}
+
+.marquee-section:hover .marquee-curve-icon {
+  pointer-events: auto;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--muted);
+  opacity: 0.55;
+  transition: opacity 0.3s ease, color 0.3s ease, transform 0.3s ease, filter 0.3s ease;
+}
+
+.marquee-section:hover .marquee-curve-icon:hover {
+  opacity: 1;
+  transform: scale(1.25) rotate(5deg);
+  z-index: 10;
+}
+
+/* Brand hover colors for marquee icons */
+.marquee-curve-icon.youtube:hover {
+  color: #FF0000;
+  filter: drop-shadow(0 4px 12px #FF000066);
+}
+
+.marquee-curve-icon.instagram:hover {
+  color: #e6683c;
+  filter: drop-shadow(0 4px 12px #e6683c66);
+}
+
+.marquee-curve-icon.twitch:hover {
+  color: #9146FF;
+  filter: drop-shadow(0 4px 12px #9146FF66);
+}
+
+.marquee-curve-icon.reddit:hover {
+  color: #FF4500;
+  filter: drop-shadow(0 4px 12px #FF450066);
+}
+
+.marquee-curve-icon.soundcloud:hover {
+  color: #ff5500;
+  filter: drop-shadow(0 4px 12px #ff550066);
+}
+
+.marquee-curve-icon.facebook:hover {
+  color: #1877F2;
+  filter: drop-shadow(0 4px 12px #1877F266);
+}
+
+.marquee-curve-icon.x:hover {
+  color: #FFF;
+  filter: drop-shadow(0 4px 12px #FFF66);
+}
+
+.marquee-curve-icon.spotify:hover {
+  color: #1DB954;
+  filter: drop-shadow(0 4px 12px #1DB95466);
+}
+
+.marquee-curve-icon.tiktok:hover {
+  color: #00f2fe;
+  filter: drop-shadow(0 4px 12px #00f2fe66);
+}
+
+.marquee-curve-icon.vimeo:hover {
+  color: #1ab7ea;
+  filter: drop-shadow(0 4px 12px #1ab7ea66);
+}
+
+.marquee-curve-icon.pinterest:hover {
+  color: #bd081c;
+  filter: drop-shadow(0 4px 12px #bd081c66);
+}
+
+.marquee-curve-icon.linkedin:hover {
+  color: #0077b5;
+  filter: drop-shadow(0 4px 12px #0077b566);
+}
+
+.marquee-curve-icon.snapchat:hover {
+  color: #fffc00;
+  filter: drop-shadow(0 4px 12px #fffc0066);
+}
+
+.marquee-curve-icon.apple:hover {
+  color: #FFF;
+  filter: drop-shadow(0 4px 12px #FFF66);
+}
+
+.marquee-curve-icon.discord:hover {
+  color: #5865F2;
+  filter: drop-shadow(0 4px 12px #5865F266);
+}
+
+.marquee-curve-icon.tumblr:hover {
+  color: #35465c;
+  filter: drop-shadow(0 4px 12px #35465c66);
+}
+
+.marquee-curve-icon.bilibili:hover {
+  color: #00aeec;
+  filter: drop-shadow(0 4px 12px #00aeec66);
+}
+
+.marquee-curve-icon.dailymotion:hover {
+  color: #0066dc;
+  filter: drop-shadow(0 4px 12px #0066dc66);
+}
+
+@keyframes marquee-motion {
+  0% {
+    offset-distance: 0%;
+  }
+  100% {
+    offset-distance: 100%;
+  }
+}
+
 /* Section Dividers */
 .section-divider {
   position: absolute;
@@ -296,7 +466,10 @@ main {
 }
 
 .section-divider--footer {
-  bottom: -1px;
+  top: 100%;
+  bottom: auto;
+  height: clamp(60px, 8vw, 110px);
+  transform: translateY(-1px);
 }
 
 /* Features Grid */
@@ -448,7 +621,7 @@ main {
 .manifesto {
   position: relative;
   background-color: var(--ink);
-  padding: clamp(100px, 12vw, 150px) var(--gutter) clamp(140px, 16vw, 200px);
+  padding: clamp(80px, 10vw, 120px) var(--gutter) clamp(40px, 5vw, 70px);
 }
 
 .manifesto blockquote {
@@ -472,69 +645,43 @@ main {
 
 /* Footer styling */
 .foot {
-  position: relative;
-  background-color: var(--deep);
-  padding: clamp(80px, 10vw, 120px) var(--gutter) clamp(48px, 6vw, 80px);
-  border-top: 1px solid rgba(168, 210, 188, 0.05);
-}
-
-.foot-inner {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  max-width: var(--content);
-  margin: 0 auto;
+  position: fixed;
+  bottom: 0;
+  left: 0;
   width: 100%;
-  flex-wrap: wrap;
-  gap: 24px;
+  height: var(--foot-height);
+  z-index: 1;
+  background-color: var(--deep);
+  overflow: hidden;
+  box-shadow: 0 -24px 48px rgba(0, 0, 0, 0.45);
 }
 
-.foot-logo-group {
+.big-name-wrapper {
+  position: absolute;
+  inset: 0;
   display: flex;
-  align-items: center;
-  gap: 12px;
-  font-family: var(--serif);
-  font-size: 0.9rem;
-  font-style: italic;
-  color: var(--muted);
-  letter-spacing: 0;
+  align-items: flex-end;
+  justify-content: center;
+  overflow: hidden;
+  pointer-events: none;
 }
 
-.foot-logo {
-  width: 28px;
-  height: 28px;
-  border-radius: 7px;
-  opacity: 0.85;
-}
-
-.foot-links {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  font-family: var(--serif);
-  font-size: 0.9rem;
-  font-style: italic;
-  color: var(--dim);
-}
-
-.foot-link {
-  transition: color 0.2s ease;
-}
-
-.foot-link:hover {
-  color: var(--muted);
-}
-
-.separator {
-  color: var(--glass-border);
-}
-
-.license-tag {
-  background: rgba(168, 210, 188, 0.05);
-  border: 1px solid var(--glass-border);
-  padding: 2px 6px;
-  border-radius: 4px;
-  color: var(--dim);
+.big-name {
+  flex: none;
+  margin: 0;
+  padding: 0;
+  font-family: var(--display);
+  font-size: clamp(104px, 21vw, 400px);
+  font-weight: 800;
+  line-height: 0.8;
+  color: var(--text);
+  opacity: 0.04;
+  text-align: center;
+  white-space: nowrap;
+  letter-spacing: -0.06em;
+  -webkit-user-select: none;
+  user-select: none;
+  transform: translateY(20%);
 }
 
 /* BOTANICAL SVG MICRO-ANIMATIONS */
@@ -853,227 +1000,12 @@ main {
     font-size: 3.8rem;
   }
 
-  .foot-inner {
-    flex-direction: column;
-    align-items: center;
-    text-align: center;
-  }
-}
-
-/* Floating Platform Icons */
-.platform-icon {
-  position: absolute;
-  display: grid;
-  place-items: center;
-  width: 44px;
-  height: 44px;
-  border-radius: 12px;
-  background: var(--panel);
-  border: 1px solid var(--glass-border);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.1);
-  color: var(--muted);
-  backdrop-filter: blur(8px);
-  z-index: 2;
-  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
-}
-
-.platform-icon:hover {
-  transform: scale(1.15) rotate(4deg);
-}
-
-/* YouTube Brand Color */
-.float-yt {
-  background: rgba(255, 0, 0, 0.08);
-  border-color: rgba(255, 0, 0, 0.18);
-  color: #ff4d4d;
-}
-.float-yt:hover {
-  background: #FF0000;
-  border-color: #FF0000;
-  color: #FFF;
-  box-shadow: 0 10px 25px rgba(255, 0, 0, 0.4);
-}
-
-/* Instagram Brand Color */
-.float-ig {
-  background: rgba(224, 83, 133, 0.08);
-  border-color: rgba(224, 83, 133, 0.18);
-  color: #ff6ea7;
-}
-.float-ig:hover {
-  background: linear-gradient(45deg, #f09433 0%, #e6683c 25%, #dc2743 50%, #cc2366 75%, #bc1888 100%);
-  border-color: transparent;
-  color: #FFF;
-  box-shadow: 0 10px 25px rgba(220, 39, 67, 0.4);
-}
-
-/* Twitch Brand Color */
-.float-twitch {
-  background: rgba(145, 70, 255, 0.08);
-  border-color: rgba(145, 70, 255, 0.18);
-  color: #a970ff;
-}
-.float-twitch:hover {
-  background: #9146FF;
-  border-color: #9146FF;
-  color: #FFF;
-  box-shadow: 0 10px 25px rgba(145, 70, 255, 0.45);
-}
-
-/* Reddit Brand Color */
-.float-reddit {
-  background: rgba(255, 69, 0, 0.08);
-  border-color: rgba(255, 69, 0, 0.18);
-  color: #ff7a40;
-}
-.float-reddit:hover {
-  background: #FF4500;
-  border-color: #FF4500;
-  color: #FFF;
-  box-shadow: 0 10px 25px rgba(255, 69, 0, 0.4);
-}
-
-/* SoundCloud Brand Color */
-.float-soundcloud {
-  background: rgba(255, 85, 0, 0.08);
-  border-color: rgba(255, 85, 0, 0.18);
-  color: #ff7733;
-}
-.float-soundcloud:hover {
-  background: #ff5500;
-  border-color: #ff5500;
-  color: #FFF;
-  box-shadow: 0 10px 25px rgba(255, 85, 0, 0.4);
-}
-
-/* Facebook Brand Color */
-.float-fb {
-  background: rgba(24, 119, 242, 0.08);
-  border-color: rgba(24, 119, 242, 0.18);
-  color: #4b97ff;
-}
-.float-fb:hover {
-  background: #1877F2;
-  border-color: #1877F2;
-  color: #FFF;
-  box-shadow: 0 10px 25px rgba(24, 119, 242, 0.4);
-}
-
-/* X (Twitter) Brand Color */
-.float-x {
-  background: rgba(255, 255, 255, 0.05);
-  border-color: rgba(255, 255, 255, 0.15);
-  color: #ccc;
-}
-.float-x:hover {
-  background: #000;
-  border-color: #333;
-  color: #FFF;
-  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.6);
-}
-
-.float-yt {
-  top: -5%;
-  left: 80%;
-  animation: float-slow-1 6s ease-in-out infinite alternate;
-}
-
-.float-x {
-  top: -20%;
-  left: 110%;
-  animation: float-slow-5 7s ease-in-out infinite alternate;
-  animation-delay: -3.5s;
-}
-
-.float-fb {
-  top: 15%;
-  left: 115%;
-  animation: float-slow-6 7.5s ease-in-out infinite alternate;
-  animation-delay: -1s;
-}
-
-.float-twitch {
-  top: 42%;
-  left: 95%;
-  animation: float-slow-3 8s ease-in-out infinite alternate;
-  animation-delay: -3s;
-}
-
-.float-soundcloud {
-  top: 68%;
-  left: 125%;
-  animation: float-slow-5 9s ease-in-out infinite alternate;
-  animation-delay: -2s;
-}
-
-.float-ig {
-  top: 90%;
-  left: 100%;
-  animation: float-slow-2 7s ease-in-out infinite alternate;
-  animation-delay: -1.5s;
-}
-
-.float-reddit {
-  top: 110%;
-  left: 75%;
-  animation: float-slow-4 6.5s ease-in-out infinite alternate;
-  animation-delay: -4.5s;
-}
-
-@keyframes float-slow-1 {
-  0% { transform: translateY(0px) rotate(0deg); }
-  100% { transform: translateY(-12px) rotate(3deg); }
-}
-
-@keyframes float-slow-2 {
-  0% { transform: translateY(0px) rotate(0deg); }
-  100% { transform: translateY(-15px) rotate(-4deg); }
-}
-
-@keyframes float-slow-3 {
-  0% { transform: translateY(0px) rotate(0deg); }
-  100% { transform: translateY(-10px) rotate(5deg); }
-}
-
-@keyframes float-slow-4 {
-  0% { transform: translateY(0px) rotate(0deg); }
-  100% { transform: translateY(-14px) rotate(-3deg); }
-}
-
-@keyframes float-slow-5 {
-  0% { transform: translateY(0px) rotate(0deg); }
-  100% { transform: translateY(-13px) rotate(3deg); }
-}
-
-@keyframes float-slow-6 {
-  0% { transform: translateY(0px) rotate(0deg); }
-  100% { transform: translateY(-10px) rotate(4deg); }
-}
-
-@media (max-width: 900px) {
-  .platform-icon {
-    width: 36px;
-    height: 36px;
-    border-radius: 10px;
-  }
-  .platform-icon svg {
-    width: 16px;
-    height: 16px;
-  }
-  .float-yt { top: -5%; left: 75%; right: auto; }
-  .float-x { top: -20%; left: 95%; right: auto; }
-  .float-fb { top: 15%; left: 105%; right: auto; }
-  .float-twitch { top: 42%; left: 90%; right: auto; }
-  .float-soundcloud { top: 68%; left: 110%; right: auto; }
-  .float-ig { top: 90%; left: 95%; right: auto; bottom: auto; }
-  .float-reddit { top: 110%; left: 70%; right: auto; bottom: auto; }
 }
 
 /* Reduced Motion Settings */
 @media (prefers-reduced-motion: reduce) {
   .glow,
-  .logo-glow,
-  .platform-icon {
+  .logo-glow {
     animation: none !important;
   }
 

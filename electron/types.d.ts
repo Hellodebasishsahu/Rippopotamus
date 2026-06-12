@@ -10,6 +10,7 @@ declare global {
       checkNetworkProxy: (proxy: string) => Promise<NetworkProxyCheckResponse>;
       setTransferSettings: (payload: Partial<TransferSettings>) => Promise<{ transfer: TransferSettings; health: EngineHealth }>;
       fetch: (url: string, provider?: ProviderId | "auto", cookieSource?: CookieSource) => Promise<FetchResponse>;
+      fetchFull: (url: string, provider?: ProviderId | "auto", cookieSource?: CookieSource) => Promise<FetchResponse>;
       download: (payload: DownloadRequest) => Promise<DownloadResponse>;
       cancelDownload: (jobId: string) => Promise<DownloadCancelResponse>;
       openFolder: (folder: string) => Promise<void>;
@@ -222,6 +223,7 @@ export type FetchResponse = {
     provider?: ProviderId;
     filesize?: number | null;
     filesize_approx?: number | null;
+    provisional?: boolean;
   };
 } | {
   ok: false;

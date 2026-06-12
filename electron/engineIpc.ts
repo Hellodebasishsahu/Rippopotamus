@@ -99,6 +99,25 @@ export function createEngineIpc() {
       }
     });
 
+    ipcMain.handle("engine:fetch-full", async (_event, url: string, provider?: string, cookieSourceInput?: unknown) => {
+      const cookieSource = cookieSourceFromInput(cookieSourceInput);
+      const proxy = currentNetworkProxy();
+      const transfer = currentTransferSettings();
+      const args = ["fetch", "--full", "--url", url];
+      if (provider) args.push("--provider", provider);
+      args.push(...cookieSourceArgs(cookieSource));
+      try {
+        return await runEngine(args, undefined, { ...(proxy ? { RIPPO_NETWORK_PROXY: proxy } : {}), ...transferEnv(transfer) });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        return {
+          ok: false,
+          url,
+          error: message || "Fetch failed.",
+        };
+      }
+    });
+
     ipcMain.handle(
       "engine:sheet-import",
       async (event, payload: {

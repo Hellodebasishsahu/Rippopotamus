@@ -37,6 +37,7 @@ from rippopotamus.desktop_runtime import (
 )
 from rippopotamus.torrent_downloads import run_torrent_download
 from rippopotamus.sheet_import import run_sheet_import_pipeline
+from rippopotamus.resolvers.generic_preview import preview_metadata
 
 
 def emit(payload: dict[str, Any]) -> None:
@@ -203,6 +204,7 @@ def command_health(args: argparse.Namespace) -> int:
 def command_fetch(args: argparse.Namespace) -> int:
     provider = args.provider
     cookies_browser = arg_cookies_browser(args)
+    full = bool(getattr(args, "full", False))
     if provider == "auto":
         if is_torrent_input(args.url):
             provider = "torrent"
@@ -213,6 +215,10 @@ def command_fetch(args: argparse.Namespace) -> int:
             emit({"ok": True, "url": args.url, "metadata": metadata})
             return 0
         else:
+            metadata = None if full else preview_metadata(args.url, network_proxy())
+            if metadata:
+                emit({"ok": True, "url": args.url, "metadata": metadata})
+                return 0
             try:
                 output = run_text(metadata_command("yt-dlp", args.url, provider_context(cookies_browser)))
                 provider = "yt-dlp"
@@ -228,6 +234,11 @@ def command_fetch(args: argparse.Namespace) -> int:
         emit({"ok": True, "url": args.url, "metadata": metadata})
         return 0
     else:
+        if provider == "yt-dlp" and not full:
+            metadata = preview_metadata(args.url, network_proxy(), provider=provider)
+            if metadata:
+                emit({"ok": True, "url": args.url, "metadata": metadata})
+                return 0
         output = run_text(metadata_command(provider, args.url, provider_context(cookies_browser)))
     metadata = parse_metadata_output(provider, args.url, output)
     emit({"ok": True, "url": args.url, "metadata": metadata})
@@ -486,6 +497,7 @@ def build_parser() -> argparse.ArgumentParser:
     fetch.add_argument("--url", required=True)
     fetch.add_argument("--provider", choices=["auto", *sorted(PROVIDERS)], default="auto")
     fetch.add_argument("--cookies-browser", default="")
+    fetch.add_argument("--full", action="store_true")
     fetch.set_defaults(func=command_fetch)
 
     download = sub.add_parser("download")

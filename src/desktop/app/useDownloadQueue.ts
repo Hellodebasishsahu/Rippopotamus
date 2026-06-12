@@ -68,6 +68,10 @@ function workerCount(value: number | undefined, fallback: number): number {
   return Math.max(1, Math.floor(value || fallback));
 }
 
+function isRefreshableStatus(status: QueueItem["status"]): boolean {
+  return status === QUEUE_STATUS.ready || status === QUEUE_STATUS.failed || status === QUEUE_STATUS.resolving || status === QUEUE_STATUS.queued;
+}
+
 function isSiteRootUrl(url: string): boolean {
   try {
     const parsed = new URL(url);
@@ -119,6 +123,28 @@ export function useDownloadQueue({
 }: UseDownloadQueueOptions) {
   const [items, setItems] = useState<QueueItem[]>([]);
   const [busy, setBusy] = useState(false);
+
+  async function refreshFullMetadata(item: QueueItem, provider: ProviderId | "auto") {
+    if (!desktop || !item.metadata?.provisional) return;
+    try {
+      const result = await desktop.fetchFull(item.url, provider, item.cookieSource);
+      if (!result.ok) {
+        setItems((current) => current.map((candidate) => {
+          if (candidate.localId !== item.localId || !candidate.metadata?.provisional || !isRefreshableStatus(candidate.status)) return candidate;
+          return { ...candidate, status: QUEUE_STATUS.failed, error: fetchErrorMessage(result.error, consumerErrorMessage, item.url) };
+        }));
+        return;
+      }
+      setItems((current) => current.map((candidate) => {
+        if (candidate.localId !== item.localId || !isRefreshableStatus(candidate.status)) return candidate;
+        const resolvedProvider = result.metadata.provider || providerForItem(candidate, presetOptions, providerOptions);
+        const nextPreset = resolvePresetAfterFetch(candidate, resolvedProvider, presetOptions, providerOptions, preferredPresets, candidate.fetchProvider ?? provider);
+        return { ...candidate, preset: nextPreset, metadata: result.metadata };
+      }));
+    } catch {
+      undefined;
+    }
+  }
 
   useEffect(() => {
     if (!desktop) return undefined;
@@ -192,6 +218,7 @@ export function useDownloadQueue({
             const nextPreset = resolvePresetAfterFetch(candidate, resolvedProvider, presetOptions, providerOptions, preferredPresets, candidate.fetchProvider ?? provider);
             return { ...candidate, status: QUEUE_STATUS.ready, preset: nextPreset, metadata: result.metadata, error: undefined };
           }));
+          void refreshFullMetadata({ ...item, metadata: result.metadata }, provider);
         } else {
           setItems((current) => current.map((candidate) => candidate.localId === item.localId ? { ...candidate, status: QUEUE_STATUS.failed, error: fetchErrorMessage(result.error, consumerErrorMessage, item.url) } : candidate));
         }
@@ -270,6 +297,7 @@ export function useDownloadQueue({
           const nextPreset = resolvePresetAfterFetch(candidate, resolvedProvider, presetOptions, providerOptions, preferredPresets, candidate.fetchProvider ?? provider);
           return { ...candidate, status: QUEUE_STATUS.ready, preset: nextPreset, metadata: result.metadata, error: undefined };
         }));
+        void refreshFullMetadata({ ...item, metadata: result.metadata }, provider);
       } else {
         setItems((current) => current.map((candidate) => candidate.localId === item.localId ? { ...candidate, status: QUEUE_STATUS.failed, error: fetchErrorMessage(result.error, consumerErrorMessage, item.url) } : candidate));
       }

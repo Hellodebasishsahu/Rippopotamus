@@ -1,7 +1,7 @@
+import { useState, useRef, useEffect } from "react";
 import { FeatureArt, type Motif } from "./FeatureArt";
-import { ExternalLink } from "lucide-react";
-import { SiYoutube, SiInstagram, SiTwitch, SiReddit, SiSoundcloud, SiFacebook, SiX } from "react-icons/si";
-import { FaApple } from "react-icons/fa";
+import { SiYoutube, SiInstagram, SiTwitch, SiReddit, SiSoundcloud, SiFacebook, SiX, SiPinterest, SiDailymotion, SiBilibili, SiSnapchat, SiSpotify, SiTumblr, SiDiscord, SiTiktok, SiVimeo } from "react-icons/si";
+import { FaApple, FaLinkedin } from "react-icons/fa";
 
 const macDownloadUrl = "/downloads/Rippopotamus-0.1.0-arm64.dmg";
 
@@ -18,24 +18,24 @@ const features: FeatureItem[] = [
   {
     id: "batch",
     index: "01.",
-    title: "Drop in your links",
-    body: "Paste a single video, a massive playlist, or a whole moodboard of URLs. Rippo handles the heavy lifting in the background.",
+    title: "Audio Extraction",
+    body: "Drop a video link, get a high-quality MP3. Perfect for podcasts, stems, or offline listening—no messy converters needed.",
     accent: "coral",
     motif: "lilypads",
   },
   {
     id: "preview",
     index: "02.",
-    title: "See it before you save",
-    body: "Thumbnails, formats, and high-res previews load instantly. Know exactly what you're getting before it eats up your disk space.",
+    title: "Playlists & Channels",
+    body: "Paste a playlist link and grab the whole batch at once. Rippo lines them up and handles the heavy lifting in the background.",
     accent: "mint",
     motif: "bloom",
   },
   {
     id: "presets",
     index: "03.",
-    title: "Editor-ready formats",
-    body: "Need a crisp 4K MP4 for Premiere? A quick 720p proxy? Or just a high-res thumbnail? Choose your preset and let Rippo convert it.",
+    title: "Highest Quality",
+    body: "Pulls the uncompressed 4K/8K video streams and master audio that typical browser extensions simply can't reach.",
     accent: "mint",
     motif: "reeds",
   },
@@ -65,15 +65,72 @@ const features: FeatureItem[] = [
   },
 ];
 
+const marqueeIcons = [
+  { Icon: SiTiktok, name: "tiktok" },
+  { Icon: SiVimeo, name: "vimeo" },
+  { Icon: SiPinterest, name: "pinterest" },
+  { Icon: FaLinkedin, name: "linkedin" },
+  { Icon: SiDailymotion, name: "dailymotion" },
+  { Icon: SiBilibili, name: "bilibili" },
+  { Icon: SiSnapchat, name: "snapchat" },
+  { Icon: SiSpotify, name: "spotify" },
+  { Icon: FaApple, name: "apple" },
+  { Icon: SiTumblr, name: "tumblr" },
+  { Icon: SiDiscord, name: "discord" },
+  { Icon: SiYoutube, name: "youtube" },
+  { Icon: SiInstagram, name: "instagram" },
+  { Icon: SiTwitch, name: "twitch" },
+  { Icon: SiReddit, name: "reddit" },
+  { Icon: SiSoundcloud, name: "soundcloud" },
+  { Icon: SiFacebook, name: "facebook" },
+  { Icon: SiX, name: "x" }
+];
+
+const doubleMarqueeIcons = [...marqueeIcons, ...marqueeIcons];
+
 export function App() {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [dimensions, setDimensions] = useState({ width: 1440, height: 60 });
+
+  useEffect(() => {
+    if (!containerRef.current) return;
+
+    const updateDimensions = () => {
+      if (containerRef.current) {
+        const rect = containerRef.current.getBoundingClientRect();
+        setDimensions({
+          width: rect.width || 1440,
+          height: rect.height || 60,
+        });
+      }
+    };
+
+    updateDimensions();
+
+    const observer = new ResizeObserver(updateDimensions);
+    observer.observe(containerRef.current);
+
+    window.addEventListener("resize", updateDimensions);
+    return () => {
+      observer.disconnect();
+      window.removeEventListener("resize", updateDimensions);
+    };
+  }, []);
+
+  const scaleX = dimensions.width / 1440;
+  const scaleY = dimensions.height / 120;
+  const yOffset = -22; // Lift icons slightly above the curve so they ride on it
+
+  const path = `M ${-80 * scaleX} ${(24 + yOffset) * scaleY} C ${-40 * scaleX} ${(28 + yOffset) * scaleY} ${-20 * scaleX} ${(30 + yOffset) * scaleY} 0 ${(32 + yOffset) * scaleY} C ${320 * scaleX} ${(100 + yOffset) * scaleY} ${720 * scaleX} ${(10 + yOffset) * scaleY} ${1080 * scaleX} ${(80 + yOffset) * scaleY} C ${1260 * scaleX} ${(115 + yOffset) * scaleY} ${1380 * scaleX} ${(60 + yOffset) * scaleY} ${1440 * scaleX} ${(48 + yOffset) * scaleY} C ${1460 * scaleX} ${(46 + yOffset) * scaleY} ${1480 * scaleX} ${(45 + yOffset) * scaleY} ${1520 * scaleX} ${(44 + yOffset) * scaleY}`;
+
   return (
     <div className="page">
       <div className="grain" aria-hidden="true" />
-      <div className="glow glow-a" aria-hidden="true" />
-      <div className="glow glow-b" aria-hidden="true" />
-      <div className="glow glow-c" aria-hidden="true" />
 
-      <main style={{ paddingTop: 0 }}>
+      <main className="main-content" style={{ paddingTop: 0 }}>
+        <div className="glow glow-a" aria-hidden="true" />
+        <div className="glow glow-b" aria-hidden="true" />
+        <div className="glow glow-c" aria-hidden="true" />
         {/* Hero Section */}
         <section className="hero" aria-labelledby="hero-title" style={{ minHeight: "100vh" }}>
           <div className="hero-inner">
@@ -106,14 +163,31 @@ export function App() {
                 height={360}
                 decoding="async"
               />
-              <div className="platform-icon float-yt" title="YouTube"><SiYoutube size={20} /></div>
-              <div className="platform-icon float-x" title="X (Twitter)"><SiX size={18} /></div>
-              <div className="platform-icon float-ig" title="Instagram"><SiInstagram size={20} /></div>
-              <div className="platform-icon float-twitch" title="Twitch"><SiTwitch size={20} /></div>
-              <div className="platform-icon float-reddit" title="Reddit"><SiReddit size={20} /></div>
-              <div className="platform-icon float-soundcloud" title="SoundCloud"><SiSoundcloud size={20} /></div>
-              <div className="platform-icon float-fb" title="Facebook"><SiFacebook size={20} /></div>
             </div>
+          </div>
+        </section>
+
+        {/* Marquee Section */}
+        <section className="marquee-section" aria-hidden="true">
+          <div className="marquee-curve-container" ref={containerRef}>
+            {marqueeIcons.map(({ Icon, name }, idx) => {
+              const delay = -(36 / marqueeIcons.length) * idx;
+              return (
+                <div
+                  key={idx}
+                  className="marquee-curve-wrapper"
+                  style={{
+                    offsetPath: `path('${path}')`,
+                    animationDelay: `${delay}s`,
+                    animationDuration: "36s",
+                  }}
+                >
+                  <div className={`marquee-curve-icon ${name}`}>
+                    <Icon size={24} />
+                  </div>
+                </div>
+              );
+            })}
           </div>
         </section>
 
@@ -121,15 +195,21 @@ export function App() {
         <section className="features" id="features" aria-labelledby="features-title">
           <div className="section-divider section-divider--top" aria-hidden="true">
             <svg viewBox="0 0 1440 120" fill="none" preserveAspectRatio="none" style={{ width: "100%", height: "100%", display: "block" }}>
+              {/* Helper Wave */}
+              <path
+                d="M0,16 C320,84 720,-6 1080,64 C1260,99 1380,44 1440,32 L1440,120 L0,120 Z"
+                fill="var(--deep)"
+                opacity="0.15"
+              />
               {/* Back Wave */}
               <path
-                d="M0,64 C360,120 720,40 1080,100 C1260,130 1380,90 1440,80 L1440,120 L0,120 Z"
+                d="M0,32 C320,100 720,10 1080,80 C1260,115 1380,60 1440,48 L1440,120 L0,120 Z"
                 fill="var(--deep)"
                 opacity="0.3"
               />
               {/* Main Wave */}
               <path
-                d="M0,32 C320,100 720,10 1080,80 C1260,115 1380,60 1440,48 L1440,120 L0,120 Z"
+                d="M0,64 C360,120 720,40 1080,100 C1260,130 1380,90 1440,80 L1440,120 L0,120 Z"
                 fill="var(--deep)"
               />
             </svg>
@@ -181,16 +261,10 @@ export function App() {
           </blockquote>
           <div className="section-divider section-divider--footer" aria-hidden="true">
             <svg viewBox="0 0 1440 120" fill="none" preserveAspectRatio="none" style={{ width: "100%", height: "100%", display: "block" }}>
-              {/* Back Wave */}
+              {/* Main Wave — fills the manifesto color above the curve, transparent below so the footer wordmark shows through */}
               <path
-                d="M0,64 C360,120 720,40 1080,100 C1260,130 1380,90 1440,80 L1440,120 L0,120 Z"
-                fill="var(--deep)"
-                opacity="0.3"
-              />
-              {/* Main Wave */}
-              <path
-                d="M0,32 C320,100 720,10 1080,80 C1260,115 1380,60 1440,48 L1440,120 L0,120 Z"
-                fill="var(--deep)"
+                d="M0,64 C360,120 720,40 1080,100 C1260,130 1380,90 1440,80 L1440,0 L0,0 Z"
+                fill="var(--ink)"
               />
             </svg>
           </div>
@@ -199,20 +273,8 @@ export function App() {
 
       {/* Footer */}
       <footer className="foot">
-        <div className="foot-inner">
-          <div className="foot-logo-group">
-            <img className="foot-logo" src="/brand-logo.png" alt="" width={28} height={28} />
-            <span>© {new Date().getFullYear()} Rippo Project</span>
-          </div>
-          <div className="foot-links">
-            <a href="https://github.com/Hellodebasishsahu/Rippopotamus" target="_blank" rel="noopener noreferrer" className="foot-link">
-              GitHub <ExternalLink size={12} style={{ display: "inline", verticalAlign: "middle" }} />
-            </a>
-            <span className="separator">•</span>
-            <a href="#features" className="foot-link">Features</a>
-            <span className="separator">•</span>
-            <span className="license-tag">MIT License</span>
-          </div>
+        <div className="big-name-wrapper" aria-hidden="true">
+          <div className="big-name">RIPPOPOTAMUS</div>
         </div>
       </footer>
     </div>

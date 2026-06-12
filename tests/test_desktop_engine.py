@@ -107,11 +107,12 @@ class DesktopEngineTests(unittest.TestCase):
 
     def test_fetch_metadata_ignores_formats_and_external_config(self) -> None:
         args = argparse.Namespace(url="https://www.youtube.com/watch?v=TQd2k1pEXp4", provider="yt-dlp")
-        with mock.patch("rippopotamus.desktop_engine.provider_context", return_value=ProviderContext(yt_dlp_base=("yt-dlp",))):
-            with mock.patch("rippopotamus.desktop_engine.run_text", return_value='{"id": "TQd2k1pEXp4", "title": "Video"}') as run_text:
-                stream = io.StringIO()
-                with redirect_stdout(stream):
-                    self.assertEqual(desktop_engine.command_fetch(args), 0)
+        with mock.patch("rippopotamus.desktop_engine.preview_metadata", return_value=None):
+            with mock.patch("rippopotamus.desktop_engine.provider_context", return_value=ProviderContext(yt_dlp_base=("yt-dlp",))):
+                with mock.patch("rippopotamus.desktop_engine.run_text", return_value='{"id": "TQd2k1pEXp4", "title": "Video"}') as run_text:
+                    stream = io.StringIO()
+                    with redirect_stdout(stream):
+                        self.assertEqual(desktop_engine.command_fetch(args), 0)
 
         command = run_text.call_args.args[0]
         self.assertIn("--ignore-config", command)
@@ -119,11 +120,12 @@ class DesktopEngineTests(unittest.TestCase):
 
     def test_fetch_metadata_uses_explicit_cookie_source(self) -> None:
         args = argparse.Namespace(url="https://www.youtube.com/watch?v=TQd2k1pEXp4", provider="yt-dlp", cookies_browser="chrome")
-        with mock.patch("rippopotamus.desktop_engine.provider_context", return_value=ProviderContext(yt_dlp_base=("yt-dlp",), cookies_browser="chrome")):
-            with mock.patch("rippopotamus.desktop_engine.run_text", return_value='{"id": "TQd2k1pEXp4", "title": "Video"}') as run_text:
-                stream = io.StringIO()
-                with redirect_stdout(stream):
-                    self.assertEqual(desktop_engine.command_fetch(args), 0)
+        with mock.patch("rippopotamus.desktop_engine.preview_metadata", return_value=None):
+            with mock.patch("rippopotamus.desktop_engine.provider_context", return_value=ProviderContext(yt_dlp_base=("yt-dlp",), cookies_browser="chrome")):
+                with mock.patch("rippopotamus.desktop_engine.run_text", return_value='{"id": "TQd2k1pEXp4", "title": "Video"}') as run_text:
+                    stream = io.StringIO()
+                    with redirect_stdout(stream):
+                        self.assertEqual(desktop_engine.command_fetch(args), 0)
 
         command = run_text.call_args.args[0]
         self.assertIn("--cookies-from-browser", command)
@@ -132,14 +134,48 @@ class DesktopEngineTests(unittest.TestCase):
 
     def test_fetch_auto_uses_yt_dlp_when_supported(self) -> None:
         args = argparse.Namespace(url="https://www.youtube.com/watch?v=TQd2k1pEXp4", provider="auto")
-        with mock.patch("rippopotamus.desktop_engine.provider_context", return_value=ProviderContext(yt_dlp_base=("yt-dlp",))):
-            with mock.patch("rippopotamus.desktop_engine.run_text", return_value='{"id": "TQd2k1pEXp4", "title": "Video"}') as run_text:
+        with mock.patch("rippopotamus.desktop_engine.preview_metadata", return_value=None):
+            with mock.patch("rippopotamus.desktop_engine.provider_context", return_value=ProviderContext(yt_dlp_base=("yt-dlp",))):
+                with mock.patch("rippopotamus.desktop_engine.run_text", return_value='{"id": "TQd2k1pEXp4", "title": "Video"}') as run_text:
+                    stream = io.StringIO()
+                    with redirect_stdout(stream):
+                        self.assertEqual(desktop_engine.command_fetch(args), 0)
+
+        payload = json.loads(stream.getvalue())
+        self.assertEqual(payload["metadata"]["provider"], "yt-dlp")
+        self.assertIn("--dump-single-json", run_text.call_args.args[0])
+
+    def test_fetch_auto_uses_preview_before_yt_dlp(self) -> None:
+        args = argparse.Namespace(url="https://x.com/example/status/123", provider="auto")
+        metadata = {
+            "id": "123",
+            "title": "Example on X: post",
+            "provider": "yt-dlp",
+            "webpage_url": args.url,
+        }
+        with mock.patch("rippopotamus.desktop_engine.preview_metadata", return_value=metadata) as preview:
+            with mock.patch("rippopotamus.desktop_engine.run_text") as run_text:
                 stream = io.StringIO()
                 with redirect_stdout(stream):
                     self.assertEqual(desktop_engine.command_fetch(args), 0)
 
         payload = json.loads(stream.getvalue())
-        self.assertEqual(payload["metadata"]["provider"], "yt-dlp")
+        self.assertEqual(payload["metadata"], metadata)
+        preview.assert_called_once()
+        run_text.assert_not_called()
+
+    def test_fetch_full_bypasses_preview_metadata(self) -> None:
+        args = argparse.Namespace(url="https://x.com/example/status/123", provider="yt-dlp", cookies_browser="", full=True)
+        with mock.patch("rippopotamus.desktop_engine.preview_metadata") as preview:
+            with mock.patch("rippopotamus.desktop_engine.provider_context", return_value=ProviderContext(yt_dlp_base=("yt-dlp",))):
+                with mock.patch("rippopotamus.desktop_engine.run_text", return_value='{"id": "123", "title": "Full"}') as run_text:
+                    stream = io.StringIO()
+                    with redirect_stdout(stream):
+                        self.assertEqual(desktop_engine.command_fetch(args), 0)
+
+        payload = json.loads(stream.getvalue())
+        self.assertEqual(payload["metadata"]["title"], "Full")
+        preview.assert_not_called()
         self.assertIn("--dump-single-json", run_text.call_args.args[0])
 
     def test_fetch_auto_falls_back_to_gallery_only_for_unsupported_urls(self) -> None:
@@ -150,12 +186,13 @@ class DesktopEngineTests(unittest.TestCase):
                 raise SystemExit("ERROR: Unsupported URL: https://example.com/gallery")
             return '[3, "https://img.example/a.jpg", {"filename": "asset"}]'
 
-        with mock.patch("rippopotamus.desktop_engine.provider_context", return_value=ProviderContext(yt_dlp_base=("yt-dlp",))):
-            with mock.patch("rippopotamus.providers.gallery_dl_base", return_value=["gallery-dl"]):
-                with mock.patch("rippopotamus.desktop_engine.run_text", side_effect=fake_run_text) as run_text:
-                    stream = io.StringIO()
-                    with redirect_stdout(stream):
-                        self.assertEqual(desktop_engine.command_fetch(args), 0)
+        with mock.patch("rippopotamus.desktop_engine.preview_metadata", return_value=None):
+            with mock.patch("rippopotamus.desktop_engine.provider_context", return_value=ProviderContext(yt_dlp_base=("yt-dlp",))):
+                with mock.patch("rippopotamus.providers.gallery_dl_base", return_value=["gallery-dl"]):
+                    with mock.patch("rippopotamus.desktop_engine.run_text", side_effect=fake_run_text) as run_text:
+                        stream = io.StringIO()
+                        with redirect_stdout(stream):
+                            self.assertEqual(desktop_engine.command_fetch(args), 0)
 
         payload = json.loads(stream.getvalue())
         self.assertEqual(payload["metadata"]["provider"], "gallery-dl")
@@ -163,10 +200,11 @@ class DesktopEngineTests(unittest.TestCase):
 
     def test_fetch_auto_does_not_hide_yt_dlp_non_support_errors(self) -> None:
         args = argparse.Namespace(url="https://example.com/private-video", provider="auto")
-        with mock.patch("rippopotamus.desktop_engine.provider_context", return_value=ProviderContext(yt_dlp_base=("yt-dlp",))):
-            with mock.patch("rippopotamus.desktop_engine.run_text", side_effect=SystemExit("ERROR: Video unavailable")):
-                with self.assertRaises(SystemExit):
-                    desktop_engine.command_fetch(args)
+        with mock.patch("rippopotamus.desktop_engine.preview_metadata", return_value=None):
+            with mock.patch("rippopotamus.desktop_engine.provider_context", return_value=ProviderContext(yt_dlp_base=("yt-dlp",))):
+                with mock.patch("rippopotamus.desktop_engine.run_text", side_effect=SystemExit("ERROR: Video unavailable")):
+                    with self.assertRaises(SystemExit):
+                        desktop_engine.command_fetch(args)
 
     def test_cookies_health_ignores_external_config(self) -> None:
         completed = desktop_runtime.subprocess.CompletedProcess(
