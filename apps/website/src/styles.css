@@ -314,9 +314,31 @@ main {
   background: radial-gradient(circle at 50% 45%, rgba(255, 107, 74, 0.07), transparent 68%);
 }
 
-.feature-illustration {
-  width: min(72%, 120px);
-  height: auto;
+.feature-icon-wrap {
+  display: grid;
+  place-items: center;
+  width: clamp(72px, 14vw, 96px);
+  height: clamp(72px, 14vw, 96px);
+  border-radius: clamp(18px, 3vw, 24px);
+  border: 1px solid var(--line);
+  background: rgba(10, 18, 16, 0.6);
+}
+
+.feature-card--coral .feature-icon-wrap {
+  color: var(--coral);
+  border-color: rgba(255, 107, 74, 0.28);
+  box-shadow: 0 0 48px rgba(255, 107, 74, 0.14);
+}
+
+.feature-card--mint .feature-icon-wrap {
+  color: var(--mint);
+  border-color: rgba(93, 255, 177, 0.24);
+  box-shadow: 0 0 48px rgba(93, 255, 177, 0.1);
+}
+
+.feature-icon {
+  width: clamp(36px, 7vw, 48px);
+  height: clamp(36px, 7vw, 48px);
   display: block;
   flex-shrink: 0;
 }

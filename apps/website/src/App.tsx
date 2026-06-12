@@ -1,16 +1,30 @@
 import {
-  featureIllustrations,
-} from "./FeatureIllustrations";
+  Cookie,
+  FolderDown,
+  Layers,
+  Radar,
+  ScanEye,
+  SlidersHorizontal,
+  type LucideIcon,
+} from "lucide-react";
 
 const macDownloadUrl = "/downloads/Rippopotamus-0.1.0-arm64.dmg";
 
-const features = [
+const features: {
+  id: string;
+  title: string;
+  body: string;
+  accent: "coral" | "mint";
+  span: "wide" | "normal";
+  icon: LucideIcon;
+}[] = [
   {
     id: "batch",
     title: "Batch queues",
     body: "Paste one link or fifty — URLs, playlists, magnets. Rippo fetches metadata in parallel, then saves with concurrent workers.",
     accent: "coral",
     span: "wide",
+    icon: Layers,
   },
   {
     id: "preview",
@@ -18,6 +32,7 @@ const features = [
     body: "Thumbnails, titles, duration, and platform show up in the queue so you never commit disk space blind.",
     accent: "mint",
     span: "normal",
+    icon: ScanEye,
   },
   {
     id: "presets",
@@ -25,6 +40,7 @@ const features = [
     body: "Best MP4, MP3, 720p proxy, thumbnails, image galleries, Drive files, torrents — per item or bulk.",
     accent: "mint",
     span: "normal",
+    icon: SlidersHorizontal,
   },
   {
     id: "sniff",
@@ -32,6 +48,7 @@ const features = [
     body: "One ugly link? Rippo crawls the page with bundled Chromium, scores playable media, and queues up to 40 candidates.",
     accent: "coral",
     span: "wide",
+    icon: Radar,
   },
   {
     id: "local",
@@ -39,6 +56,7 @@ const features = [
     body: "Files land in Source/, Audio/, Images/ under your chosen folder — sane filenames, duplicate detection, open in Finder.",
     accent: "mint",
     span: "normal",
+    icon: FolderDown,
   },
   {
     id: "access",
@@ -46,8 +64,9 @@ const features = [
     body: "Export browser cookies for yt-dlp, test HTTP/SOCKS proxies, or flip Private mode for sensitive grabs.",
     accent: "coral",
     span: "normal",
+    icon: Cookie,
   },
-] as const;
+];
 
 export function App() {
   return (
@@ -103,14 +122,16 @@ export function App() {
 
           <div className="feature-grid">
             {features.map((f) => {
-              const Illustration = featureIllustrations[f.id];
+              const Icon = f.icon;
               return (
                 <article
                   key={f.id}
                   className={`feature-card feature-card--${f.accent}${f.span === "wide" ? " feature-card--wide" : ""}`}
                 >
                   <div className="feature-art" aria-hidden="true">
-                    <Illustration className="feature-illustration" />
+                    <div className="feature-icon-wrap">
+                      <Icon className="feature-icon" strokeWidth={1.75} absoluteStrokeWidth />
+                    </div>
                   </div>
                   <div className="feature-copy">
                     <h3 className="feature-title">{f.title}</h3>
