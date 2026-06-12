@@ -1,7 +1,7 @@
 :root {
   color-scheme: dark;
   --ink: #080f0d;
-  --deep: #0e1714;
+  --deep: #11201b;
   --panel: rgba(16, 28, 24, 0.65);
   --line: rgba(168, 210, 188, 0.12);
   --line-light: rgba(168, 210, 188, 0.22);
@@ -144,7 +144,7 @@ main {
   min-height: 100vh;
   display: flex;
   align-items: center;
-  padding: clamp(100px, 15vw, 160px) var(--gutter) clamp(64px, 10vw, 100px);
+  padding: clamp(100px, 15vw, 160px) var(--gutter) clamp(120px, 14vw, 180px);
 }
 
 .hero-inner {
@@ -224,10 +224,10 @@ main {
 
 .btn-main {
   display: inline-flex;
-  flex-direction: column;
-  gap: 6px;
-  min-width: 280px;
-  padding: 20px 32px;
+  align-items: center;
+  justify-content: center;
+  min-width: 250px;
+  padding: 16px 28px;
   border-radius: 16px;
   background: linear-gradient(135deg, var(--coral) 0%, var(--coral-dim) 50%, #e05335 100%);
   background-size: 200% auto;
@@ -242,21 +242,21 @@ main {
 }
 
 .btn-main:hover {
-  background-position: right center;
-  transform: translateY(-4px) scale(1.02);
+  transform: none;
   box-shadow:
-    0 1px 0 rgba(255, 255, 255, 0.4) inset,
-    0 24px 50px rgba(255, 107, 74, 0.45),
-    0 8px 20px rgba(0, 0, 0, 0.4);
-  border-color: rgba(255, 255, 255, 0.45);
+    0 1px 0 rgba(255, 255, 255, 0.45) inset,
+    0 16px 36px var(--coral-glow),
+    0 6px 16px rgba(0, 0, 0, 0.35);
+  border-color: rgba(255, 255, 255, 0.8);
+  filter: brightness(1.1);
 }
 
 .btn-main:active {
-  transform: translateY(-2px) scale(0.99);
+  transform: scale(0.98);
   box-shadow:
     0 1px 0 rgba(255, 255, 255, 0.2) inset,
-    0 8px 20px rgba(255, 107, 74, 0.3),
-    0 2px 6px rgba(0, 0, 0, 0.5);
+    0 8px 20px var(--coral-glow),
+    0 2px 6px rgba(0, 0, 0, 0.4);
 }
 
 .btn-main span.btn-main-title {
@@ -276,11 +276,35 @@ main {
   opacity: 0.85;
 }
 
+/* Section Dividers */
+.section-divider {
+  position: absolute;
+  left: 0;
+  width: 100%;
+  height: clamp(40px, 5vw, 70px);
+  pointer-events: none;
+  z-index: 2;
+}
+
+.section-divider--top {
+  top: 1px;
+  transform: translateY(-100%);
+}
+
+.section-divider--bottom {
+  bottom: -1px;
+}
+
+.section-divider--footer {
+  bottom: -1px;
+}
+
 /* Features Grid */
 .features {
   position: relative;
-  padding: clamp(120px, 15vw, 200px) var(--gutter);
-  background: var(--ink); /* Flat, clean dark background */
+  padding: clamp(80px, 10vw, 120px) var(--gutter) clamp(100px, 12vw, 140px);
+  background: var(--deep);
+  border-bottom: 1px solid rgba(168, 210, 188, 0.03);
 }
 
 .features-botanical {
@@ -422,7 +446,9 @@ main {
 
 /* Manifesto Section */
 .manifesto {
-  padding: clamp(80px, 12vw, 140px) var(--gutter);
+  position: relative;
+  background-color: var(--ink);
+  padding: clamp(100px, 12vw, 150px) var(--gutter) clamp(140px, 16vw, 200px);
 }
 
 .manifesto blockquote {
@@ -446,7 +472,10 @@ main {
 
 /* Footer styling */
 .foot {
-  padding: 48px var(--gutter) 64px;
+  position: relative;
+  background-color: var(--deep);
+  padding: clamp(80px, 10vw, 120px) var(--gutter) clamp(48px, 6vw, 80px);
+  border-top: 1px solid rgba(168, 210, 188, 0.05);
 }
 
 .foot-inner {
@@ -831,10 +860,220 @@ main {
   }
 }
 
+/* Floating Platform Icons */
+.platform-icon {
+  position: absolute;
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  background: var(--panel);
+  border: 1px solid var(--glass-border);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.1);
+  color: var(--muted);
+  backdrop-filter: blur(8px);
+  z-index: 2;
+  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.platform-icon:hover {
+  transform: scale(1.15) rotate(4deg);
+}
+
+/* YouTube Brand Color */
+.float-yt {
+  background: rgba(255, 0, 0, 0.08);
+  border-color: rgba(255, 0, 0, 0.18);
+  color: #ff4d4d;
+}
+.float-yt:hover {
+  background: #FF0000;
+  border-color: #FF0000;
+  color: #FFF;
+  box-shadow: 0 10px 25px rgba(255, 0, 0, 0.4);
+}
+
+/* Instagram Brand Color */
+.float-ig {
+  background: rgba(224, 83, 133, 0.08);
+  border-color: rgba(224, 83, 133, 0.18);
+  color: #ff6ea7;
+}
+.float-ig:hover {
+  background: linear-gradient(45deg, #f09433 0%, #e6683c 25%, #dc2743 50%, #cc2366 75%, #bc1888 100%);
+  border-color: transparent;
+  color: #FFF;
+  box-shadow: 0 10px 25px rgba(220, 39, 67, 0.4);
+}
+
+/* Twitch Brand Color */
+.float-twitch {
+  background: rgba(145, 70, 255, 0.08);
+  border-color: rgba(145, 70, 255, 0.18);
+  color: #a970ff;
+}
+.float-twitch:hover {
+  background: #9146FF;
+  border-color: #9146FF;
+  color: #FFF;
+  box-shadow: 0 10px 25px rgba(145, 70, 255, 0.45);
+}
+
+/* Reddit Brand Color */
+.float-reddit {
+  background: rgba(255, 69, 0, 0.08);
+  border-color: rgba(255, 69, 0, 0.18);
+  color: #ff7a40;
+}
+.float-reddit:hover {
+  background: #FF4500;
+  border-color: #FF4500;
+  color: #FFF;
+  box-shadow: 0 10px 25px rgba(255, 69, 0, 0.4);
+}
+
+/* SoundCloud Brand Color */
+.float-soundcloud {
+  background: rgba(255, 85, 0, 0.08);
+  border-color: rgba(255, 85, 0, 0.18);
+  color: #ff7733;
+}
+.float-soundcloud:hover {
+  background: #ff5500;
+  border-color: #ff5500;
+  color: #FFF;
+  box-shadow: 0 10px 25px rgba(255, 85, 0, 0.4);
+}
+
+/* Facebook Brand Color */
+.float-fb {
+  background: rgba(24, 119, 242, 0.08);
+  border-color: rgba(24, 119, 242, 0.18);
+  color: #4b97ff;
+}
+.float-fb:hover {
+  background: #1877F2;
+  border-color: #1877F2;
+  color: #FFF;
+  box-shadow: 0 10px 25px rgba(24, 119, 242, 0.4);
+}
+
+/* X (Twitter) Brand Color */
+.float-x {
+  background: rgba(255, 255, 255, 0.05);
+  border-color: rgba(255, 255, 255, 0.15);
+  color: #ccc;
+}
+.float-x:hover {
+  background: #000;
+  border-color: #333;
+  color: #FFF;
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.6);
+}
+
+.float-yt {
+  top: -5%;
+  left: 80%;
+  animation: float-slow-1 6s ease-in-out infinite alternate;
+}
+
+.float-x {
+  top: -20%;
+  left: 110%;
+  animation: float-slow-5 7s ease-in-out infinite alternate;
+  animation-delay: -3.5s;
+}
+
+.float-fb {
+  top: 15%;
+  left: 115%;
+  animation: float-slow-6 7.5s ease-in-out infinite alternate;
+  animation-delay: -1s;
+}
+
+.float-twitch {
+  top: 42%;
+  left: 95%;
+  animation: float-slow-3 8s ease-in-out infinite alternate;
+  animation-delay: -3s;
+}
+
+.float-soundcloud {
+  top: 68%;
+  left: 125%;
+  animation: float-slow-5 9s ease-in-out infinite alternate;
+  animation-delay: -2s;
+}
+
+.float-ig {
+  top: 90%;
+  left: 100%;
+  animation: float-slow-2 7s ease-in-out infinite alternate;
+  animation-delay: -1.5s;
+}
+
+.float-reddit {
+  top: 110%;
+  left: 75%;
+  animation: float-slow-4 6.5s ease-in-out infinite alternate;
+  animation-delay: -4.5s;
+}
+
+@keyframes float-slow-1 {
+  0% { transform: translateY(0px) rotate(0deg); }
+  100% { transform: translateY(-12px) rotate(3deg); }
+}
+
+@keyframes float-slow-2 {
+  0% { transform: translateY(0px) rotate(0deg); }
+  100% { transform: translateY(-15px) rotate(-4deg); }
+}
+
+@keyframes float-slow-3 {
+  0% { transform: translateY(0px) rotate(0deg); }
+  100% { transform: translateY(-10px) rotate(5deg); }
+}
+
+@keyframes float-slow-4 {
+  0% { transform: translateY(0px) rotate(0deg); }
+  100% { transform: translateY(-14px) rotate(-3deg); }
+}
+
+@keyframes float-slow-5 {
+  0% { transform: translateY(0px) rotate(0deg); }
+  100% { transform: translateY(-13px) rotate(3deg); }
+}
+
+@keyframes float-slow-6 {
+  0% { transform: translateY(0px) rotate(0deg); }
+  100% { transform: translateY(-10px) rotate(4deg); }
+}
+
+@media (max-width: 900px) {
+  .platform-icon {
+    width: 36px;
+    height: 36px;
+    border-radius: 10px;
+  }
+  .platform-icon svg {
+    width: 16px;
+    height: 16px;
+  }
+  .float-yt { top: -5%; left: 75%; right: auto; }
+  .float-x { top: -20%; left: 95%; right: auto; }
+  .float-fb { top: 15%; left: 105%; right: auto; }
+  .float-twitch { top: 42%; left: 90%; right: auto; }
+  .float-soundcloud { top: 68%; left: 110%; right: auto; }
+  .float-ig { top: 90%; left: 95%; right: auto; bottom: auto; }
+  .float-reddit { top: 110%; left: 70%; right: auto; bottom: auto; }
+}
+
 /* Reduced Motion Settings */
 @media (prefers-reduced-motion: reduce) {
   .glow,
-  .logo-glow {
+  .logo-glow,
+  .platform-icon {
     animation: none !important;
   }
 

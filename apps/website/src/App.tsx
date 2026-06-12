@@ -1,5 +1,7 @@
 import { FeatureArt, type Motif } from "./FeatureArt";
-import { Laptop, ExternalLink } from "lucide-react";
+import { ExternalLink } from "lucide-react";
+import { SiYoutube, SiInstagram, SiTwitch, SiReddit, SiSoundcloud, SiFacebook, SiX } from "react-icons/si";
+import { FaApple } from "react-icons/fa";
 
 const macDownloadUrl = "/downloads/Rippopotamus-0.1.0-arm64.dmg";
 
@@ -16,48 +18,48 @@ const features: FeatureItem[] = [
   {
     id: "batch",
     index: "01.",
-    title: "Batch queues",
-    body: "Paste one link or fifty — URLs, playlists, magnets. Rippo fetches metadata in parallel, then saves with concurrent workers.",
+    title: "Drop in your links",
+    body: "Paste a single video, a massive playlist, or a whole moodboard of URLs. Rippo handles the heavy lifting in the background.",
     accent: "coral",
     motif: "lilypads",
   },
   {
     id: "preview",
     index: "02.",
-    title: "Preview before you save",
-    body: "Thumbnails, titles, duration, and platform show up in the queue so you never commit disk space blind.",
+    title: "See it before you save",
+    body: "Thumbnails, formats, and high-res previews load instantly. Know exactly what you're getting before it eats up your disk space.",
     accent: "mint",
     motif: "bloom",
   },
   {
     id: "presets",
     index: "03.",
-    title: "Editor presets",
-    body: "Best MP4, MP3, 720p proxy, thumbnails, image galleries, Drive files, torrents — per item or bulk.",
+    title: "Editor-ready formats",
+    body: "Need a crisp 4K MP4 for Premiere? A quick 720p proxy? Or just a high-res thumbnail? Choose your preset and let Rippo convert it.",
     accent: "mint",
     motif: "reeds",
   },
   {
     id: "sniff",
     index: "04.",
-    title: "Sniff messy pages",
-    body: "One ugly link? Rippo crawls the page with bundled Chromium, scores playable media, and queues up to 40 candidates.",
+    title: "Extract from anywhere",
+    body: "Found a video buried on a messy website? Rippo digs through the page and pulls out the highest quality media available.",
     accent: "coral",
     motif: "ripples",
   },
   {
     id: "local",
     index: "05.",
-    title: "Organized local saves",
-    body: "Files land in Source/, Audio/, Images/ under your chosen folder — sane filenames, duplicate detection, open in Finder.",
+    title: "Pristine project folders",
+    body: "Skip the messy Downloads folder. Rippo automatically sorts your assets into clean Audio, Video, and Image directories with sane filenames.",
     accent: "mint",
     motif: "stream",
   },
   {
     id: "access",
     index: "06.",
-    title: "Hard sources, handled",
-    body: "Export browser cookies for yt-dlp, test HTTP/SOCKS proxies, or flip Private mode for sensitive grabs.",
+    title: "Private links, handled",
+    body: "Need to pull an asset from a client's private board or a gated platform? Authenticate once and let Rippo grab what you need.",
     accent: "coral",
     motif: "lotus",
   },
@@ -76,22 +78,20 @@ export function App() {
         <section className="hero" aria-labelledby="hero-title" style={{ minHeight: "100vh" }}>
           <div className="hero-inner">
             <div className="hero-copy">
-              <p className="kicker">Open source downloader · macOS</p>
               <h1 id="hero-title">
-                <span className="line">Paste.</span>
-                <span className="line">Pick.</span>
-                <span className="line accent">Save.</span>
+                <span className="line">Drop links.</span>
+                <span className="line">Get assets.</span>
+                <span className="line accent">Create.</span>
               </h1>
               <p className="lede">
-                The media downloader you were about to subscribe to — except it&apos;s free,
-                runs on your machine, and never phones home. Built for designers, editors, and creators.
+                The clean, lightning-fast media downloader built for editors and designers. No ads, no subscriptions, just pristine files straight to your hard drive.
               </p>
               <div className="hero-cta" id="download">
                 <a className="btn-main" href={macDownloadUrl} download>
                   <span className="btn-main-title">
-                    Get Rippo for Mac <Laptop size={16} style={{ display: "inline", verticalAlign: "middle", marginLeft: "4px" }} />
+                    Download for Mac
+                    <FaApple size={18} style={{ display: "inline-block", verticalAlign: "middle", marginLeft: "8px", position: "relative", top: "-2px" }} />
                   </span>
-                  <small>Apple Silicon · DMG · $0/mo</small>
                 </a>
               </div>
             </div>
@@ -106,24 +106,37 @@ export function App() {
                 height={360}
                 decoding="async"
               />
+              <div className="platform-icon float-yt" title="YouTube"><SiYoutube size={20} /></div>
+              <div className="platform-icon float-x" title="X (Twitter)"><SiX size={18} /></div>
+              <div className="platform-icon float-ig" title="Instagram"><SiInstagram size={20} /></div>
+              <div className="platform-icon float-twitch" title="Twitch"><SiTwitch size={20} /></div>
+              <div className="platform-icon float-reddit" title="Reddit"><SiReddit size={20} /></div>
+              <div className="platform-icon float-soundcloud" title="SoundCloud"><SiSoundcloud size={20} /></div>
+              <div className="platform-icon float-fb" title="Facebook"><SiFacebook size={20} /></div>
             </div>
           </div>
         </section>
 
         {/* Features Section */}
         <section className="features" id="features" aria-labelledby="features-title">
+          <div className="section-divider section-divider--top" aria-hidden="true">
+            <svg viewBox="0 0 1440 120" fill="none" preserveAspectRatio="none" style={{ width: "100%", height: "100%", display: "block" }}>
+              {/* Back Wave */}
+              <path
+                d="M0,64 C360,120 720,40 1080,100 C1260,130 1380,90 1440,80 L1440,120 L0,120 Z"
+                fill="var(--deep)"
+                opacity="0.3"
+              />
+              {/* Main Wave */}
+              <path
+                d="M0,32 C320,100 720,10 1080,80 C1260,115 1380,60 1440,48 L1440,120 L0,120 Z"
+                fill="var(--deep)"
+              />
+            </svg>
+          </div>
           <div className="features-botanical" aria-hidden="true" />
           <div className="features-inner">
-            <div className="features-head">
-              <p className="kicker">Features</p>
-              <h2 id="features-title">
-                Built to download.
-                <span className="features-title-line">Nothing else.</span>
-              </h2>
-              <p className="features-lede">
-                Batch queues, real previews, editor presets, page sniffing, local folders — the stuff paid apps charge monthly for.
-              </p>
-            </div>
+            <div className="editorial-divider" aria-hidden="true" />
 
             <div className="feature-grid">
               {features.map((f) => (
@@ -143,14 +156,44 @@ export function App() {
               ))}
             </div>
           </div>
+          <div className="section-divider section-divider--bottom" aria-hidden="true">
+            <svg viewBox="0 0 1440 120" fill="none" preserveAspectRatio="none" style={{ width: "100%", height: "100%", display: "block" }}>
+              {/* Back Wave */}
+              <path
+                d="M0,48 C320,0 720,70 1080,10 C1260,0 1380,20 1440,32 L1440,120 L0,120 Z"
+                fill="var(--ink)"
+                opacity="0.25"
+              />
+              {/* Main Wave */}
+              <path
+                d="M0,80 C360,10 720,90 1080,20 C1260,0 1380,40 1440,48 L1440,120 L0,120 Z"
+                fill="var(--ink)"
+              />
+            </svg>
+          </div>
         </section>
 
         {/* Manifesto Section */}
         <section className="manifesto" aria-labelledby="manifesto-title">
           <blockquote id="manifesto-title">
-            Paid downloaders rent you the same engines you can run yourself.
-            <em> Rippo just gets out of the way.</em>
+            Stop fighting with sketchy ad-filled sites and bloated subscription apps.
+            <em> Get your media. Get back to creating.</em>
           </blockquote>
+          <div className="section-divider section-divider--footer" aria-hidden="true">
+            <svg viewBox="0 0 1440 120" fill="none" preserveAspectRatio="none" style={{ width: "100%", height: "100%", display: "block" }}>
+              {/* Back Wave */}
+              <path
+                d="M0,64 C360,120 720,40 1080,100 C1260,130 1380,90 1440,80 L1440,120 L0,120 Z"
+                fill="var(--deep)"
+                opacity="0.3"
+              />
+              {/* Main Wave */}
+              <path
+                d="M0,32 C320,100 720,10 1080,80 C1260,115 1380,60 1440,48 L1440,120 L0,120 Z"
+                fill="var(--deep)"
+              />
+            </svg>
+          </div>
         </section>
       </main>
 
