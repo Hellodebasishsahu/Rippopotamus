@@ -238,7 +238,7 @@ main {
 }
 
 .features-head,
-.feature-grid {
+.workflow-wrap {
   width: 100%;
   max-width: var(--content);
   margin: 0 auto;
@@ -253,44 +253,161 @@ main {
   letter-spacing: -0.04em;
 }
 
-.feature-grid {
+.features-lede {
+  margin: 20px 0 0;
+  max-width: 42ch;
+  font-family: var(--serif);
+  font-size: clamp(1rem, 1.6vw, 1.15rem);
+  line-height: 1.55;
+  color: var(--muted);
+}
+
+.workflow-wrap {
+  margin-top: clamp(48px, 7vw, 72px);
+  position: relative;
+}
+
+.workflow {
+  list-style: none;
+  margin: 0;
+  padding: 0;
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: clamp(20px, 3vw, 32px);
-  margin-top: clamp(40px, 6vw, 64px);
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: clamp(16px, 2.5vw, 28px);
+  position: relative;
 }
 
-.feature {
-  padding: clamp(24px, 3vw, 32px);
+.workflow::before {
+  content: "";
+  position: absolute;
+  top: 27px;
+  left: calc(12.5% + 6px);
+  right: calc(12.5% + 6px);
+  height: 2px;
+  background: linear-gradient(
+    90deg,
+    var(--mint) 0%,
+    rgba(93, 255, 177, 0.35) 45%,
+    var(--coral) 100%
+  );
+  border-radius: 2px;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.workflow-step {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding: 0 clamp(4px, 1vw, 12px);
+}
+
+.workflow-node {
+  position: relative;
+  width: 54px;
+  height: 54px;
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+}
+
+.workflow-node-ring {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: var(--deep);
   border: 1px solid var(--line);
-  border-radius: 16px;
-  background: rgba(16, 26, 22, 0.6);
+  box-shadow:
+    0 0 0 4px rgba(10, 18, 16, 0.9),
+    0 8px 24px rgba(0, 0, 0, 0.35);
+  transition: border-color 0.25s ease, box-shadow 0.25s ease;
 }
 
-.feature-n {
+.workflow-icon {
+  position: relative;
+  z-index: 1;
+  width: 22px;
+  height: 22px;
+  color: var(--mint);
+  transition: color 0.25s ease, transform 0.25s ease;
+}
+
+.workflow-icon svg {
+  width: 100%;
+  height: 100%;
   display: block;
-  margin-bottom: 20px;
+}
+
+.workflow-copy {
+  margin-top: clamp(20px, 3vw, 28px);
+}
+
+.workflow-n {
+  display: block;
+  margin-bottom: 10px;
   font-family: var(--mono);
-  font-size: 0.7rem;
+  font-size: 0.68rem;
   font-weight: 600;
-  letter-spacing: 0.1em;
+  letter-spacing: 0.12em;
   color: var(--coral);
 }
 
-.feature h3 {
-  margin: 0 0 12px;
-  font-size: 1.35rem;
+.workflow-step h3 {
+  margin: 0 0 10px;
+  font-size: clamp(1.1rem, 1.8vw, 1.3rem);
   font-weight: 700;
   letter-spacing: -0.03em;
-  line-height: 1.1;
+  line-height: 1.15;
 }
 
-.feature p {
+.workflow-step p {
   margin: 0;
   font-family: var(--serif);
-  font-size: 1rem;
+  font-size: 0.95rem;
   line-height: 1.6;
   color: var(--muted);
+}
+
+.workflow-step--paste .workflow-icon {
+  color: var(--mint);
+}
+
+.workflow-step--pick .workflow-icon {
+  color: var(--text);
+}
+
+.workflow-step--save .workflow-icon {
+  color: var(--coral);
+}
+
+.workflow-step--free .workflow-icon {
+  color: var(--mint);
+}
+
+.workflow-step--free .workflow-node-ring {
+  border-color: rgba(93, 255, 177, 0.45);
+  box-shadow:
+    0 0 0 4px rgba(10, 18, 16, 0.9),
+    0 0 28px rgba(93, 255, 177, 0.18),
+    0 8px 24px rgba(0, 0, 0, 0.35);
+}
+
+.workflow-step:hover .workflow-node-ring,
+.workflow-step:focus-within .workflow-node-ring {
+  border-color: rgba(255, 107, 74, 0.5);
+}
+
+.workflow-step:hover .workflow-icon,
+.workflow-step:focus-within .workflow-icon {
+  transform: scale(1.08);
+}
+
+.workflow-step--free:hover .workflow-node-ring,
+.workflow-step--free:focus-within .workflow-node-ring {
+  border-color: rgba(93, 255, 177, 0.65);
 }
 
 .manifesto {
@@ -348,11 +465,50 @@ main {
     width: min(78vw, 260px);
     margin-bottom: 8px;
   }
+
+  .workflow {
+    grid-template-columns: 1fr;
+    gap: 0;
+    padding-left: 8px;
+  }
+
+  .workflow::before {
+    top: 28px;
+    bottom: 28px;
+    left: 26px;
+    right: auto;
+    width: 2px;
+    height: auto;
+    background: linear-gradient(
+      180deg,
+      var(--mint) 0%,
+      rgba(93, 255, 177, 0.3) 55%,
+      var(--coral) 100%
+    );
+  }
+
+  .workflow-step {
+    flex-direction: row;
+    align-items: flex-start;
+    text-align: left;
+    gap: clamp(16px, 4vw, 24px);
+    padding: 0 0 clamp(32px, 6vw, 44px) 0;
+  }
+
+  .workflow-step--last {
+    padding-bottom: 0;
+  }
+
+  .workflow-copy {
+    margin-top: 4px;
+    flex: 1;
+    min-width: 0;
+  }
 }
 
 @media (max-width: 720px) {
-  .feature-grid {
-    grid-template-columns: 1fr;
+  .features-lede {
+    max-width: none;
   }
 
   .hero h1 {
@@ -368,5 +524,10 @@ main {
   .glow,
   .logo-glow {
     animation: none;
+  }
+
+  .workflow-icon,
+  .workflow-node-ring {
+    transition: none;
   }
 }
