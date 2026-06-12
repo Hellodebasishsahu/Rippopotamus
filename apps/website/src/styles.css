@@ -96,45 +96,6 @@ img {
   to { transform: translate(4vw, 3vh) scale(1.08); }
 }
 
-.top {
-  position: relative;
-  z-index: 10;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 24px;
-  padding: 28px var(--gutter);
-}
-
-.mark {
-  display: inline-flex;
-  align-items: center;
-  gap: 14px;
-  font-size: 1.05rem;
-  font-weight: 700;
-  letter-spacing: -0.03em;
-}
-
-.mark img {
-  border-radius: 11px;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
-}
-
-.top-nav {
-  display: inline-flex;
-  gap: 28px;
-  font-family: var(--mono);
-  font-size: 0.72rem;
-  font-weight: 500;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--dim);
-}
-
-.top-nav a:hover {
-  color: var(--mint);
-}
-
 main {
   position: relative;
   z-index: 1;
@@ -152,7 +113,7 @@ main {
 }
 
 .hero {
-  min-height: calc(100vh - 92px);
+  min-height: 100vh;
   display: flex;
   align-items: center;
   padding: clamp(48px, 8vw, 100px) var(--gutter);
@@ -162,6 +123,41 @@ main {
   width: 100%;
   max-width: var(--content);
   margin: 0 auto;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(200px, 0.85fr);
+  align-items: center;
+  gap: clamp(32px, 6vw, 72px);
+}
+
+.hero-brand {
+  position: relative;
+  display: grid;
+  place-items: center;
+  justify-self: end;
+  width: min(100%, 320px);
+  aspect-ratio: 1;
+}
+
+.logo-glow {
+  position: absolute;
+  inset: 8%;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(255, 107, 74, 0.42) 0%, rgba(255, 140, 60, 0.18) 38%, transparent 72%);
+  filter: blur(28px);
+  animation: logo-pulse 5s ease-in-out infinite;
+}
+
+.logo-mark {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  height: auto;
+  filter: drop-shadow(0 24px 48px rgba(0, 0, 0, 0.45));
+}
+
+@keyframes logo-pulse {
+  0%, 100% { opacity: 0.75; transform: scale(0.96); }
+  50% { opacity: 1; transform: scale(1.04); }
 }
 
 .hero h1 {
@@ -322,6 +318,9 @@ main {
 }
 
 .foot {
+  display: flex;
+  align-items: center;
+  gap: 12px;
   padding: 32px var(--gutter) 48px;
   border-top: 1px solid var(--line);
   font-family: var(--mono);
@@ -331,13 +330,27 @@ main {
   text-transform: uppercase;
 }
 
-@media (max-width: 720px) {
-  .top {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 16px;
+.foot-logo {
+  width: 28px;
+  height: 28px;
+  border-radius: 7px;
+  opacity: 0.85;
+}
+
+@media (max-width: 900px) {
+  .hero-inner {
+    grid-template-columns: 1fr;
   }
 
+  .hero-brand {
+    order: -1;
+    justify-self: start;
+    width: min(72vw, 220px);
+    margin-bottom: 8px;
+  }
+}
+
+@media (max-width: 720px) {
   .feature-grid {
     grid-template-columns: 1fr;
   }
@@ -352,7 +365,8 @@ main {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .glow {
+  .glow,
+  .logo-glow {
     animation: none;
   }
 }

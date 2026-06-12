@@ -30,35 +30,38 @@ export function App() {
       <div className="glow glow-a" aria-hidden="true" />
       <div className="glow glow-b" aria-hidden="true" />
 
-      <header className="top">
-        <a className="mark" href="/" aria-label="Rippo home">
-          <img src="/brand-logo.png" alt="" width={36} height={36} />
-          <span>Rippo</span>
-        </a>
-        <nav className="top-nav" aria-label="Sections">
-          <a href="#features">Features</a>
-          <a href="#download">Download</a>
-        </nav>
-      </header>
-
       <main>
         <section className="hero" aria-labelledby="hero-title">
           <div className="hero-inner">
-            <p className="kicker">Open source downloader · macOS</p>
-            <h1 id="hero-title">
-              <span className="line">Paste.</span>
-              <span className="line">Pick.</span>
-              <span className="line accent">Save.</span>
-            </h1>
-            <p className="lede">
-              The downloader you were about to subscribe to — except it&apos;s free,
-              runs on your machine, and never phones home.
-            </p>
-            <div className="hero-cta" id="download">
-              <a className="btn-main" href={macDownloadUrl} download>
-                <span>Get Rippo for Mac</span>
-                <small>Apple Silicon · DMG · 0$/mo</small>
-              </a>
+            <div className="hero-copy">
+              <p className="kicker">Open source downloader · macOS</p>
+              <h1 id="hero-title">
+                <span className="line">Paste.</span>
+                <span className="line">Pick.</span>
+                <span className="line accent">Save.</span>
+              </h1>
+              <p className="lede">
+                The downloader you were about to subscribe to — except it&apos;s free,
+                runs on your machine, and never phones home.
+              </p>
+              <div className="hero-cta" id="download">
+                <a className="btn-main" href={macDownloadUrl} download>
+                  <span>Get Rippo for Mac</span>
+                  <small>Apple Silicon · DMG · 0$/mo</small>
+                </a>
+              </div>
+            </div>
+
+            <div className="hero-brand" aria-hidden="true">
+              <div className="logo-glow" />
+              <img
+                className="logo-mark"
+                src="/brand-logo.png"
+                alt=""
+                width={280}
+                height={280}
+                decoding="async"
+              />
             </div>
           </div>
         </section>
@@ -88,6 +91,7 @@ export function App() {
       </main>
 
       <footer className="foot">
+        <img className="foot-logo" src="/brand-logo.png" alt="" width={28} height={28} />
         <span>© {new Date().getFullYear()} Rippo</span>
       </footer>
     </div>
