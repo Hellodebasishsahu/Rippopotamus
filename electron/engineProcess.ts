@@ -4,13 +4,10 @@ import fs from "node:fs";
 import path from "node:path";
 import {
   appManagedGalleryDlRoot,
-  appManagedOpenRouterModelsCache,
-  appManagedQbittorrentProfileRoot,
   appManagedYtDlpPath,
-  bundledQbittorrentPath,
+  bundledAria2cPath,
   ffmpegPath,
 } from "./appPaths";
-import { currentOpenRouterModel } from "./settingsStore";
 
 function bundledEngineExecutable(): string | null {
   const name = process.platform === "win32" ? "rippo-engine.exe" : "rippo-engine";
@@ -84,7 +81,6 @@ function engineEnv(): NodeJS.ProcessEnv {
   const pythonPath = app.isPackaged ? resourcesEngine : devEngine;
   const managedGalleryDlRoot = appManagedGalleryDlRoot();
   const bundledFfmpeg = ffmpegPath();
-  const selectedOpenRouterModel = currentOpenRouterModel();
   const baseEnv = { ...localEnvFile(), ...process.env };
   fs.mkdirSync(path.dirname(appManagedYtDlpPath()), { recursive: true });
   return {
@@ -93,11 +89,7 @@ function engineEnv(): NodeJS.ProcessEnv {
     RIPPO_FFMPEG_PATH: bundledFfmpeg || baseEnv.RIPPO_FFMPEG_PATH || "",
     RIPPO_YTDLP_PATH: baseEnv.RIPPO_YTDLP_PATH || appManagedYtDlpPath(),
     RIPPO_GALLERYDL_ROOT: fs.existsSync(managedGalleryDlRoot) ? managedGalleryDlRoot : "",
-    RIPPO_OPENROUTER_MODELS_CACHE: appManagedOpenRouterModelsCache(),
-    OPENROUTER_MODEL: selectedOpenRouterModel,
-    RIPPO_QBITTORRENT_PATH: baseEnv.RIPPO_QBITTORRENT_PATH || bundledQbittorrentPath() || "",
-    RIPPO_QBITTORRENT_PROFILE_ROOT: baseEnv.RIPPO_QBITTORRENT_PROFILE_ROOT || appManagedQbittorrentProfileRoot(),
-    RIPPO_QBITTORRENT_WEBUI_PORT: baseEnv.RIPPO_QBITTORRENT_WEBUI_PORT || "39080",
+    RIPPO_ARIA2C_PATH: baseEnv.RIPPO_ARIA2C_PATH || bundledAria2cPath() || "",
   };
 }
 

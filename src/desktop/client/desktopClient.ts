@@ -7,15 +7,9 @@ import type {
   AppUpdateInfo,
   GalleryDlUpdateInfo,
   GalleryDlUpdateResult,
-  IndexIngestRequest,
-  IndexIngestResponse,
-  IndexSearchRequest,
-  IndexSearchResponse,
-  OpenRouterModelCatalog,
   SheetImportEvent,
   SheetImportRequest,
   SheetImportResponse,
-  SourceSearchResponse,
   ThumbnailLoadResult,
   YtDlpUpdateInfo,
   YtDlpUpdateResult,
@@ -31,21 +25,13 @@ export type DesktopClient = {
   health: () => Promise<EngineHealth>;
   probePage: RippoBridge["probePage"];
   clearSniffCache: RippoBridge["clearSniffCache"];
-  searchSources: (query?: string, pack?: string) => Promise<SourceSearchResponse>;
-  listAiModels: (refresh?: boolean) => Promise<OpenRouterModelCatalog>;
-  setAiModel: (modelId: string) => Promise<{ model: string; health: EngineHealth; catalog: OpenRouterModelCatalog }>;
   setNetworkProxy: RippoBridge["setNetworkProxy"];
   checkNetworkProxy: RippoBridge["checkNetworkProxy"];
-  indexStatus: RippoBridge["indexStatus"];
-  indexIngest: (payload: IndexIngestRequest) => Promise<IndexIngestResponse>;
-  indexSearch: (payload: IndexSearchRequest) => Promise<IndexSearchResponse>;
   fetch: RippoBridge["fetch"];
   download: (payload: DownloadRequest) => Promise<DownloadResponse>;
   openFolder: (folder: string) => Promise<void>;
   openExternal: (url: string) => Promise<void>;
   loadThumbnail: (urls: string[]) => Promise<ThumbnailLoadResult>;
-  libraryThumbnail: RippoBridge["libraryThumbnail"];
-  libraryMediaUrl: RippoBridge["libraryMediaUrl"];
   listBrowsers: RippoBridge["listBrowsers"];
   setDefaultCookieSource: (source: CookieSource) => ReturnType<RippoBridge["setDefaultCookieSource"]>;
   setCookiesBrowser: RippoBridge["setCookiesBrowser"];
@@ -69,21 +55,13 @@ export function createDesktopClient(bridge?: RippoBridge): DesktopClient | null 
     health: bridge.health,
     probePage: bridge.probePage,
     clearSniffCache: bridge.clearSniffCache,
-    searchSources: bridge.searchSources,
-    listAiModels: bridge.listAiModels,
-    setAiModel: bridge.setAiModel,
     setNetworkProxy: bridge.setNetworkProxy,
     checkNetworkProxy: bridge.checkNetworkProxy,
-    indexStatus: bridge.indexStatus,
-    indexIngest: bridge.indexIngest,
-    indexSearch: bridge.indexSearch,
     fetch: bridge.fetch,
     download: bridge.download,
     openFolder: bridge.openFolder,
     openExternal: bridge.openExternal,
     loadThumbnail: bridge.loadThumbnail,
-    libraryThumbnail: bridge.libraryThumbnail,
-    libraryMediaUrl: bridge.libraryMediaUrl,
     listBrowsers: bridge.listBrowsers,
     setDefaultCookieSource: bridge.setDefaultCookieSource,
     setCookiesBrowser: bridge.setCookiesBrowser,

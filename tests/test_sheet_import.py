@@ -69,8 +69,6 @@ class DesktopEngineSheetImportTests(unittest.TestCase):
                 "job1",
                 "--require-master",
                 "--download-master",
-                "--index-root",
-                "/tmp/index",
             ]
         )
         self.assertEqual(args.command, "sheet-import")

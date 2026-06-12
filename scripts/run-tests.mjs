@@ -4,9 +4,7 @@ import path from "node:path";
 const nodeTests = [
   "tests/electron_cookie_validation.test.cjs",
   "tests/electron_thumbnail_validation.test.cjs",
-  "tests/electron_media_library_validation.test.cjs",
   "tests/electron_page_probe_policy_validation.test.cjs",
-  "tests/library_preview_contract.test.cjs",
   "tests/url_parser_validation.test.cjs",
 ];
 

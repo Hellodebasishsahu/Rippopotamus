@@ -27,7 +27,7 @@ Use this before cutting any local test build or sharing a macOS/Windows app pack
 
 - Automated gate: passed with `npm test` after `npm ci`.
 - Dependency install: `npm ci` passed with 0 vulnerabilities. Editable Python install passed in a temp Python 3.13 venv at `/tmp/rippo-prepod-venv`; the literal `/usr/bin/python3` path on this Mac is Python 3.9.6 and fails the repo's `>=3.11` requirement.
-- Desktop engine health: passed with Homebrew Python 3.13, `yt-dlp 2026.03.17`, ffmpeg 8.0.1, and aria2c fallback torrent support. `gallery-dl` and qBittorrent-nox remain missing from the host install.
+- Desktop engine health: passed with Homebrew Python 3.13, `yt-dlp 2026.03.17`, ffmpeg 8.0.1, and aria2c torrent support. `gallery-dl` remains missing from the host install.
 - CLI smoke: passed for init, add, status, manifest, zip, dry-run, expected folders, and manifest contents using `/tmp/rippo-release-smoke`.
 - Real media smoke: passed for `mp4-best`, `proxy`, `audio-mp3`, and `thumbnail` using `https://archive.org/details/SampleVideo1280x7205mb`. The previous YouTube test URL now returns "Video unavailable" for real downloads, so it is no longer a valid smoke URL.
 - Readable failure smoke: passed. `https://example.com/not-a-video` returned `media not found` / `This source is no longer available`, not a stack trace.

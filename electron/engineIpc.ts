@@ -1,15 +1,11 @@
 import { app, ipcMain } from "electron";
 import { randomUUID } from "node:crypto";
 import fs from "node:fs";
-import { libraryIndexRoot } from "./appPaths";
 import { runEngine } from "./engineProcess";
 import {
   currentNetworkProxy,
-  currentOpenRouterModel,
   currentOutputRoot,
-  readSettings,
   writeNetworkProxy,
-  writeSettings,
 } from "./settingsStore";
 import {
   cookieSourceArgs,
@@ -20,10 +16,6 @@ import {
   detectBrowsers,
 } from "./cookiesIpc";
 
-type EngineIpcOptions = {
-  browserSerpEnabled: () => boolean;
-};
-
 function usefulDownloadError(error: unknown): string {
   const raw = error instanceof Error ? error.message : String(error || "");
   const message = raw.trim();
@@ -33,7 +25,7 @@ function usefulDownloadError(error: unknown): string {
   return message;
 }
 
-export function createEngineIpc(options: EngineIpcOptions) {
+export function createEngineIpc() {
   async function engineHealthPayload(): Promise<Record<string, unknown>> {
     const browsers = detectBrowsers();
     const source = defaultCookieSource(browsers);
@@ -41,7 +33,6 @@ export function createEngineIpc(options: EngineIpcOptions) {
     const health = (await runEngine(["health", ...cookieSourceArgs(source)], undefined, proxy ? { RIPPO_NETWORK_PROXY: proxy } : undefined)) as Record<string, unknown>;
     return {
       ...health,
-      libraryIndexRoot: libraryIndexRoot(),
       cookiesSupported: cookiesSupported(),
       cookiesBrowsers: browsers,
       cookiesBrowser: cookieSourceBrowserId(source),
@@ -49,39 +40,12 @@ export function createEngineIpc(options: EngineIpcOptions) {
       networkProxy: proxy,
       networkProxyEnabled: Boolean(proxy),
       outputRoot: currentOutputRoot(),
-      openRouterModel: currentOpenRouterModel(),
-      openRouterKeyPresent: Boolean(process.env.OPENROUTER_API_KEY && process.env.OPENROUTER_API_KEY.trim()),
-      searchEvidence: options.browserSerpEnabled()
-        ? {
-          configured: true,
-          available: true,
-          provider: "electron_google",
-          label: "Electron Google",
-          reason: "Uses Electron's bundled Chromium to read Google result context before routing.",
-        }
-        : health.searchEvidence,
       packaged: app.isPackaged,
     };
   }
 
   function registerEngineIpcHandlers() {
     ipcMain.handle("engine:health", async () => engineHealthPayload());
-
-    ipcMain.handle("ai:models", async (_event, refresh?: boolean) => {
-      return await runEngine(["ai-models", "--selected-model", currentOpenRouterModel(), ...(refresh ? ["--refresh"] : [])]);
-    });
-
-    ipcMain.handle("ai:set-model", async (_event, modelId?: string) => {
-      const model = typeof modelId === "string" && modelId.trim() ? modelId.trim().slice(0, 140) : "openrouter/free";
-      const settings = readSettings();
-      settings.openRouterModel = model;
-      writeSettings(settings);
-      return {
-        model,
-        health: await engineHealthPayload(),
-        catalog: await runEngine(["ai-models", "--selected-model", model]),
-      };
-    });
 
     ipcMain.handle("network:set-proxy", async (_event, proxy?: string) => {
       const networkProxy = writeNetworkProxy(typeof proxy === "string" ? proxy : "");
@@ -134,7 +98,6 @@ export function createEngineIpc(options: EngineIpcOptions) {
         limit?: number;
         requireMaster?: boolean;
         downloadMaster?: boolean;
-        indexToLibrary?: boolean;
       }) => {
         const cookieSource = cookieSourceFromInput(payload.cookieSource);
         const proxy = currentNetworkProxy();
@@ -165,7 +128,6 @@ export function createEngineIpc(options: EngineIpcOptions) {
         if (typeof payload.limit === "number" && payload.limit > 0) args.push("--limit", String(Math.min(payload.limit, 5000)));
         if (payload.requireMaster) args.push("--require-master");
         if (payload.downloadMaster) args.push("--download-master");
-        if (payload.indexToLibrary) args.push("--index-root", libraryIndexRoot());
         try {
           const result = await runEngine(args, (engineEvent) => {
             event.sender.send("engine:sheet-import-event", { jobId, ...(engineEvent as Record<string, unknown>) });

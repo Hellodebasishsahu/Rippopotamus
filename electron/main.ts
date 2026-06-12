@@ -1,32 +1,17 @@
-import { app, BrowserWindow, protocol } from "electron";
+import { app, BrowserWindow } from "electron";
 import path from "node:path";
-import { registerIndexIpcHandlers } from "./indexIpc";
 import { registerCookieIpcHandlers } from "./cookiesIpc";
 import { registerToolUpdateIpcHandlers } from "./toolUpdatesIpc";
 import { registerAppUpdateIpcHandlers } from "./appUpdatesIpc";
 import { registerShellOutputIpcHandlers } from "./shellOutputIpc";
-import { handleRippoMediaRequest, registerLibraryIpcHandlers } from "./libraryIpc";
+import { registerLibraryIpcHandlers } from "./libraryIpc";
 import { createEngineIpc } from "./engineIpc";
-import { browserSerpEnabled, registerBrowserIpcHandlers } from "./browserIpc";
+import { registerBrowserIpcHandlers } from "./browserIpc";
 import { initAdBlocker } from "./adBlocker";
 
 let mainWindow: BrowserWindow | null = null;
 
 const isDev = Boolean(process.env.VITE_DEV_SERVER_URL);
-
-protocol.registerSchemesAsPrivileged([
-  {
-    scheme: "rippo-media",
-    privileges: {
-      standard: true,
-      secure: true,
-      supportFetchAPI: true,
-      stream: true,
-      bypassCSP: true,
-      corsEnabled: true,
-    },
-  },
-]);
 
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -56,12 +41,10 @@ function createWindow() {
 
 app.whenReady().then(() => {
   initAdBlocker();
-  const engineIpc = createEngineIpc({ browserSerpEnabled });
-  protocol.handle("rippo-media", handleRippoMediaRequest);
+  const engineIpc = createEngineIpc();
   registerLibraryIpcHandlers();
   registerBrowserIpcHandlers();
   engineIpc.registerEngineIpcHandlers();
-  registerIndexIpcHandlers();
 
   registerShellOutputIpcHandlers(() => mainWindow);
   registerCookieIpcHandlers();

@@ -8,7 +8,6 @@ export type Settings = {
   cookiesBrowser?: string;
   networkProxy?: string;
   outputRoot?: string;
-  openRouterModel?: string;
 };
 
 function settingsPath(): string {
@@ -36,12 +35,6 @@ export function currentOutputRoot(): string {
   const saved = readSettings().outputRoot;
   if (saved && typeof saved === "string" && saved.trim()) return saved;
   return defaultOutputRoot();
-}
-
-export function currentOpenRouterModel(): string {
-  const saved = readSettings().openRouterModel;
-  if (saved && typeof saved === "string" && saved.trim()) return saved;
-  return process.env.OPENROUTER_MODEL || "openrouter/free";
 }
 
 export function currentNetworkProxy(): string {

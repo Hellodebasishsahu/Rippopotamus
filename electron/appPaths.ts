@@ -32,27 +32,11 @@ export function appManagedGalleryDlRoot(): string {
   return path.join(app.getPath("userData"), "python", "gallery-dl");
 }
 
-export function appManagedOpenRouterModelsCache(): string {
-  return path.join(app.getPath("userData"), "cache", "openrouter-free-models.json");
-}
-
-export function appManagedQbittorrentProfileRoot(): string {
-  return path.join(app.getPath("userData"), "qbittorrent");
-}
-
-export function bundledQbittorrentPath(): string | null {
-  const executable = process.platform === "win32" ? "qbittorrent-nox.exe" : "qbittorrent-nox";
+export function bundledAria2cPath(): string | null {
+  const executable = process.platform === "win32" ? "aria2c.exe" : "aria2c";
   const candidates = [
     path.join(process.resourcesPath, "bin", executable),
     path.join(app.getAppPath(), "bin", executable),
   ];
   return candidates.find((candidate) => fs.existsSync(candidate)) || null;
-}
-
-export function libraryThumbCacheDir(): string {
-  return path.join(app.getPath("userData"), "library-thumbs");
-}
-
-export function libraryIndexRoot(): string {
-  return path.join(app.getPath("userData"), "library-index");
 }

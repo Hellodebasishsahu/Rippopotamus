@@ -21,13 +21,6 @@ from rippopotamus.providers import (
     parse_metadata_output,
     provider_catalog,
 )
-from rippopotamus.query_intelligence import PACK_LABELS, build_query_intelligence, effective_pack, openrouter_model_catalog
-from rippopotamus.metadata_lookup import lookup_media
-from rippopotamus.resolvers import ADAPTERS, resolve_all
-from rippopotamus.search_evidence import search_evidence_status
-from rippopotamus.source_registry import search_sources
-from rippopotamus.footage_index import index_status, ingest_paths, search_index, upsert_moments, insert_moment, connect_index, index_counts, moment_id
-from rippopotamus.eval_harness import load_queries, run_eval, format_table
 from rippopotamus.google_drive import download_drive_file, drive_metadata, is_drive_file_url
 from rippopotamus.desktop_runtime import (
     arg_cookies_browser,
@@ -124,8 +117,6 @@ def command_sheet_import(args: argparse.Namespace) -> int:
         emit({"jobId": job_id, "type": "sheet-import", **payload})
 
     sheet_emit({"phase": "queued", "sheetUrl": args.sheet_url, "projectName": args.project_name})
-    index_arg = (args.index_root or "").strip()
-    index_root = Path(index_arg) if index_arg else None
     try:
         run_sheet_import_pipeline(
             sheet_url=args.sheet_url.strip(),
@@ -141,9 +132,7 @@ def command_sheet_import(args: argparse.Namespace) -> int:
             limit=int(args.limit or 0),
             require_master=bool(args.require_master),
             download_master=bool(args.download_master),
-            index_root=index_root,
             emit=sheet_emit,
-            ingest_paths_fn=ingest_paths,
         )
     except SystemExit as exc:
         err = cookie_error_message(str(exc))
@@ -178,7 +167,6 @@ def command_health(args: argparse.Namespace) -> int:
     catalog = provider_catalog()
     gallery = gallery_dl_status()
     torrent = torrent_engine_status()
-    qbit = torrent["qbittorrent"]
     aria = torrent["aria2c"]
     emit({
         "ok": True,
@@ -189,10 +177,6 @@ def command_health(args: argparse.Namespace) -> int:
         "galleryDlPath": gallery["path"],
         "galleryDlOk": gallery["ok"],
         "galleryDlError": gallery["error"],
-        "qBittorrent": qbit["version"],
-        "qBittorrentPath": qbit["path"],
-        "qBittorrentOk": qbit["ok"],
-        "qBittorrentError": qbit["error"],
         "aria2c": aria["version"],
         "aria2cPath": aria["path"],
         "aria2cOk": aria["ok"],
@@ -209,7 +193,6 @@ def command_health(args: argparse.Namespace) -> int:
         "networkProxyEnabled": bool(proxy),
         "providers": catalog["providers"],
         "presets": catalog["presets"],
-        "searchEvidence": search_evidence_status(),
     })
     return 0
 
@@ -245,44 +228,6 @@ def command_fetch(args: argparse.Namespace) -> int:
         output = run_text(metadata_command(provider, args.url, provider_context(cookies_browser)))
     metadata = parse_metadata_output(provider, args.url, output)
     emit({"ok": True, "url": args.url, "metadata": metadata})
-    return 0
-
-
-def command_source_search(args: argparse.Namespace) -> int:
-    requested_pack = args.pack or "all"
-    if requested_pack != "all" and requested_pack not in PACK_LABELS:
-        raise SystemExit(f"Unknown source pack `{requested_pack}`.")
-    intelligence = build_query_intelligence(args.query or "", requested_pack)
-    search_pack = effective_pack(requested_pack, intelligence)
-    try:
-        payload = search_sources(args.query or "", search_pack, args.limit)
-    except ValueError as exc:
-        raise SystemExit(str(exc)) from exc
-    payload["requestedPack"] = requested_pack
-    payload["intelligence"] = intelligence
-    media = lookup_media(args.query or "")
-    payload["media"] = media
-    payload["playable"] = _resolve_playable(media, args.query or "")
-    emit(payload)
-    return 0
-
-
-def _resolve_playable(media: dict[str, Any] | None, query: str) -> list[dict[str, Any]]:
-    if media:
-        title = media.get("title") or query
-        year_raw = media.get("year")
-        year = int(year_raw) if isinstance(year_raw, str) and year_raw.isdigit() else None
-        imdb_id = media.get("imdbId")
-    else:
-        title = query
-        year = None
-        imdb_id = None
-    links = resolve_all(ADAPTERS, title, year, imdb_id)
-    return [link.to_dict() for link in links]
-
-
-def command_ai_models(args: argparse.Namespace) -> int:
-    emit(openrouter_model_catalog(refresh=args.refresh, selected_model=args.selected_model))
     return 0
 
 
@@ -323,101 +268,6 @@ def command_proxy_check(args: argparse.Namespace) -> int:
         return 0
 
     emit({"ok": True, "proxy": proxy, "ip": payload.get("ip")})
-    return 0
-
-
-def command_index_status(args: argparse.Namespace) -> int:
-    emit(index_status(args.index_root))
-    return 0
-
-
-def command_index_ingest(args: argparse.Namespace) -> int:
-    emit(ingest_paths(args.index_root, args.paths))
-    return 0
-
-
-def command_index_search(args: argparse.Namespace) -> int:
-    emit(search_index(args.index_root, args.query or "", args.limit, use_vector=False))
-    return 0
-
-
-def command_index_upsert(args: argparse.Namespace) -> int:
-    if args.payload_json:
-        payload = json.loads(args.payload_json)
-    elif args.input == "-":
-        payload = json.load(sys.stdin)
-    else:
-        with Path(args.input).expanduser().open("r", encoding="utf-8") as handle:
-            payload = json.load(handle)
-    if not isinstance(payload, dict):
-        raise SystemExit("Index upsert payload must be a JSON object.")
-    emit(upsert_moments(args.index_root, payload))
-    return 0
-
-
-def command_index_narrate(args: argparse.Namespace) -> int:
-    from contextlib import closing
-    from rippopotamus.gemini_captioner import narrate_video
-
-    root = Path(args.index_root).expanduser().resolve()
-    asset_id = args.asset_id
-
-    with closing(connect_index(root)) as conn:
-        row = conn.execute("SELECT path, duration FROM assets WHERE id = ?", (asset_id,)).fetchone()
-        if not row:
-            emit({"ok": False, "error": f"Asset not found: {asset_id}"})
-            return 1
-        asset_path = Path(row["path"])
-
-    moments = narrate_video(
-        asset_path,
-        model=args.model or None,
-        emit=lambda msg: print(json.dumps(msg), file=sys.stderr, flush=True),
-    )
-
-    with closing(connect_index(root)) as conn:
-        for idx, m in enumerate(moments):
-            mid = f"{asset_id}:narr:{idx:04d}"
-            desc = m.visual
-            if m.audio:
-                desc += f" | Audio: {m.audio}"
-            insert_moment(conn, {
-                "id": mid,
-                "asset_id": asset_id,
-                "path": str(asset_path),
-                "start": m.start,
-                "end": m.end,
-                "title": m.visual[:80],
-                "description": desc,
-                "tags": ["source:narration", *m.search_terms[:15]],
-            })
-        conn.commit()
-        counts = index_counts(conn)
-
-    emit({
-        "ok": True,
-        "assetId": asset_id,
-        "path": str(asset_path),
-        "moments": len(moments),
-        **counts,
-    })
-    return 0
-
-
-def command_eval_run(args: argparse.Namespace) -> int:
-    queries_path = Path(args.queries).expanduser().resolve()
-    queries = load_queries(queries_path)
-    result = run_eval(args.index_root, queries, limit=args.limit)
-
-    print(format_table(result), file=sys.stderr, flush=True)
-
-    if args.out:
-        out_path = Path(args.out).expanduser()
-        out_path.parent.mkdir(parents=True, exist_ok=True)
-        out_path.write_text(json.dumps(result, indent=2, ensure_ascii=False), encoding="utf-8")
-        print(f"\nRun saved: {out_path}", file=sys.stderr, flush=True)
-
-    emit({"ok": True, "recall_at_k": result["recall_at_k"], "mrr": result["mrr"], "hits": result["hits"], "scorable": result["scorableQueries"]})
     return 0
 
 
@@ -644,55 +494,9 @@ def build_parser() -> argparse.ArgumentParser:
     download.add_argument("--cookies-browser", default="")
     download.set_defaults(func=command_download)
 
-    source_search = sub.add_parser("source-search")
-    source_search.add_argument("--query", default="")
-    source_search.add_argument("--pack", default="all")
-    source_search.add_argument("--limit", type=int, default=12)
-    source_search.set_defaults(func=command_source_search)
-
-    ai_models = sub.add_parser("ai-models")
-    ai_models.add_argument("--refresh", action="store_true")
-    ai_models.add_argument("--selected-model", default="")
-    ai_models.set_defaults(func=command_ai_models)
-
     proxy_check = sub.add_parser("proxy-check")
     proxy_check.add_argument("--proxy", required=True)
     proxy_check.set_defaults(func=command_proxy_check)
-
-    index_status_cmd = sub.add_parser("index-status")
-    index_status_cmd.add_argument("--index-root", required=True)
-    index_status_cmd.set_defaults(func=command_index_status)
-
-    index_ingest = sub.add_parser("index-ingest")
-    index_ingest.add_argument("--index-root", required=True)
-    index_ingest.add_argument("paths", nargs="+")
-    index_ingest.set_defaults(func=command_index_ingest)
-
-    index_search = sub.add_parser("index-search")
-    index_search.add_argument("--index-root", required=True)
-    index_search.add_argument("--query", default="")
-    index_search.add_argument("--limit", type=int, default=20)
-    index_search.add_argument("--no-vector", action="store_true", help="Accepted for clarity; desktop index search is always filename/basic metadata only.")
-    index_search.set_defaults(func=command_index_search)
-
-    index_upsert = sub.add_parser("index-upsert")
-    index_upsert.add_argument("--index-root", required=True)
-    index_upsert.add_argument("--input", default="-")
-    index_upsert.add_argument("--payload-json", default="")
-    index_upsert.set_defaults(func=command_index_upsert)
-
-    index_narrate = sub.add_parser("index-narrate")
-    index_narrate.add_argument("--index-root", required=True)
-    index_narrate.add_argument("--asset-id", required=True)
-    index_narrate.add_argument("--model", default="")
-    index_narrate.set_defaults(func=command_index_narrate)
-
-    eval_run = sub.add_parser("eval-run")
-    eval_run.add_argument("--index-root", required=True)
-    eval_run.add_argument("--queries", required=True)
-    eval_run.add_argument("--limit", type=int, default=5)
-    eval_run.add_argument("--out", default="")
-    eval_run.set_defaults(func=command_eval_run)
 
     sheet_import_cmd = sub.add_parser("sheet-import")
     sheet_import_cmd.add_argument("--sheet-url", required=True)
@@ -707,7 +511,6 @@ def build_parser() -> argparse.ArgumentParser:
     sheet_import_cmd.add_argument("--limit", type=int, default=0)
     sheet_import_cmd.add_argument("--require-master", action="store_true")
     sheet_import_cmd.add_argument("--download-master", action="store_true")
-    sheet_import_cmd.add_argument("--index-root", default="")
     sheet_import_cmd.set_defaults(func=command_sheet_import)
 
     return parser

@@ -36,8 +36,6 @@ const TECHNICAL_MESSAGE_PATTERNS = [
   /\bdht\.dat\b/i,
   /\/Users\//i,
   /\baria2c?\b/i,
-  /\bqBittorrent\b/i,
-  /\bqbittorrent-nox\b/i,
   /\byt-dlp\b/i,
   /\bgallery-dl\b/i,
 ];

@@ -108,12 +108,12 @@ class GeminiEmbedder:
     def __init__(self, *, model: str | None = None, dimensions: int | None = None, requests_per_minute: int = DEFAULT_REQUESTS_PER_MINUTE) -> None:
         api_key, env_name = gemini_api_key()
         if not api_key:
-            raise GeminiEmbeddingUnavailable("Set GEMINI_API_KEY or GOOGLE_API_KEY to enable semantic ingestion.")
+            raise GeminiEmbeddingUnavailable("Set GEMINI_API_KEY or GOOGLE_API_KEY to enable Gemini embeddings.")
         try:
             from google import genai
             from google.genai import types
         except Exception as exc:
-            raise GeminiEmbeddingUnavailable("Install google-genai to enable Gemini semantic ingestion.") from exc
+            raise GeminiEmbeddingUnavailable("Install google-genai to enable Gemini embeddings.") from exc
 
         self.model = model or embedding_model()
         self.dimensions = dimensions or embedding_dimensions()

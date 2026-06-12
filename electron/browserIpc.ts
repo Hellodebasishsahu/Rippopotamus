@@ -110,8 +110,6 @@ const PAGE_PROBE_MAX_TRACKED_REQUESTS = 1_000;
 
 let activePageProbe: Promise<PageProbeResponse> | null = null;
 let activePageProbeKey = "";
-let activeSourceSearch: Promise<unknown> | null = null;
-let activeSourceSearchKey = "";
 const pageProbeCache = new Map<string, { storedAt: number; response: PageProbeResponse }>();
 
 // ---------------------------------------------------------------------------
@@ -801,53 +799,6 @@ export function registerBrowserIpcHandlers() {
     } finally {
       activePageProbe = null;
       activePageProbeKey = "";
-    }
-  });
-
-  ipcMain.handle("engine:source-search", async (_event, query?: string, pack?: string) => {
-    const safeQuery = (typeof query === "string" ? query : "").slice(0, 120);
-    const safePack = typeof pack === "string" && pack.trim() ? pack : "all";
-    const searchKey = `${safePack}\n${safeQuery}`;
-    if (activeSourceSearch) {
-      if (activeSourceSearchKey === searchKey) return await activeSourceSearch;
-      return {
-        ok: false,
-        query: safeQuery,
-        pack: safePack,
-        packs: [{ id: "all", label: "All" }],
-        results: [],
-        error: "Search is catching up.",
-      };
-    }
-    try {
-      activeSourceSearchKey = searchKey;
-      activeSourceSearch = (async () => {
-        const evidence = browserSerpEnabled()
-          ? await electronGoogleSearchEvidence(safeQuery, safePack, 6)
-          : null;
-        const envOverride: NodeJS.ProcessEnv = {};
-        if (browserSerpEnabled()) {
-          envOverride.RIPPO_SERP_BROWSER = "0";
-          if ((process.env.RIPPO_SEARCH_PROVIDER || "").trim().toLowerCase() === "electron_google") {
-            envOverride.RIPPO_SEARCH_PROVIDER = "";
-          }
-        }
-        if (evidence?.enabled) envOverride.RIPPO_SEARCH_EVIDENCE_JSON = JSON.stringify(evidence);
-        return await runEngine(["source-search", "--query", safeQuery, "--pack", safePack, "--limit", "24"], undefined, envOverride);
-      })();
-      return await activeSourceSearch;
-    } catch (error) {
-      return {
-        ok: false,
-        query: safeQuery,
-        pack: safePack,
-        packs: [{ id: "all", label: "All" }],
-        results: [],
-        error: error instanceof Error ? error.message : String(error),
-      };
-    } finally {
-      activeSourceSearch = null;
-      activeSourceSearchKey = "";
     }
   });
 }

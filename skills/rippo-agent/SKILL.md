@@ -1,6 +1,6 @@
 # Rippo Agent CLI
 
-Use this skill when an agent needs to operate Rippopotamus from the terminal: inspect runtime health, fetch media metadata, download assets, search sources, ingest/search the local media library, or run the older stateful project workflow.
+Use this skill when an agent needs to operate Rippopotamus from the terminal: inspect runtime health, fetch media metadata, download assets, or run the older stateful project workflow.
 
 This is the repo-neutral copy. Claude can read `.claude/skills/rippo-agent/SKILL.md`; other agents should read this file.
 
@@ -12,7 +12,7 @@ Always start with discovery unless the user asked for one exact command:
 PYTHONPATH=src python -m rippopotamus.agent_cli capabilities
 ```
 
-This prints JSON for the available providers, presets, source packs, runtime env vars, and command routes.
+This prints JSON for the available providers, presets, runtime env vars, and command routes.
 
 ## Command Shape
 
@@ -34,12 +34,6 @@ Shortcuts exist for common agent work:
 - `doctor`: runtime health.
 - `fetch-metadata`: metadata for one URL.
 - `download-asset`: download one URL to an output root.
-- `find-sources`: web/source pack search.
-- `models`: OpenRouter model catalog.
-- `library-status`: local media index status.
-- `library-ingest`: filename/basic metadata file ingest.
-- `library-search`: filename/basic metadata local media index search.
-- `library-upsert`: write structured moments.
 
 ## Runtime Truth
 
@@ -49,7 +43,7 @@ Do not guess which binaries or providers are available. Run:
 PYTHONPATH=src python -m rippopotamus.agent_cli doctor
 ```
 
-This checks Python, `yt-dlp`, `gallery-dl`, qBittorrent, `aria2c`, `ffmpeg`, cookies, providers, presets, and search evidence.
+This checks Python, `yt-dlp`, `gallery-dl`, `aria2c`, `ffmpeg`, cookies, providers, and presets.
 
 Important env vars:
 
@@ -57,10 +51,7 @@ Important env vars:
 - `RIPPO_FFMPEG_PATH` or `RIPPO_FFMPEG_LOCATION`: explicit `ffmpeg`.
 - `RIPPO_COOKIES_FROM_BROWSER`: default browser cookie source.
 - `RIPPO_GALLERYDL_ROOT`: managed gallery-dl location.
-- `RIPPO_QBITTORRENT_PATH`: explicit qBittorrent executable.
-- `OPENROUTER_API_KEY`: query intelligence/model catalog.
-- `GOOGLE_CSE_API_KEY` and `GOOGLE_CSE_ID`: Google search evidence.
-- `SERPER_API_KEY`: Serper search evidence.
+- `RIPPO_ARIA2C_PATH`: explicit aria2c executable.
 
 ## Examples
 
@@ -80,29 +71,6 @@ PYTHONPATH=src python -m rippopotamus.agent_cli download-asset \
   --title "example-video"
 ```
 
-Search source packs:
-
-```bash
-PYTHONPATH=src python -m rippopotamus.agent_cli find-sources --query "moon landing footage" --pack all --limit 8
-```
-
-Search the local library:
-
-```bash
-PYTHONPATH=src python -m rippopotamus.agent_cli library-search \
-  --index-root "$HOME/Library/Application Support/rippopotamus/library-index" \
-  --query "Rohtak Modi" \
-  --limit 10
-```
-
-Basic ingest:
-
-```bash
-PYTHONPATH=src python -m rippopotamus.agent_cli library-ingest \
-  --index-root "$HOME/Library/Application Support/rippopotamus/library-index" \
-  "/path/to/media"
-```
-
 Stateful project workflow:
 
 ```bash
@@ -117,8 +85,8 @@ PYTHONPATH=src python -m rippopotamus.agent_cli project zip
 ## Agent Rules
 
 - Prefer `capabilities` and `doctor` before making repo claims.
-- Use `engine` or shortcuts for desktop/library/search work because they emit JSON.
+- Use `engine` or shortcuts for desktop download work because they emit JSON.
 - Use `project` only for the older folder-based project workflow.
-- Keep downloaded media and generated indexes out of commits unless the user explicitly asks for them.
+- Keep downloaded media out of commits unless the user explicitly asks for it.
 - If a command needs cookies, pass `--cookies-browser chrome` or the browser shown by the desktop cookie settings.
-- Do not claim visual, object, transcript, or semantic search is enabled. The active library search is filename/basic metadata only.
+- Do not claim visual, object, transcript, source search, or semantic search is enabled.

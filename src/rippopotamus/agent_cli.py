@@ -6,7 +6,6 @@ from typing import Any
 
 from rippopotamus import cli, desktop_engine
 from rippopotamus.providers import PRESETS, provider_catalog
-from rippopotamus.query_intelligence import PACK_LABELS
 
 
 PROJECT_COMMANDS = (
@@ -23,24 +22,12 @@ ENGINE_COMMANDS = (
     "health",
     "fetch",
     "download",
-    "source-search",
-    "ai-models",
-    "index-status",
-    "index-ingest",
-    "index-search",
-    "index-upsert",
 )
 
 SHORTCUTS: dict[str, tuple[str, str]] = {
-    "doctor": ("health", "Check local Python/media tools, cookies, providers, presets, and search evidence."),
+    "doctor": ("health", "Check local Python/media tools, cookies, providers, and presets."),
     "fetch-metadata": ("fetch", "Return JSON metadata for one URL using auto/provider routing."),
     "download-asset": ("download", "Download one URL into a desktop-style output root."),
-    "find-sources": ("source-search", "Search source packs and playable resolvers for a query."),
-    "models": ("ai-models", "List OpenRouter model choices for query intelligence."),
-    "library-status": ("index-status", "Inspect the local footage SQLite index."),
-    "library-ingest": ("index-ingest", "Index local media files by filename and basic metadata."),
-    "library-search": ("index-search", "Search the local footage index by filename and basic metadata."),
-    "library-upsert": ("index-upsert", "Upsert structured moments into the footage index."),
 }
 
 
@@ -73,18 +60,13 @@ def command_capabilities(_argv: list[str]) -> int:
             }
             for preset_id, spec in PRESETS.items()
         ],
-        "sourcePacks": [{"id": pack, "label": label} for pack, label in PACK_LABELS.items()],
         "runtimeEnv": [
             "RIPPO_YTDLP_PATH",
             "RIPPO_FFMPEG_PATH",
             "RIPPO_FFMPEG_LOCATION",
             "RIPPO_COOKIES_FROM_BROWSER",
             "RIPPO_GALLERYDL_ROOT",
-            "RIPPO_QBITTORRENT_PATH",
-            "OPENROUTER_API_KEY",
-            "GOOGLE_CSE_API_KEY",
-            "GOOGLE_CSE_ID",
-            "SERPER_API_KEY",
+            "RIPPO_ARIA2C_PATH",
         ],
     }
     print(json.dumps(payload, indent=2, sort_keys=True))

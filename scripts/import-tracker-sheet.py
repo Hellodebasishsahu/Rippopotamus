@@ -12,7 +12,6 @@ from pathlib import Path
 from typing import Any
 from xml.etree import ElementTree as ET
 
-from rippopotamus.footage_index import ingest_paths
 from rippopotamus.google_drive import download_drive_file, drive_opener
 
 
@@ -55,9 +54,6 @@ def spreadsheet_id(url: str) -> str:
         raise SystemExit("Google Sheets URL does not contain a spreadsheet id.")
     return match.group(1)
 
-
-def app_library_index_root() -> Path:
-    return Path.home() / "Library" / "Application Support" / "rippopotamus" / "library-index"
 
 
 def download_xlsx(sheet_url: str, browser: str, destination: Path) -> Path:
@@ -224,7 +220,6 @@ def main() -> int:
     parser.add_argument("--require-master", action="store_true")
     parser.add_argument("--download-master", action="store_true")
     parser.add_argument("--download-root", default=str(Path.home() / "Downloads" / "Rippo" / "Tracker"))
-    parser.add_argument("--index-root", default=str(app_library_index_root()))
     args = parser.parse_args()
 
     xlsx = download_xlsx(args.sheet_url, args.browser, Path(args.xlsx))
@@ -240,8 +235,6 @@ def main() -> int:
             output_dir = Path(args.download_root) / slug(record.state) / slug(record.pc_name)
             files = download_drive_file(record.master_video_url, output_dir, cookie_browser=args.browser)
             downloaded.extend(files)
-        if downloaded:
-            ingest_paths(Path(args.index_root), [Path(item) for item in downloaded])
 
     print(json.dumps({
         "ok": True,
@@ -250,7 +243,6 @@ def main() -> int:
         "totalRows": len(records),
         "selectedRows": len(selected),
         "downloaded": len(downloaded),
-        "indexedRoot": args.index_root if downloaded else None,
         "sample": [item.as_dict() for item in selected[:5]],
     }, indent=2, ensure_ascii=False))
     return 0

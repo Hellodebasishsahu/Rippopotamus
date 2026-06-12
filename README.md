@@ -6,7 +6,7 @@ Rippopotamus is a local desktop media ingest tool for editors, designers, and cr
 
 ## Product Shape
 
-Rippopotamus is not trying to beat downloader engines. It uses providers like `yt-dlp`, `gallery-dl`, and `ffmpeg` as low-level media tools, then adds the missing creative workflow layer:
+Rippopotamus is not trying to beat downloader engines. It uses `yt-dlp` and `gallery-dl` to resolve messy source links, `aria2c` as the reliable transfer engine where URLs can be handed off safely, and `ffmpeg` for media stream/merge work. Rippo owns the creative workflow layer:
 
 - Batch link intake
 - Explicit source provider choice
@@ -23,8 +23,8 @@ Rippopotamus is not trying to beat downloader engines. It uses providers like `y
 1. Paste many URLs.
 2. Fetch metadata: title, thumbnail, duration, platform, available formats.
 3. Choose provider and preset:
-   - Video / audio through `yt-dlp`
-   - Images through `gallery-dl`
+   - Video / audio resolved through `yt-dlp`
+   - Images resolved through `gallery-dl`
    - Best MP4
    - MP3 audio
    - Thumbnail only
@@ -36,7 +36,7 @@ Rippopotamus is not trying to beat downloader engines. It uses providers like `y
 
 ## First Architecture
 
-- Core engine: Python CLI routing explicit providers like `yt-dlp`, `gallery-dl`, and `ffmpeg`
+- Core engine: Python CLI routing resolvers (`yt-dlp`, `gallery-dl`, Drive) into transfer engines (`aria2c`, `ffmpeg`, owned Drive stream)
 - Desktop shell: Electron or Tauri after the CLI engine is stable
 - Local state: SQLite
 - Output: normal folders on disk
@@ -95,23 +95,4 @@ open release/mac-arm64/Rippopotamus.app
 npm run package:win
 ```
 
-The macOS and Windows app packages currently include the renderer, Electron main process, Python engine source, and bundled `ffmpeg-static`. Set `RIPPO_ENGINE_BINARY` to a `rippo-engine` PyInstaller binary (see `scripts/build-engine.sh` and `pip install -e ".[engine-build]"`) to run without a system Python install. The remaining distribution step is freezing provider runtimes (`yt-dlp`, `gallery-dl`) for friends who do not already use them.
-
-## Search Routing
-
-Text searches use a small query scout before source adapters run. Preferred evidence providers are stable APIs:
-
-- `GOOGLE_CSE_API_KEY` + `GOOGLE_CSE_ID`
-- `SERPER_API_KEY`
-
-Google Custom Search JSON API is closed to new customers, so fresh Google Cloud projects can still fail even with a valid key and search engine ID. Keep `SERPER_API_KEY` or the desktop browser scout as the practical fallback.
-
-For local experiments, enable browser SERP scouting:
-
-```bash
-RIPPO_SERP_BROWSER=1 npm run dev
-```
-
-In the desktop app, that mode uses Electron's bundled Chromium to open Google Search, strips obvious sponsored/noise links, and passes only organic titles/URLs/snippets into the Python router. It is a fallback surface: CAPTCHA, consent pages, layout changes, and regional variance can still break it.
-
-For CLI-only experiments outside Electron, `pip install -e ".[browser-serp]"` enables the older Crawl4AI provider only when explicitly forced with `RIPPO_SEARCH_PROVIDER=crawl4ai_google`.
+The macOS and Windows app packages currently include the renderer, Electron main process, Python engine source, bundled `ffmpeg-static`, and a bundled `aria2c` resource. Set `RIPPO_ENGINE_BINARY` to a `rippo-engine` PyInstaller binary (see `scripts/build-engine.sh` and `pip install -e ".[engine-build]"`) to run without a system Python install. Rippo reads bundled `aria2c` from `resources/bin/aria2c` or `resources/bin/aria2c.exe`; `RIPPO_ARIA2C_PATH` overrides that. The remaining distribution step is freezing provider runtimes (`yt-dlp`, `gallery-dl`) for friends who do not already use them.

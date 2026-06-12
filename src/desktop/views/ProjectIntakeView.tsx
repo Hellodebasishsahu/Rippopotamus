@@ -1,6 +1,6 @@
 import { Download, FolderOpen, Loader2, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { BrowserInfo, CookieSource, PresetOption, ProviderId, ProviderOption, SourceSearchResponse } from "../../../electron/types";
+import type { BrowserInfo, CookieSource, PresetOption, ProviderId, ProviderOption } from "../../../electron/types";
 import { queueItemCanRefetch, queueItemCanRemove } from "../app/downloadQueueModel";
 import { preferredPresetForProvider, presetsForProvider } from "../app/downloadQueuePrefs";
 import {
@@ -15,17 +15,14 @@ import { IntakeBentDivider } from "../components/IntakeBentDivider";
 import { QueueCard } from "../components/QueueCard";
 import { QueueMenu } from "../components/QueueMenu";
 import { SheetImportPanel } from "../components/SheetImportPanel";
-import { SourceSearchPanel } from "../components/SourceSearchPanel";
+
 
 export type ProjectIntakeViewProps = {
   desktop: DesktopClient | null;
   activeOutputRoot: string;
   cookieSource: CookieSource;
-  libraryIndexRoot?: string;
   consumerErrorMessage: (message: string, fallback?: string) => string;
   consumerNoticeMessage: (message: string) => string | null;
-  sourceSearch: SourceSearchResponse;
-  sourceSearchBusy: boolean;
   input: string;
   pageProbeError: string | null;
   pageProbeNotice: string | null;
@@ -52,11 +49,8 @@ export function ProjectIntakeView({
   desktop,
   activeOutputRoot,
   cookieSource,
-  libraryIndexRoot,
   consumerErrorMessage,
   consumerNoticeMessage,
-  sourceSearch,
-  sourceSearchBusy,
   input,
   pageProbeError,
   pageProbeNotice,
@@ -262,13 +256,6 @@ export function ProjectIntakeView({
           })}
         </>
       ) : null}
-
-      <SourceSearchPanel
-        sourceSearch={sourceSearch}
-        sourceSearchBusy={sourceSearchBusy}
-        input={input}
-        openExternal={(url) => desktop?.openExternal(url)}
-      />
       </div>
 
       <footer className="intake-sheet-footer">
@@ -276,7 +263,6 @@ export function ProjectIntakeView({
           desktop={desktop}
           outputRoot={activeOutputRoot}
           cookieSource={cookieSource}
-          libraryIndexRoot={libraryIndexRoot}
           formatError={consumerErrorMessage}
         />
       </footer>

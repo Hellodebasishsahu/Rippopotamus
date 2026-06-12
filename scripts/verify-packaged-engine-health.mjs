@@ -31,6 +31,7 @@ function packagePaths(packageTarget) {
       resources,
       engine: path.join(resources, "engine"),
       ffmpeg: path.join(resources, "app.asar.unpacked", "node_modules", "ffmpeg-static", "ffmpeg.exe"),
+      aria2c: path.join(resources, "bin", "aria2c.exe"),
     };
   }
 
@@ -41,6 +42,7 @@ function packagePaths(packageTarget) {
       resources,
       engine: path.join(resources, "engine"),
       ffmpeg: path.join(resources, "app.asar.unpacked", "node_modules", "ffmpeg-static", "ffmpeg"),
+      aria2c: path.join(resources, "bin", "aria2c"),
     };
   }
 
@@ -69,6 +71,15 @@ if (process.platform !== paths.platform) {
 requireDir(paths.engine, "packaged engine resources");
 requireFile(path.join(paths.engine, "rippopotamus", "desktop_engine.py"), "packaged desktop engine");
 requireFile(paths.ffmpeg, "packaged ffmpeg binary");
+requireFile(paths.aria2c, "packaged aria2c binary");
+
+const env = {
+  ...process.env,
+  PYTHONPATH: [paths.engine, process.env.PYTHONPATH].filter(Boolean).join(path.delimiter),
+  RIPPO_FFMPEG_PATH: paths.ffmpeg,
+  RIPPO_ARIA2C_PATH: paths.aria2c,
+  RIPPO_YTDLP_PATH: "",
+};
 
 const bundledEngine = path.join(paths.resources, "bin", paths.platform === "win32" ? "rippo-engine.exe" : "rippo-engine");
 if (fs.existsSync(bundledEngine)) {
@@ -85,20 +96,15 @@ if (fs.existsSync(bundledEngine)) {
     } catch {
       payload = {};
     }
-    if (payload.ok && payload.ytDlp && payload.ffmpegOk) {
+    const actualAria2c = path.resolve(String(payload.aria2cPath || ""));
+    const expectedAria2c = path.resolve(paths.aria2c);
+    if (payload.ok && payload.ytDlp && payload.ffmpegOk && payload.aria2cOk && actualAria2c === expectedAria2c) {
       console.log(`Packaged ${target} rippo-engine binary health is valid on ${os.platform()}.`);
       process.exit(0);
     }
   }
   console.warn(`Note: ${path.relative(root, bundledEngine)} exists but health check did not pass; falling back to Python engine.`);
 }
-
-const env = {
-  ...process.env,
-  PYTHONPATH: [paths.engine, process.env.PYTHONPATH].filter(Boolean).join(path.delimiter),
-  RIPPO_FFMPEG_PATH: paths.ffmpeg,
-  RIPPO_YTDLP_PATH: "",
-};
 
 let lastError = "";
 for (const candidate of pythonCandidates()) {
@@ -130,11 +136,18 @@ for (const candidate of pythonCandidates()) {
   if (!payload.python) fail("Packaged engine health did not report Python.");
   if (!payload.ytDlp) fail("Packaged engine health did not report yt-dlp.");
   if (!payload.ffmpegOk) fail(`Packaged engine health did not accept ffmpeg: ${JSON.stringify(payload)}`);
+  if (!payload.aria2cOk) fail(`Packaged engine health did not accept aria2c: ${JSON.stringify(payload)}`);
 
   const actualFfmpeg = path.resolve(String(payload.ffmpeg));
   const expectedFfmpeg = path.resolve(paths.ffmpeg);
   if (actualFfmpeg !== expectedFfmpeg) {
     fail(`Packaged engine used wrong ffmpeg. Expected ${expectedFfmpeg}, got ${actualFfmpeg}`);
+  }
+
+  const actualAria2c = path.resolve(String(payload.aria2cPath));
+  const expectedAria2c = path.resolve(paths.aria2c);
+  if (actualAria2c !== expectedAria2c) {
+    fail(`Packaged engine used wrong aria2c. Expected ${expectedAria2c}, got ${actualAria2c}`);
   }
 
   console.log(`Packaged ${target} engine health is valid on ${os.platform()}.`);

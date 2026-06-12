@@ -21,10 +21,8 @@ class AgentCliTests(unittest.TestCase):
         self.assertIn("project", payload)
         self.assertIn("engine", payload)
         self.assertIn("health", payload["engine"]["commands"])
-        self.assertNotIn("index-semantic-ingest", payload["engine"]["commands"])
         self.assertIn("download", payload["project"]["commands"])
         self.assertIn("doctor", {item["command"] for item in payload["shortcuts"]})
-        self.assertNotIn("library-semantic-ingest", {item["command"] for item in payload["shortcuts"]})
 
     def test_project_route_forwards_to_project_cli(self) -> None:
         with mock.patch("rippopotamus.agent_cli.cli.main", return_value=0) as project_main:
@@ -37,12 +35,6 @@ class AgentCliTests(unittest.TestCase):
             self.assertEqual(agent_cli.main(["engine", "health", "--cookies-browser", "chrome"]), 0)
 
         engine_main.assert_called_once_with(["health", "--cookies-browser", "chrome"])
-
-    def test_shortcut_forwards_to_engine_command(self) -> None:
-        with mock.patch("rippopotamus.agent_cli.desktop_engine.main", return_value=0) as engine_main:
-            self.assertEqual(agent_cli.main(["library-search", "--index-root", "/tmp/index", "--query", "booth"]), 0)
-
-        engine_main.assert_called_once_with(["index-search", "--index-root", "/tmp/index", "--query", "booth"])
 
 
 if __name__ == "__main__":

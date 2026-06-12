@@ -1,6 +1,3 @@
-import type { IndexSearchResponse, IndexStatusResponse } from "../../../electron/types";
-import type { IndexBusy } from "./useLibraryIndex";
-
 const TECHNICAL_MESSAGE_PATTERNS = [
   /\bCUID#/i,
   /\bException:/i,
@@ -10,8 +7,6 @@ const TECHNICAL_MESSAGE_PATTERNS = [
   /\bdht\.dat\b/i,
   /\/Users\//i,
   /\baria2c?\b/i,
-  /\bqBittorrent\b/i,
-  /\bqbittorrent-nox\b/i,
   /\byt-dlp\b/i,
   /\bgallery-dl\b/i,
 ];
@@ -48,10 +43,10 @@ export function consumerErrorMessage(message: string, fallback = "Download faile
     return "This source is no longer available.";
   }
   if (lower.includes("missing required command") && lower.includes("aria2")) {
-    return "Torrent support is not installed yet.";
+    return "Install aria2c for reliable transfers and torrent links.";
   }
-  if (lower.includes("qbittorrent") || lower.includes("torrent support needs")) {
-    return "Torrent support is not installed yet.";
+  if (lower.includes("torrent support needs")) {
+    return "Install aria2c for reliable transfers and torrent links.";
   }
   if (lower.includes("missing") && lower.includes("gallery-dl")) {
     return "Image support is not installed yet.";
@@ -59,13 +54,26 @@ export function consumerErrorMessage(message: string, fallback = "Download faile
   if (lower.includes("missing") && lower.includes("yt-dlp")) {
     return "Video support is not installed yet.";
   }
-  if (lower.includes("gemini_api_key") || lower.includes("google_api_key") || lower.includes("gemini semantic ingestion")) {
-    return "Video indexing needs an API key before it can scan saved clips.";
-  }
   if (!cleaned || TECHNICAL_MESSAGE_PATTERNS.some((pattern) => pattern.test(cleaned))) {
     return fallback;
   }
   return cleaned.length > 180 ? `${cleaned.slice(0, 177)}...` : cleaned;
+}
+
+export function engineToolMessage(message: string, engine: "aria2c"): string {
+  const lower = message.toLowerCase().trim();
+  if (
+    lower.includes("missing")
+    || lower.includes("not on path")
+    || lower.includes("torrent support needs")
+    || lower.includes("not installed")
+  ) {
+    return "Not installed. Install aria2c or add it to PATH.";
+  }
+  if (lower.includes("not executable") || lower.includes("configured")) {
+    return "Configured binary is missing or not executable.";
+  }
+  return consumerErrorMessage(message, "aria2c could not be verified.");
 }
 
 export function consumerNoticeMessage(message: string): string | null {
@@ -84,12 +92,4 @@ export function consumerNoticeMessage(message: string): string | null {
     return null;
   }
   return consumerErrorMessage(cleaned, "");
-}
-
-export function indexEmptyState(indexBusy: IndexBusy, indexSearch: IndexSearchResponse, indexStatus: IndexStatusResponse | null, hasComposerText: boolean): { title: string; detail: string } {
-  if (indexBusy === "searching") return { title: "Searching…", detail: "" };
-  if (indexSearch.query) return { title: "No matches", detail: "" };
-  if (hasComposerText) return { title: "Press Search", detail: "" };
-  if (indexStatus?.assetCount) return { title: "Search library", detail: "" };
-  return { title: "Nothing indexed yet", detail: "" };
 }

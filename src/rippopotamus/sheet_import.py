@@ -258,11 +258,9 @@ def run_sheet_import_pipeline(
     limit: int,
     require_master: bool,
     download_master: bool,
-    index_root: Path | None,
     emit: EmitFn,
-    ingest_paths_fn: Callable[[Path, list[Path]], Any],
 ) -> dict[str, Any]:
-    """Execute sheet download, parse, optional Drive downloads, optional library ingest."""
+    """Execute sheet download, parse, and optional Drive downloads."""
     slug = slugify(project_name)
     project_root = (output_root / slug).resolve()
     ensure_project_layout(project_root)
@@ -340,12 +338,6 @@ def run_sheet_import_pipeline(
         row_jobs=row_jobs,
     )
 
-    indexed: list[str] = []
-    if index_root and downloaded:
-        emit({"phase": "indexing", "fileCount": len(downloaded)})
-        ingest_paths_fn(index_root, downloaded)
-        indexed = [str(p) for p in downloaded]
-
     summary = {
         "ok": True,
         "projectRoot": str(project_root),
@@ -354,7 +346,6 @@ def run_sheet_import_pipeline(
         "totalRows": len(records),
         "selectedRows": len(selected),
         "downloadedFiles": len(downloaded),
-        "indexedPaths": indexed,
         "rowJobs": row_jobs,
     }
     emit({"phase": "complete", **summary})

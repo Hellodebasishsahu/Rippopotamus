@@ -1,32 +1,15 @@
-import { Cookie, Download, ExternalLink, FolderOpen, FolderSearch, Globe2, Loader2, Radar as RadarIcon, RefreshCcw, RotateCcw, Search, X } from "lucide-react";
+import { Cookie, Download, ExternalLink, FolderOpen, FolderSearch, Globe2, Loader2, Radar as RadarIcon, RefreshCcw, RotateCcw, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { AppUpdateInfo, BrowserInfo, CookieSource, EngineHealth, GalleryDlUpdateInfo, IndexSearchResponse, IndexStatusResponse, OpenRouterModelCatalog, PageProbeCandidate, PresetOption, ProviderId, ProviderOption, YtDlpUpdateInfo } from "../../electron/types";
+import type { AppUpdateInfo, BrowserInfo, CookieSource, EngineHealth, GalleryDlUpdateInfo, PageProbeCandidate, PresetOption, ProviderId, ProviderOption, YtDlpUpdateInfo } from "../../electron/types";
 import { readPreferredPresets, writePreferredPresets } from "./app/downloadQueuePrefs";
 import { sourceUrl, useDownloadQueue } from "./app/useDownloadQueue";
 import type { QueueItem } from "./app/useDownloadQueue";
-import { useLibraryIndex } from "./app/useLibraryIndex";
-import type { IndexBusy } from "./app/useLibraryIndex";
-import { useSourceSearch } from "./app/useSourceSearch";
 import { createDesktopClient } from "./client/desktopClient";
-import { AppHeader } from "./components/AppHeader";
-import { LibraryView } from "./views/LibraryView";
+import { AppHeader, type ComposerAction } from "./components/AppHeader";
 import { ProjectIntakeView } from "./views/ProjectIntakeView";
-import { SettingsView } from "./views/SettingsView";
-import { consumerErrorMessage, consumerNoticeMessage } from "./app/appFormatters";
-import { indexStatusLine } from "./app/libraryDisplayUtils";
+import { SettingsCard, SettingsEmpty, SettingsToggle, SettingsView, type SettingsSectionId } from "./views/SettingsView";
+import { consumerErrorMessage, consumerNoticeMessage, engineToolMessage } from "./app/appFormatters";
 import { extractUrls } from "./urlParser";
-
-type ComposerAction = {
-  id: "idle" | "search" | "fetch";
-  label: string;
-  busyLabel: string;
-  hint: string;
-  icon: "search" | "none";
-  disabled: boolean;
-  countSuffix?: string;
-};
-
-type SearchScope = "library" | "web";
 
 const AUTO_PROVIDER = "auto";
 const COOKIE_OFF: CookieSource = { mode: "off" };
@@ -56,19 +39,6 @@ const NETWORK_ACCESS_OPTIONS = [
     url: "https://www.torproject.org/download/",
   },
 ] as const;
-
-function savedFootageBadge(status: IndexStatusResponse | null): string {
-  if (!status || !status.assetCount) return "No saved footage";
-  if (status.momentCount) return `${status.assetCount} files`;
-  return "No moments";
-}
-
-function searchEvidenceText(health: EngineHealth | null): string {
-  const evidence = health?.searchEvidence;
-  if (evidence?.configured && evidence.available === false) return `${evidence.label || evidence.provider || "Web context"} unavailable`;
-  if (evidence?.configured) return evidence.label || evidence.provider || "Configured";
-  return "No web context";
-}
 
 function updaterErrorMessage(error: unknown, tool: "yt-dlp" | "gallery-dl"): string {
   const message = error instanceof Error ? error.message : String(error);
@@ -168,25 +138,12 @@ function binaryStatusText(ok: boolean | null | undefined, healthError: string | 
   return "Checking...";
 }
 
-function pythonStatusText(health: EngineHealth | null, healthError: string | null): string {
-  if (health?.python) return "Ready";
-  if (healthError) return "Unavailable";
-  return "Checking...";
-}
-
-function pythonPathText(health: EngineHealth | null): string {
-  if (health?.python) return "Runs Rippo's local engine.";
-  return "Python runtime was not reported by the engine.";
-}
-
-function aria2cPathText(health: EngineHealth | null): string {
-  if (health?.aria2cOk) return health.torrentEngine === "aria2c" ? "Active torrent engine." : "Installed torrent fallback.";
-  return "Install aria2c to use it as a torrent fallback.";
-}
-
-function qbittorrentPathText(health: EngineHealth | null): string {
-  if (health?.qBittorrentOk) return health.torrentEngine === "qbittorrent" ? "Active torrent engine." : "Installed torrent engine.";
-  return "Install qBittorrent-nox for enhanced torrent support.";
+function aria2cDetailText(health: EngineHealth | null): string | null {
+  if (health?.aria2cOk) {
+    return health.torrentEngine === "aria2c" ? "Transfer engine" : "Installed";
+  }
+  if (health?.aria2cError) return null;
+  return "Required for reliable transfers and torrent links";
 }
 
 function ffmpegStatusText(health: EngineHealth | null, healthError: string | null): string {
@@ -226,59 +183,30 @@ function uniqueUrls(urls: string[]): string[] {
   return output;
 }
 
-function openRouterModelText(catalog: OpenRouterModelCatalog | null, health: EngineHealth | null): string {
-  if (catalog?.selectedModel) return catalog.selectedModel;
-  return health?.openRouterModel || "openrouter/free";
-}
-
-function openRouterKeyText(catalog: OpenRouterModelCatalog | null, health: EngineHealth | null): string {
-  const present = catalog?.apiKeyPresent ?? health?.openRouterKeyPresent;
-  return present ? "Key connected" : "Set OPENROUTER_API_KEY";
-}
-
 function resolveComposerAction({
   hasText,
   urlCount,
   canUseDesktop,
   hasProvider,
-  searchBusy,
 }: {
   hasText: boolean;
   urlCount: number;
   canUseDesktop: boolean;
   hasProvider: boolean;
-  searchBusy: boolean;
 }): ComposerAction {
-  if (!hasText) {
+  if (!hasText || urlCount === 0) {
     return {
       id: "idle",
-      label: "Go",
-      busyLabel: "Working",
-      hint: "Paste or type first",
-      icon: "none",
+      label: "Fetch",
       disabled: true,
     };
   }
 
-  if (urlCount > 0) {
-    return {
-      id: "fetch",
-      label: "Fetch",
-      busyLabel: "Fetching",
-      hint: "fetch",
-      icon: "none",
-      disabled: !canUseDesktop || !hasProvider,
-      countSuffix: urlCount > 1 ? ` ${urlCount}` : "",
-    };
-  }
-
   return {
-    id: "search",
-    label: "Search",
-    busyLabel: "Searching",
-    hint: "search",
-    icon: "search",
-    disabled: !canUseDesktop || searchBusy,
+    id: "fetch",
+    label: "Fetch",
+    disabled: !canUseDesktop || !hasProvider,
+    countSuffix: urlCount > 1 ? ` ${urlCount}` : "",
   };
 }
 
@@ -311,7 +239,6 @@ export function App() {
   const [health, setHealth] = useState<EngineHealth | null>(null);
   const [healthError, setHealthError] = useState<string | null>(null);
   const [input, setInput] = useState("");
-  const [searchScope, setSearchScope] = useState<SearchScope>("library");
   const [fetchProvider, setFetchProvider] = useState<ProviderId | typeof AUTO_PROVIDER>(AUTO_PROVIDER);
   const [outputRoot, setOutputRoot] = useState("");
   const [browsers, setBrowsers] = useState<BrowserInfo[]>([]);
@@ -329,14 +256,10 @@ export function App() {
   const [appUpdate, setAppUpdate] = useState<AppUpdateInfo | null>(null);
   const [appUpdateStatus, setAppUpdateStatus] = useState<"idle" | "checking">("idle");
   const [appUpdateError, setAppUpdateError] = useState<string | null>(null);
-  const [qbittorrentStatus, setQbittorrentStatus] = useState<"idle" | "checking" | "updating">("idle");
   const [aria2cStatus, setAria2cStatus] = useState<"idle" | "checking" | "updating">("idle");
   const [ffmpegStatus, setFfmpegStatus] = useState<"idle" | "checking" | "updating">("idle");
-  const [aiCatalog, setAiCatalog] = useState<OpenRouterModelCatalog | null>(null);
-  const [aiStatus, setAiStatus] = useState<"idle" | "loading" | "saving">("idle");
-  const [aiError, setAiError] = useState<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [settingsSection, setSettingsSection] = useState<"general" | "search" | "ingest" | "watch" | "access" | "tools" | "appearance">("general");
+  const [settingsSection, setSettingsSection] = useState<SettingsSectionId>("general");
   const [fontSmoothing, setFontSmoothing] = useState(() => localStorage.getItem("rippo:appearance:fontSmoothing") !== "false");
   const [pageProbeBusy, setPageProbeBusy] = useState(false);
   const [pageProbeError, setPageProbeError] = useState<string | null>(null);
@@ -346,33 +269,6 @@ export function App() {
   const [downloadWorkerCount, setDownloadWorkerCount] = useState(() => readWorkerSetting("rippo:queue:downloadWorkers", DOWNLOAD_WORKER_DEFAULT, DOWNLOAD_WORKER_MIN, DOWNLOAD_WORKER_MAX));
   const [preferredPresets, setPreferredPresets] = useState<Partial<Record<ProviderId, string>>>(() => readPreferredPresets());
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
-  const {
-    activeSourcePack,
-    setActiveSourcePack,
-    sourcePacks,
-    sourceSearch,
-    sourceSearchBusy,
-    resetSourceSearch,
-    searchSources: searchSourceQuery,
-  } = useSourceSearch({ desktop, consumerErrorMessage });
-  const {
-    indexStatus,
-    indexSearch,
-    indexBusy,
-    indexError,
-    libraryThumbs,
-    expandedLibraryId,
-    libraryMediaUrls,
-    setExpandedLibraryId,
-    resetIndexSearch,
-    clearIndexError,
-    indexSavedFolder,
-    searchSavedFootage,
-  } = useLibraryIndex({
-    desktop,
-    outputRoot,
-    consumerErrorMessage,
-  });
 
   useEffect(() => {
     document.documentElement.classList.toggle("no-font-smoothing", !fontSmoothing);
@@ -401,11 +297,6 @@ export function App() {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [settingsOpen]);
-
-  useEffect(() => {
-    if (!settingsOpen || !desktop || typeof desktop.listAiModels !== "function" || aiCatalog) return;
-    void loadAiModels(false);
-  }, [settingsOpen, desktop, aiCatalog]);
 
   useEffect(() => {
     if (!desktop) return;
@@ -482,12 +373,6 @@ export function App() {
     }
   }
 
-  function chooseSearchScope(scope: SearchScope) {
-    setSearchScope(scope);
-    if (scope === "library") resetSourceSearch();
-    else resetIndexSearch();
-  }
-
   async function chooseOutputRoot() {
     if (!desktop) return;
     try {
@@ -505,37 +390,6 @@ export function App() {
       setOutputRoot(result.outputRoot);
     } catch {
       undefined;
-    }
-  }
-
-  async function loadAiModels(refresh: boolean) {
-    if (!desktop || typeof desktop.listAiModels !== "function" || aiStatus !== "idle") return;
-    setAiStatus("loading");
-    setAiError(null);
-    try {
-      const result = await desktop.listAiModels(refresh);
-      setAiCatalog(result);
-      if (result.error) setAiError(result.error);
-    } catch (error) {
-      setAiError(error instanceof Error ? error.message : String(error));
-    } finally {
-      setAiStatus("idle");
-    }
-  }
-
-  async function changeAiModel(modelId: string) {
-    if (!desktop || typeof desktop.setAiModel !== "function") return;
-    setAiStatus("saving");
-    setAiError(null);
-    try {
-      const result = await desktop.setAiModel(modelId);
-      setHealth(result.health);
-      setAiCatalog(result.catalog);
-      if (result.catalog.error) setAiError(result.catalog.error);
-    } catch (error) {
-      setAiError(error instanceof Error ? error.message : String(error));
-    } finally {
-      setAiStatus("idle");
     }
   }
 
@@ -637,16 +491,6 @@ export function App() {
     await desktop.openExternal(appUpdate.dmgUrl);
   }
 
-  async function checkQbittorrentUpdate() {
-    if (!desktop || qbittorrentStatus !== "idle") return;
-    setQbittorrentStatus("checking");
-    try {
-      await refreshHealth();
-    } finally {
-      setQbittorrentStatus("idle");
-    }
-  }
-
   async function checkAria2cUpdate() {
     if (!desktop || aria2cStatus !== "idle") return;
     setAria2cStatus("checking");
@@ -714,9 +558,7 @@ export function App() {
       urlCount: detectedCount,
       canUseDesktop: Boolean(desktop),
       hasProvider: Boolean(selectedFetchProvider),
-      searchBusy: searchScope === "library" ? indexBusy === "searching" : sourceSearchBusy,
-    }), [detectedCount, hasComposerText, indexBusy, desktop, searchScope, selectedFetchProvider, sourceSearchBusy]);
-  const activeSearchBusy = composerAction.id === "search" && (searchScope === "library" ? indexBusy === "searching" : sourceSearchBusy);
+    }), [detectedCount, hasComposerText, desktop, selectedFetchProvider]);
 
   useEffect(() => {
     if (!desktop) {
@@ -731,15 +573,10 @@ export function App() {
     setFetchProvider((current) => current === AUTO_PROVIDER || providerOptions.some((provider) => provider.id === current) ? current : AUTO_PROVIDER);
   }, [providerOptions]);
 
-  useEffect(() => {
-    if (detectedCount > 0 && sourceSearch.query) resetSourceSearch();
-  }, [detectedCount, sourceSearch.query, resetSourceSearch]);
-
   async function addAndFetch() {
     const urls = inputUrls;
     if (!urls.length) return;
     setInput("");
-    resetSourceSearch();
     await queueUrls(urls);
   }
 
@@ -749,7 +586,6 @@ export function App() {
     setPageProbeBusy(true);
     setPageProbeError(null);
     setPageProbeNotice(null);
-    resetSourceSearch();
     try {
       const result = await desktop.probePage(url, { incognito: pageProbeIncognito });
       if (!result.ok) {
@@ -814,11 +650,6 @@ export function App() {
   }
 
   async function runComposerAction() {
-    if (composerAction.id === "search") {
-      if (searchScope === "library") await searchSavedFootage(input);
-      else await searchSourceQuery(input);
-      return;
-    }
     if (composerAction.id === "fetch") await addAndFetch();
   }
 
@@ -832,7 +663,7 @@ export function App() {
     else window.open(url, "_blank", "noopener,noreferrer");
   }
 
-  const showIntakeEmptyHint = items.length === 0 && !hasComposerText && !indexSearch.query && !indexError && indexBusy === "idle" && !sourceSearch.query && !sourceSearch.results.length && !sourceSearch.error && !sourceSearchBusy;
+  const showIntakeEmptyHint = items.length === 0 && !hasComposerText;
 
   return (
     <main className="app">
@@ -840,22 +671,14 @@ export function App() {
         <AppHeader
           input={input}
           textareaRef={textareaRef}
-          searchScope={searchScope}
-          sourcePacks={sourcePacks}
-          activeSourcePack={activeSourcePack}
           detectedCount={detectedCount}
-          indexStatus={indexStatus}
           selectedFetchProvider={selectedFetchProvider}
           providerOptions={providerOptions}
           composerAction={composerAction}
-          activeSearchBusy={activeSearchBusy}
           pageProbeBusy={pageProbeBusy}
           setInput={setInput}
-          clearIndexError={clearIndexError}
           runComposerAction={runComposerAction}
           sniffPage={sniffPage}
-          chooseSearchScope={chooseSearchScope}
-          setActiveSourcePack={setActiveSourcePack}
           setFetchProvider={setFetchProvider}
           openSettings={() => setSettingsOpen(true)}
           showHero={showIntakeEmptyHint}
@@ -863,29 +686,12 @@ export function App() {
 
         <section className="workspace">
           {healthError ? <p className="error-text">{healthError}</p> : null}
-          <LibraryView
-            desktop={desktop}
-            activeOutputRoot={activeOutputRoot}
-            indexBusy={indexBusy}
-            indexSearch={indexSearch}
-            indexStatus={indexStatus}
-            indexError={indexError}
-            hasComposerText={hasComposerText}
-            expandedLibraryId={expandedLibraryId}
-            setExpandedLibraryId={setExpandedLibraryId}
-            libraryThumbs={libraryThumbs}
-            libraryMediaUrls={libraryMediaUrls}
-            consumerErrorMessage={consumerErrorMessage}
-          />
           <ProjectIntakeView
             desktop={desktop}
             activeOutputRoot={activeOutputRoot}
             cookieSource={cookieSource}
-            libraryIndexRoot={health?.libraryIndexRoot}
             consumerErrorMessage={consumerErrorMessage}
             consumerNoticeMessage={consumerNoticeMessage}
-            sourceSearch={sourceSearch}
-            sourceSearchBusy={sourceSearchBusy}
             input={input}
             pageProbeError={pageProbeError}
             pageProbeNotice={pageProbeNotice}
@@ -918,138 +724,66 @@ export function App() {
           setSection={setSettingsSection}
         >
             {settingsSection === "general" && (
-            <>
             <section className="settings-section">
               <div className="settings-row-head">
                 <FolderOpen size={14} strokeWidth={2} aria-hidden />
                 <h3 className="settings-row-title">Download location</h3>
               </div>
-              <p className="settings-hint settings-path-display" title={outputRoot || undefined}>
-                {outputRoot || "Will use ~/Downloads/Rippo"}
+              <p className="settings-hint">Queue items and finished files are saved here.</p>
+              <p className="settings-path-display" title={outputRoot || undefined}>
+                {outputRoot || "~/Downloads/Rippo"}
               </p>
               {pageProbeIncognito ? (
-                <p className="settings-hint settings-path-display" title={activeOutputRoot || undefined}>
-                  Private saves: {activeOutputRoot || "Set a download folder first"}
+                <p className="settings-hint settings-path-note">
+                  Private mode: <span title={activeOutputRoot || undefined}>{activeOutputRoot || "Set a download folder first"}</span>
                 </p>
               ) : null}
               <div className="settings-actions">
                 <button type="button" className="btn btn-primary btn-footer" onClick={chooseOutputRoot} disabled={!desktop}>
-                  <FolderSearch size={14} strokeWidth={2} aria-hidden /> Choose…
+                  <FolderSearch size={14} strokeWidth={2} aria-hidden /> Choose folder…
                 </button>
                 <button type="button" className="btn btn-ghost btn-footer" onClick={resetOutputRoot} disabled={!desktop} title="Reset to ~/Downloads/Rippo">
-                  <RotateCcw size={14} strokeWidth={2} aria-hidden /> Default
+                  <RotateCcw size={14} strokeWidth={2} aria-hidden /> Use default
                 </button>
               </div>
-            </section>
-            <section className="settings-section">
-              <div className="ingest-toggle-list">
-                <div className="ingest-toggle-row">
-                  <span>
-                    <b>Font smoothing</b>
-                    <small>Use native macOS font anti-aliasing</small>
-                  </span>
-                  <button
-                    type="button"
-                    className={`ingest-toggle-btn ${fontSmoothing ? "is-active" : ""}`}
-                    onClick={() => setFontSmoothing(!fontSmoothing)}
-                    aria-pressed={fontSmoothing}
-                  >
-                    {fontSmoothing ? "ON" : "OFF"}
-                  </button>
-                </div>
-              </div>
-            </section>
-            </>
-            )}
-
-            {settingsSection === "search" && (
-            <section className="settings-section">
-              <div className="settings-row-head">
-                <Search size={14} strokeWidth={2} aria-hidden />
-                <h3 className="settings-row-title">Search routing</h3>
-                <span className="settings-version">{openRouterKeyText(aiCatalog, health)}</span>
-              </div>
-              <p className="settings-hint">Search-result context is read first when configured; OpenRouter then routes to the right source adapters.</p>
-              <p className="settings-hint">Web context: {searchEvidenceText(health)}</p>
-              <select
-                className="settings-select"
-                value={openRouterModelText(aiCatalog, health)}
-                onChange={(event) => changeAiModel(event.target.value)}
-                disabled={!desktop || aiStatus !== "idle"}
-                aria-label="OpenRouter routing model"
-              >
-                {(aiCatalog?.models?.length ? aiCatalog.models : [{ id: openRouterModelText(aiCatalog, health), name: openRouterModelText(aiCatalog, health) }]).map((model) => (
-                  <option key={model.id} value={model.id}>{model.name}</option>
-                ))}
-              </select>
-              <div className="settings-actions">
-                <button type="button" className="btn btn-ghost btn-footer" onClick={() => loadAiModels(true)} disabled={!desktop || aiStatus !== "idle"}>
-                  {aiStatus === "loading" ? <Loader2 className="spin" size={14} strokeWidth={2} aria-hidden /> : <RefreshCcw size={14} strokeWidth={2} aria-hidden />}
-                  Refresh free models
-                </button>
-              </div>
-              <p className="settings-hint">
-                {aiCatalog?.models?.length ? `${aiCatalog.models.length} free text-only models cached. Selected: ${openRouterModelText(aiCatalog, health)}` : `Selected: ${openRouterModelText(aiCatalog, health)}`}
-              </p>
-              {aiError ? <p className="settings-warning">{consumerErrorMessage(aiError, "Could not refresh OpenRouter models.")}</p> : null}
             </section>
             )}
 
-            {settingsSection === "ingest" && (
-            <section className="settings-section ingest-section">
-              <h3 className="settings-row-title">Index saved files</h3>
-              <p className="settings-hint">Filenames and basic metadata only.</p>
-              <div className="settings-actions ingest-actions">
-                <button type="button" className="btn btn-primary btn-footer" onClick={indexSavedFolder} disabled={!desktop || indexBusy !== "idle"}>
-                  {indexBusy === "ingesting" ? <Loader2 className="spin" size={14} strokeWidth={2} aria-hidden /> : <FolderSearch size={14} strokeWidth={2} aria-hidden />}
-                  Index folder
-                </button>
-                <span className="settings-version">
-                  {`${indexStatus?.assetCount || 0} files indexed`}
-                </span>
-              </div>
-              {indexError ? <p className="settings-warning">{consumerErrorMessage(indexError, "Could not index this folder.")}</p> : null}
-            </section>
+            {settingsSection === "appearance" && (
+              <SettingsCard title="Display">
+                <SettingsToggle
+                  label="Font smoothing"
+                  hint="Use native macOS anti-aliasing for sharper UI text."
+                  pressed={fontSmoothing}
+                  onToggle={() => setFontSmoothing(!fontSmoothing)}
+                />
+              </SettingsCard>
             )}
 
             {settingsSection === "watch" && (
-            <section className="settings-section">
-              <div className="settings-row-head">
-                <RadarIcon size={14} strokeWidth={2} aria-hidden />
-                <h3 className="settings-row-title">Watching</h3>
-              </div>
-              <p className="settings-hint">
-                Automated channel watching is not yet available in this build.
-              </p>
-            </section>
+              <SettingsEmpty
+                badge="Coming soon"
+                title="Channel watching"
+                body="Add YouTube channels and RSS feeds here. Rippo will check them on a schedule and surface new finds in your queue."
+              />
             )}
 
             {settingsSection === "access" && (
             <>
             <section className="settings-section">
-              <div className="ingest-toggle-list">
-                <div className="ingest-toggle-row">
-                  <span>
-                    <b>Private mode</b>
-                    <small>Hidden .rippo-private saves, sandboxed sniffing, cache clears on close</small>
-                  </span>
-                  <button
-                    type="button"
-                    className={`ingest-toggle-btn ${pageProbeIncognito ? "is-active" : ""}`}
-                    onClick={() => { void setPrivateMode(!pageProbeIncognito); }}
-                    aria-pressed={pageProbeIncognito}
-                  >
-                    {pageProbeIncognito ? "ON" : "OFF"}
-                  </button>
-                </div>
-              </div>
+              <SettingsToggle
+                label="Private mode"
+                hint="Hidden .rippo-private saves, sandboxed sniffing, clears cache on quit."
+                pressed={pageProbeIncognito}
+                onToggle={() => { void setPrivateMode(!pageProbeIncognito); }}
+              />
             </section>
             <section className="settings-section">
               <div className="settings-row-head">
                 <Cookie size={14} strokeWidth={2} aria-hidden />
                 <h3 className="settings-row-title">Site access</h3>
               </div>
-              <p className="settings-hint">Pick Chrome only when a video link needs your signed-in session. Rippo passes local browser data to yt-dlp; it does not open or control your account.</p>
+              <p className="settings-hint">Use when a link needs your logged-in browser. Rippo reads cookies locally for yt-dlp—it never controls your account.</p>
               <select
                 className="settings-select"
                 value={cookieSourceValue(cookieSource)}
@@ -1083,7 +817,7 @@ export function App() {
                 <h3 className="settings-row-title">Network proxy</h3>
                 <span className="settings-version">{health?.networkProxyEnabled ? "On" : "Off"}</span>
               </div>
-              <p className="settings-hint">Use your own HTTP or SOCKS proxy for video, image, and Drive downloads. This does not change torrent routing.</p>
+              <p className="settings-hint">HTTP or SOCKS proxy for video, image, and Drive downloads. Torrent routing is unchanged.</p>
               <div className="settings-inline-control">
                 <input
                   type="text"
@@ -1119,6 +853,7 @@ export function App() {
                 <h3 className="settings-row-title">Queue workers</h3>
                 <span className="settings-version">{fetchWorkerCount} read · {downloadWorkerCount} save</span>
               </div>
+              <p className="settings-hint">More workers speed up large queues; too many can spike CPU and network use.</p>
               <div className="worker-control-list">
                 <label className="worker-field">
                   <span className="worker-field-head">
@@ -1151,6 +886,10 @@ export function App() {
                   />
                 </label>
               </div>
+              <div className="settings-subsection-head">
+                <h4 className="settings-subsection-title">Save engines</h4>
+                <p className="settings-hint">Local binaries Rippo calls for metadata, downloads, and transcoding.</p>
+              </div>
               <ul className="tool-list" role="list">
 
                 <li className="tool-row">
@@ -1180,15 +919,6 @@ export function App() {
                       </button>
                     )}
                   </div>
-                </li>
-
-                <li className="tool-row">
-                  <span className={`tool-dot ${health?.python ? "tool-dot-ok" : "tool-dot-dim"}`} aria-hidden />
-                  <div className="tool-body">
-                    <span className="tool-name">Python</span>
-                    {health?.python ? <span className="tool-path">{health.python}</span> : null}
-                  </div>
-                  <span className="tool-status">{pythonStatusText(health, healthError)}</span>
                 </li>
 
                 <li className="tool-row">
@@ -1237,26 +967,15 @@ export function App() {
                 </li>
 
                 <li className="tool-row">
-                  <span className={`tool-dot ${health?.qBittorrentOk ? "tool-dot-ok" : "tool-dot-dim"}`} aria-hidden />
-                  <div className="tool-body">
-                    <span className="tool-name">qBittorrent-nox</span>
-                    {health?.qBittorrentPath ? <span className="tool-path">{health.qBittorrentPath}</span> : null}
-                    {health?.qBittorrentError ? <span className="tool-error">{consumerErrorMessage(health.qBittorrentError)}</span> : null}
-                  </div>
-                  <div className="tool-actions">
-                    <button type="button" className="tool-btn tool-btn-ghost" onClick={checkQbittorrentUpdate} disabled={!desktop || qbittorrentStatus !== "idle"}>
-                      {qbittorrentStatus === "checking" ? <Loader2 className="spin" size={12} strokeWidth={2} aria-hidden /> : <RefreshCcw size={12} strokeWidth={2} aria-hidden />}
-                      Check
-                    </button>
-                  </div>
-                </li>
-
-                <li className="tool-row">
                   <span className={`tool-dot ${health?.aria2cOk ? "tool-dot-ok" : "tool-dot-dim"}`} aria-hidden />
                   <div className="tool-body">
                     <span className="tool-name">aria2c</span>
-                    {health?.aria2cPath ? <span className="tool-path">{health.aria2cPath}</span> : null}
-                    {health?.aria2cError ? <span className="tool-error">{consumerErrorMessage(health.aria2cError)}</span> : null}
+                    {health?.aria2c && health.aria2cOk ? <span className="tool-path">{health.aria2c}</span> : null}
+                    {health?.aria2cPath && health.aria2cOk ? <span className="tool-path">{health.aria2cPath}</span> : null}
+                    {aria2cDetailText(health) ? <span className="tool-path">{aria2cDetailText(health)}</span> : null}
+                    {health?.aria2cError ? (
+                      <span className="tool-error">{engineToolMessage(health.aria2cError, "aria2c")}</span>
+                    ) : null}
                   </div>
                   <div className="tool-actions">
                     <button type="button" className="tool-btn tool-btn-ghost" onClick={checkAria2cUpdate} disabled={!desktop || aria2cStatus !== "idle"}>

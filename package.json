@@ -4,14 +4,18 @@
   "description": "Feed it links. It spits out assets.",
   "main": "dist-electron/main.js",
   "scripts": {
-    "dev": "npm run build:electron && concurrently -k \"vite --host 127.0.0.1 --port 5174 --strictPort\" \"wait-on http://127.0.0.1:5174 && VITE_DEV_SERVER_URL=http://127.0.0.1:5174 electron .\"",
-    "build": "npm run build:ui && npm run build:electron",
+    "dev": "tsc -p tsconfig.electron.json && concurrently -k \"vite --host 127.0.0.1 --port 5174 --strictPort\" \"wait-on http://127.0.0.1:5174 && VITE_DEV_SERVER_URL=http://127.0.0.1:5174 electron .\"",
+    "dev:website": "vite --config apps/website/vite.config.ts --host 127.0.0.1 --port 5175 --strictPort",
+    "build": "tsc -p tsconfig.json --noEmit && vite build && tsc -p tsconfig.electron.json",
+    "build:website": "tsc -p apps/website/tsconfig.json --noEmit && vite build --config apps/website/vite.config.ts",
     "build:ui": "tsc -p tsconfig.json --noEmit && vite build",
     "build:electron": "tsc -p tsconfig.electron.json",
     "prepare:ffmpeg:mac": "node scripts/install-ffmpeg-static-target.mjs darwin arm64",
-    "package:mac": "npm run prepare:ffmpeg:mac && npm run build && electron-builder --mac dmg",
+    "prepare:aria2:mac": "node scripts/install-aria2c-resource.mjs darwin",
+    "package:mac": "npm run prepare:ffmpeg:mac && npm run prepare:aria2:mac && npm run build && electron-builder --mac dmg",
     "prepare:ffmpeg:win": "node scripts/install-ffmpeg-static-target.mjs win32 x64",
-    "package:win": "npm run prepare:ffmpeg:win && npm run build && electron-builder --win dir --x64",
+    "prepare:aria2:win": "node scripts/install-aria2c-resource.mjs win32",
+    "package:win": "npm run prepare:ffmpeg:win && npm run prepare:aria2:win && npm run build && electron-builder --win dir --x64",
     "package:win:ci": "npm run package:win && npm run verify:package:win",
     "verify:package:mac": "node scripts/verify-package-artifact.mjs mac",
     "verify:package:win": "node scripts/verify-package-artifact.mjs win",
@@ -23,7 +27,6 @@
   "keywords": [],
   "author": "",
   "license": "UNLICENSED",
-  "packageManager": "npm@11.12.1",
   "type": "commonjs",
   "dependencies": {
     "@ghostery/adblocker-electron": "^2.17.0",
@@ -66,6 +69,10 @@
       {
         "from": "pyproject.toml",
         "to": "engine/pyproject.toml"
+      },
+      {
+        "from": "build/bin",
+        "to": "bin"
       }
     ],
     "directories": {

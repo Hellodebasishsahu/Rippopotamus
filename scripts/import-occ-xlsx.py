@@ -11,7 +11,6 @@ from pathlib import Path
 from typing import Any
 from xml.etree import ElementTree as ET
 
-from rippopotamus.footage_index import ingest_paths
 from rippopotamus.google_drive import download_drive_file, drive_file_id, drive_opener
 
 
@@ -144,9 +143,6 @@ def slug(value: str) -> str:
     return cleaned or "untitled"
 
 
-def app_library_index_root() -> Path:
-    return Path.home() / "Library" / "Application Support" / "rippopotamus" / "library-index"
-
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Import OCC spreadsheet and download masters from Drive.")
@@ -154,7 +150,6 @@ def main() -> None:
     parser.add_argument("--limit", type=int, default=0, help="Max records to process per file (0 = all).")
     parser.add_argument("--limit-per-type", type=int, default=0, help="Max records per content type per file (0 = all).")
     parser.add_argument("--download", action="store_true", help="Download video files from Drive.")
-    parser.add_argument("--index", action="store_true", help="Index downloaded files into the library.")
     parser.add_argument("--output-root", default="", help="Download root (default: ~/Downloads/Rippo/OCC).")
     parser.add_argument("--cookies-browser", default="chrome", help="Browser for cookies.")
     parser.add_argument("--dry-run", action="store_true", help="Print records without downloading.")
@@ -218,13 +213,6 @@ def main() -> None:
     manifest = manifest_dir / "occ-records.json"
     manifest.write_text(json.dumps([r.as_dict() for r in all_records], indent=2, ensure_ascii=False), encoding="utf-8")
     print(f"\nManifest: {manifest} ({len(all_records)} records)")
-
-    if downloaded_paths and args.index:
-        index_root = app_library_index_root()
-        print(f"\nIndexing {len(downloaded_paths)} files into {index_root}")
-        result = ingest_paths(str(index_root), downloaded_paths)
-        print(f"  Added: {result['added']}, Updated: {result['updated']}, Unchanged: {result['unchanged']}")
-        print(f"  Assets: {result['assetCount']}, Moments: {result['momentCount']}")
 
 
 if __name__ == "__main__":

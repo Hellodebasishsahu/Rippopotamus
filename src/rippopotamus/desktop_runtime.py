@@ -15,7 +15,6 @@ from rippopotamus.providers import (
     aria2c_base,
     friendly_error,
     gallery_dl_base,
-    qbittorrent_nox_base,
     yt_dlp_cookie_check_command,
     yt_dlp_run as provider_yt_dlp_run,
 )
@@ -114,10 +113,12 @@ def ffmpeg_path() -> str | None:
 
 
 def provider_context(cookies_browser: str | None = None) -> ProviderContext:
+    aria = aria2c_status()
     return ProviderContext(
         yt_dlp_base=tuple(yt_dlp_base()),
         cookies_browser=(cookies_browser or "").strip() or None,
         ffmpeg_path=ffmpeg_path(),
+        aria2c_path=aria["path"] if aria["ok"] else None,
         network_proxy=network_proxy(),
     )
 
@@ -175,29 +176,11 @@ def aria2c_status() -> dict[str, Any]:
         return {"ok": False, "version": None, "path": base[0], "error": friendly_error(str(exc))}
 
 
-def qbittorrent_status() -> dict[str, Any]:
-    try:
-        base = qbittorrent_nox_base()
-    except SystemExit as exc:
-        return {"ok": False, "version": None, "path": None, "error": friendly_error(str(exc))}
-
-    try:
-        result = subprocess.run([*base, "--version"], capture_output=True, text=True, check=True)
-        first = result.stdout.splitlines()[0] if result.stdout else "qBittorrent"
-        version_match = re.search(r"qBittorrent\s+v?([^\s]+)", first)
-        return {"ok": True, "version": version_match.group(1) if version_match else first, "path": base[0], "error": None}
-    except Exception as exc:
-        return {"ok": False, "version": None, "path": base[0], "error": friendly_error(str(exc))}
-
-
 def torrent_engine_status() -> dict[str, Any]:
-    qbit = qbittorrent_status()
     aria = aria2c_status()
-    if qbit["ok"]:
-        return {"ok": True, "engine": "qbittorrent", "error": None, "qbittorrent": qbit, "aria2c": aria}
     if aria["ok"]:
-        return {"ok": True, "engine": "aria2c", "error": None, "qbittorrent": qbit, "aria2c": aria}
-    return {"ok": False, "engine": None, "error": qbit["error"] or aria["error"], "qbittorrent": qbit, "aria2c": aria}
+        return {"ok": True, "engine": "aria2c", "error": None, "aria2c": aria}
+    return {"ok": False, "engine": None, "error": aria["error"], "aria2c": aria}
 
 
 def run_text(args: list[str]) -> str:

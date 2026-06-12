@@ -20,8 +20,6 @@ type UseDownloadQueueOptions = {
   outputRoot: string;
   fetchWorkerCount?: number;
   downloadWorkerCount?: number;
-  /** When true, ingest the output folder into the app library after a batch download completes. */
-  autoIndexLibraryAfterDownloads?: boolean;
   consumerErrorMessage: (message: string, fallback?: string) => string;
   consumerNoticeMessage: (message: string) => string | null;
 };
@@ -116,7 +114,6 @@ export function useDownloadQueue({
   outputRoot,
   fetchWorkerCount,
   downloadWorkerCount,
-  autoIndexLibraryAfterDownloads = true,
   consumerErrorMessage,
   consumerNoticeMessage,
 }: UseDownloadQueueOptions) {
@@ -205,7 +202,6 @@ export function useDownloadQueue({
     if (!ready.length || busy || !desktop) return;
     setBusy(true);
 
-    let anySuccess = false;
     await runWithConcurrency(ready, workerCount(downloadWorkerCount, DOWNLOAD_CONCURRENCY), async (item) => {
       const jobId = item.localId;
       setItems((current) => current.map((candidate) => candidate.localId === item.localId ? { ...candidate, status: QUEUE_STATUS.downloading, progress: 0, error: undefined, jobId, phase: undefined, phaseIndex: 0, finalizing: false, stage: undefined, notices: [] } : candidate));
@@ -220,7 +216,6 @@ export function useDownloadQueue({
         });
         const result = response.result as { type?: string; files?: QueueItem["files"]; error?: string } | undefined;
         if (result?.type === "success") {
-          anySuccess = true;
           setItems((current) => current.map((candidate) => candidate.localId === item.localId ? { ...candidate, status: QUEUE_STATUS.done, progress: 100, files: result.files, stage: "Saved", jobId: response.jobId } : candidate));
         } else if (result?.type === "error") {
           setItems((current) => current.map((candidate) => candidate.localId === item.localId ? { ...candidate, status: QUEUE_STATUS.failed, error: fetchErrorMessage(result.error || "Download failed.", consumerErrorMessage, item.url), notices: [], finalizing: false, jobId: response.jobId } : candidate));
@@ -231,13 +226,6 @@ export function useDownloadQueue({
         setItems((current) => current.map((candidate) => candidate.localId === item.localId ? { ...candidate, status: QUEUE_STATUS.failed, error: fetchErrorMessage(error, consumerErrorMessage, item.url), notices: [] } : candidate));
       }
     });
-    if (anySuccess && autoIndexLibraryAfterDownloads && desktop) {
-      try {
-        await desktop.indexIngest({ paths: [outputRoot] });
-      } catch {
-        undefined;
-      }
-    }
     setBusy(false);
   }
 

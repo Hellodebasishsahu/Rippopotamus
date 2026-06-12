@@ -12,7 +12,6 @@ type SheetImportPanelProps = {
   desktop: DesktopClient | null;
   outputRoot: string;
   cookieSource: CookieSource;
-  libraryIndexRoot?: string;
   formatError: (message: string, fallback?: string) => string;
 };
 
@@ -32,7 +31,7 @@ function markSheetImportCompleted(): void {
   }
 }
 
-export function SheetImportPanel({ desktop, outputRoot, cookieSource, libraryIndexRoot, formatError }: SheetImportPanelProps) {
+export function SheetImportPanel({ desktop, outputRoot, cookieSource, formatError }: SheetImportPanelProps) {
   const formId = useId();
   const activeJobRef = useRef<string | null>(null);
   const [open, setOpen] = useState(false);
@@ -41,7 +40,6 @@ export function SheetImportPanel({ desktop, outputRoot, cookieSource, libraryInd
   const [projectName, setProjectName] = useState("");
   const [sheetName, setSheetName] = useState(DEFAULT_SHEET_TAB);
   const [downloadMaster, setDownloadMaster] = useState(true);
-  const [indexToLibrary, setIndexToLibrary] = useState(true);
   const [requireMaster, setRequireMaster] = useState(false);
   const [limit, setLimit] = useState("");
   const [busy, setBusy] = useState(false);
@@ -101,7 +99,6 @@ export function SheetImportPanel({ desktop, outputRoot, cookieSource, libraryInd
       cookieSource,
       requireMaster,
       downloadMaster,
-      indexToLibrary: Boolean(indexToLibrary && libraryIndexRoot),
     };
     const lim = Number.parseInt(limit.trim(), 10);
     if (Number.isFinite(lim) && lim > 0) payload.limit = lim;
@@ -178,10 +175,6 @@ export function SheetImportPanel({ desktop, outputRoot, cookieSource, libraryInd
               <label className="sheet-toggle">
                 <input type="checkbox" checked={requireMaster} onChange={(e) => setRequireMaster(e.target.checked)} disabled={busy} />
                 Only rows with a master link
-              </label>
-              <label className="sheet-toggle">
-                <input type="checkbox" checked={indexToLibrary} onChange={(e) => setIndexToLibrary(e.target.checked)} disabled={busy || !libraryIndexRoot} />
-                Add downloads to library
               </label>
             </div>
           </details>

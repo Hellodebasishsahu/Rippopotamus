@@ -92,6 +92,7 @@ class ProviderContext:
     yt_dlp_base: tuple[str, ...] | None = None
     cookies_browser: str | None = None
     ffmpeg_path: str | None = None
+    aria2c_path: str | None = None
     network_proxy: str | None = None
 
 
@@ -130,25 +131,17 @@ def gallery_dl_run(context: ProviderContext | None = None) -> list[str]:
 
 
 def aria2c_base() -> list[str]:
-    executable = shutil.which("aria2c")
-    if executable:
-        return [executable]
-    raise SystemExit("Missing aria2c. Install aria2c or place aria2c on PATH.")
-
-
-def qbittorrent_nox_base() -> list[str]:
-    configured = os.environ.get("RIPPO_QBITTORRENT_PATH", "").strip()
+    configured = os.environ.get("RIPPO_ARIA2C_PATH", "").strip()
     if configured:
         path = Path(configured).expanduser()
         if path.exists() and path.is_file() and os.access(path, os.X_OK):
             return [str(path)]
-        raise SystemExit("Configured qBittorrent is not executable.")
+        raise SystemExit("Configured aria2c is not executable.")
 
-    for candidate in ["qbittorrent-nox", "qbittorrent-nox-static"]:
-        executable = shutil.which(candidate)
-        if executable:
-            return [executable]
-    raise SystemExit("Missing qBittorrent-nox. Install qBittorrent-nox or place it on PATH.")
+    executable = shutil.which("aria2c")
+    if executable:
+        return [executable]
+    raise SystemExit("Missing aria2c. Install aria2c or place aria2c on PATH.")
 
 
 def torrent_title(url: str) -> str:
@@ -263,6 +256,13 @@ def download_command(
         command += ["--ffmpeg-location", str(Path(context.ffmpeg_path).parent)]
         if "--skip-download" not in spec["extra"]:
             command += ["--downloader", "m3u8:ffmpeg", "--hls-use-mpegts"]
+    if context and context.aria2c_path and "--skip-download" not in spec["extra"]:
+        command += [
+            "--downloader",
+            f"http,https:{context.aria2c_path}",
+            "--downloader-args",
+            "aria2c:-x 8 -s 8 -k 1M --continue=true --max-tries=5 --retry-wait=3",
+        ]
     if spec["format"]:
         command += ["-f", spec["format"]]
     command += spec["extra"]
@@ -460,10 +460,8 @@ def friendly_error(message: str) -> str:
         return "The download stopped before it finished. Try again later or use another link."
     if "dht routing table" in lower:
         return "The download needs a retry before it can start."
-    if "qbittorrent" in lower:
-        return "Torrent support needs qBittorrent-nox or aria2c installed."
     if "aria2c" in lower:
-        return "Torrent support needs qBittorrent-nox or aria2c installed."
+        return "Torrent support needs aria2c installed."
     if "timed out" in lower:
         return "request timed out"
     return message.splitlines()[-1][:240] if message else "unknown error"

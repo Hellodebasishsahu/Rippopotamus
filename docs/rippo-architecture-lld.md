@@ -13,14 +13,14 @@ React renderer
 -> Electron preload bridge
 -> Electron main process
 -> Python media engine
--> provider tools, local files, SQLite index, browser/cookie access
+-> resolver tools, transfer tools, browser/cookie access
 ```
 
 The senior-engineer version would not throw this away. It would mostly name the parts better, draw harder boundaries around them, and move workflow logic out of the biggest files.
 
 ## One-Sentence Architecture
 
-Rippo is a local media ingestion workbench with an Electron host, React renderer, Python media engine, provider adapters, and a semantic index runtime.
+Rippo is a local media ingestion workbench with an Electron host, React renderer, Python media engine, resolver adapters, and a locked transfer engine.
 
 That sentence matters because it keeps the app from turning into vague soup.
 
@@ -32,15 +32,13 @@ Rippo is not just:
 - a file manager
 - a video indexer
 
-It is all of those only when they serve the workbench flow:
+It is all of those only when they serve the active workbench flow:
 
 ```text
-find source
+paste or sniff source
 -> understand source
 -> fetch/download asset
 -> save asset
--> index asset
--> search/reuse asset later
 ```
 
 ## Core Terms
@@ -64,7 +62,6 @@ Good code names:
 
 - `Source`
 - `SourceResult`
-- `SourceSearch`
 - `SourceResolver`
 
 Bad drift:
@@ -116,11 +113,8 @@ Examples:
 - `yt-dlp`
 - `gallery-dl`
 - `ffmpeg`
-- Gemini embeddings
-- OpenRouter routing
-- Serper
-- Google CSE
-- Electron browser scout
+- `aria2c`
+- Electron page probe
 
 Provider code should answer:
 
@@ -192,18 +186,18 @@ Examples:
 
 Moments are what make footage searchable instead of just files searchable.
 
-### Evidence
+### Probe Candidate
 
-Search-result context used to route or explain a query.
+Browser/page context used to find likely downloadable media links.
 
-Evidence is not a final source of truth. It is a hint layer.
+Probe candidates are not final source truth. They are hints that still go through provider fetch/download routing.
 
 Examples:
 
-- organic Google result snippets
-- Serper results
-- Google CSE results
-- browser scout results
+- network media URL
+- page metadata thumbnail
+- torrent link
+- document link
 
 ### Credential
 
@@ -226,9 +220,6 @@ This is not a demand to create folders for folder theater. It is the shape the r
 src/desktop/
   app/
     useDownloadQueue.ts
-    useSourceSearch.ts
-    useLibrarySearch.ts
-    useIndexIngest.ts
     useSettings.ts
 
   client/
@@ -238,12 +229,10 @@ src/desktop/
   components/
     AppHeader.tsx
     QueueCard.tsx
-    SourceSearchPanel.tsx
 
   views/
     WorkbenchView.tsx
     SettingsView.tsx
-    LibraryView.tsx
 
 electron/
   ipc/
@@ -279,21 +268,8 @@ src/rippopotamus/
     torrent.py
     ffmpeg.py
 
-  search/
-    source_registry.py
-    search_evidence.py
-    query_intelligence.py
-
-  indexing/
-    footage_index.py
-    index_worker.py
     video_chunker.py
     gemini_embeddings.py
-
-  resolvers/
-    base.py
-    yt_dlp_search.py
-    internet_archive.py
 ```
 
 The exact names can change. The important idea is:
@@ -374,11 +350,10 @@ Use adapters for:
 - `gallery-dl`
 - torrents
 - Internet Archive
-- Gemini embeddings
-- OpenRouter
-- Serper
-- Google CSE
-- Electron browser scout
+- `aria2c`
+- `ffmpeg`
+- Google Drive
+- Electron page probe
 - browser cookies
 - filesystem dialogs
 
@@ -391,7 +366,7 @@ An adapter should hide:
 - config/env variable names
 - browser-specific behavior
 
-The rest of the app should not care whether a result came from Serper, Google CSE, or browser scout unless that distinction matters to the user.
+The rest of the app should not care whether a link came from DOM metadata, a network response, or a pasted URL unless that distinction matters to the user.
 
 ## Pattern 3: Light Repository Pattern
 
@@ -538,10 +513,7 @@ The current smell is not that the project is fake. The smell is that a few files
 `src/desktop/App.tsx` should eventually stop owning:
 
 - queue workflow
-- source search workflow
 - provider health interpretation
-- ingest settings logic
-- library search logic
 - browser/cookie control UI
 - all screen layout
 
@@ -553,15 +525,6 @@ App.tsx
 
 useDownloadQueue.ts
 -> queue actions and queue state
-
-useSourceSearch.ts
--> web/source search state and actions
-
-useLibrarySearch.ts
--> local asset search state and actions
-
-useIndexIngest.ts
--> ingest settings, cost estimate, ingest actions
 
 desktopClient.ts
 -> all renderer-to-Electron calls
@@ -732,12 +695,10 @@ Do this gradually. Big rewrites are how local apps get haunted by half-finished 
 
 1. Create `desktopClient.ts` and make renderer calls go through it.
 2. Pull queue logic out of `App.tsx` into `useDownloadQueue.ts`.
-3. Pull source search logic out into `useSourceSearch.ts`.
-4. Pull library/index search logic out into `useLibrarySearch.ts`.
-5. Split Electron IPC handlers by domain.
-6. Split Python runtime by `providers`, `search`, and `indexing`.
-7. Add job state types and test the transitions.
-8. Tighten provider catalog truth so UI stops guessing.
+3. Split Electron IPC handlers by active domain.
+4. Split Python runtime by `providers`, download routing, and sheet import.
+5. Add job state types and test the transitions.
+6. Tighten provider catalog truth so UI stops guessing.
 
 Each step should preserve behavior and keep tests passing.
 
@@ -751,30 +712,26 @@ Completed renderer slices:
 - `src/desktop/client/desktopClient.ts` is now the renderer-side facade over Electron IPC.
 - `src/desktop/app/useDownloadQueue.ts` owns queue state, fetch/refetch, download events, and item mutation.
 - `src/desktop/app/useDownloadQueue.ts` now reads browser-access support from provider catalog data instead of hard-coding provider ids.
-- `src/desktop/app/useSourceSearch.ts` owns web/source search state and source packs.
-- `src/desktop/app/useLibraryIndex.ts` owns saved-library status, filename/basic metadata search, ingest, thumbnails, and preview URLs.
 
 Completed Electron slices:
 
-- `electron/appPaths.ts` owns app-managed binary/cache/profile paths and bundled tool discovery.
-- `electron/mediaLibrary.ts` owns `rippo-media://` path decoding, local media fetch, and library thumbnail extraction.
-- `electron/settingsStore.ts` owns persisted desktop settings, output root, and selected OpenRouter model.
+- `electron/appPaths.ts` owns app-managed binary paths and bundled tool discovery.
+- `electron/settingsStore.ts` owns persisted desktop settings, output root, and network proxy settings.
 - `electron/engineProcess.ts` owns Python runtime selection, engine env construction, and JSON-line engine execution.
-- `electron/indexIpc.ts` owns index IPC handlers, app-level index-root/path input cleanup, and filename/basic metadata index engine commands.
 - `electron/cookiesIpc.ts` owns browser detection, default cookie source resolution, cookie-source CLI args, and cookie settings IPC handlers.
 - `electron/toolUpdatesIpc.ts` owns yt-dlp/gallery-dl update checks, app-managed installs, and tool-update IPC handlers.
 - `electron/shellOutputIpc.ts` owns folder opening, external URL opening, and output-root chooser/reset IPC handlers.
-- `electron/libraryIpc.ts` owns `rippo-media://` protocol serving, library preview URLs, library thumbnails, and remote thumbnail loading IPC.
-- `electron/engineIpc.ts` owns engine health payloads, AI model IPC, fetch IPC, download IPC, and download event forwarding.
-- `electron/browserIpc.ts` owns page probing, Electron Google search evidence, source-search IPC throttling, and browser-backed source search handoff.
+- `electron/libraryIpc.ts` owns remote thumbnail loading IPC.
+- `electron/engineIpc.ts` owns engine health payloads, fetch IPC, download IPC, and download event forwarding.
+- `electron/browserIpc.ts` owns page probing.
 - `electron/main.ts` is now the app bootstrapper: privileged protocol registration, window creation, lifecycle events, and IPC registrar wiring.
 
 Completed Python slices:
 
 - `src/rippopotamus/providers.py` now exposes provider capability data such as `supportsBrowserAccess` through `provider_catalog()`.
 - `src/rippopotamus/desktop_runtime.py` owns desktop tool discovery, cookie checks, provider context creation, runtime health helpers, and subprocess JSON/text execution.
-- `src/rippopotamus/torrent_downloads.py` owns qBittorrent session management, aria2 torrent progress parsing, torrent download fallback, and torrent-specific output events.
-- `src/rippopotamus/desktop_engine.py` now stays closer to command orchestration: health, fetch, source search, index commands, and provider download routing.
+- `src/rippopotamus/torrent_downloads.py` owns aria2 torrent execution, progress parsing, and torrent-specific output events.
+- `src/rippopotamus/desktop_engine.py` now stays closer to command orchestration: health, fetch, sheet import, and provider download routing.
 
 Current verification:
 
