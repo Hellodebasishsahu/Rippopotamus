@@ -1,65 +1,51 @@
-const macDownloadUrl = "/downloads/Rippopotamus-0.1.0-arm64.dmg";
+import {
+  featureIllustrations,
+} from "./FeatureIllustrations";
 
-const featureIcons = {
-  clipboard: (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <rect x="5" y="4" width="14" height="17" rx="2" />
-      <path d="M9 4V3a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v1" />
-      <path d="M9 10h6" />
-      <path d="M9 14h4" />
-    </svg>
-  ),
-  sliders: (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <path d="M4 8h16" />
-      <circle cx="8" cy="8" r="2" />
-      <path d="M4 16h16" />
-      <circle cx="16" cy="16" r="2" />
-    </svg>
-  ),
-  folder: (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <path d="M3 7a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z" />
-      <path d="M3 10h18" />
-    </svg>
-  ),
-  unlock: (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <rect x="4" y="11" width="16" height="11" rx="2" />
-      <path d="M8 11V8a4 4 0 0 1 7-2" />
-      <circle cx="12" cy="16" r="1" fill="currentColor" stroke="none" />
-    </svg>
-  ),
-} as const;
+const macDownloadUrl = "/downloads/Rippopotamus-0.1.0-arm64.dmg";
 
 const features = [
   {
-    title: "Paste anything",
-    body: "One URL or a whole list. Rippo fetches metadata and thumbnails before you commit disk space.",
-    icon: featureIcons.clipboard,
-    variant: "hero",
+    id: "batch",
+    title: "Batch queues",
+    body: "Paste one link or fifty — URLs, playlists, magnets. Rippo fetches metadata in parallel, then saves with concurrent workers.",
     accent: "coral",
+    span: "wide",
   },
   {
-    title: "Pick your format",
-    body: "Resolution, container, audio-only — choose per item or set a default and move on.",
-    icon: featureIcons.sliders,
-    variant: "compact",
+    id: "preview",
+    title: "Preview before you save",
+    body: "Thumbnails, titles, duration, and platform show up in the queue so you never commit disk space blind.",
     accent: "mint",
+    span: "normal",
   },
   {
-    title: "Save locally",
-    body: "Files land in your folder. No cloud hop, no vendor vault, no export unlock.",
-    icon: featureIcons.folder,
-    variant: "compact",
+    id: "presets",
+    title: "Editor presets",
+    body: "Best MP4, MP3, 720p proxy, thumbnails, image galleries, Drive files, torrents — per item or bulk.",
     accent: "mint",
+    span: "normal",
   },
   {
-    title: "Stay free",
-    body: "Open source, no account, no subscription. The engines are yours — Rippo just runs them.",
-    icon: featureIcons.unlock,
-    variant: "banner",
+    id: "sniff",
+    title: "Sniff messy pages",
+    body: "One ugly link? Rippo crawls the page with bundled Chromium, scores playable media, and queues up to 40 candidates.",
     accent: "coral",
+    span: "wide",
+  },
+  {
+    id: "local",
+    title: "Organized local saves",
+    body: "Files land in Source/, Audio/, Images/ under your chosen folder — sane filenames, duplicate detection, open in Finder.",
+    accent: "mint",
+    span: "normal",
+  },
+  {
+    id: "access",
+    title: "Hard sources, handled",
+    body: "Export browser cookies for yt-dlp, test HTTP/SOCKS proxies, or flip Private mode for sensitive grabs.",
+    accent: "coral",
+    span: "normal",
   },
 ] as const;
 
@@ -111,22 +97,28 @@ export function App() {
             <p className="kicker">Features</p>
             <h2 id="features-title">Built to download. Nothing else.</h2>
             <p className="features-lede">
-              A focused downloader — batch queues, full format control, local files, zero subscription.
+              Batch queues, real previews, editor presets, page sniffing, local folders — the stuff paid apps charge monthly for.
             </p>
           </div>
 
-          <div className="bento-grid">
-            {features.map((f) => (
-              <article
-                key={f.title}
-                className={`bento-card bento-card--${f.variant} bento-card--${f.accent}`}
-              >
-                <div className="bento-accent" aria-hidden="true" />
-                <span className="bento-icon">{f.icon}</span>
-                <h3 className="bento-title">{f.title}</h3>
-                <p className="bento-body">{f.body}</p>
-              </article>
-            ))}
+          <div className="feature-grid">
+            {features.map((f) => {
+              const Illustration = featureIllustrations[f.id];
+              return (
+                <article
+                  key={f.id}
+                  className={`feature-card feature-card--${f.accent}${f.span === "wide" ? " feature-card--wide" : ""}`}
+                >
+                  <div className="feature-art" aria-hidden="true">
+                    <Illustration className="feature-illustration" />
+                  </div>
+                  <div className="feature-copy">
+                    <h3 className="feature-title">{f.title}</h3>
+                    <p className="feature-body">{f.body}</p>
+                  </div>
+                </article>
+              );
+            })}
           </div>
         </section>
 
