@@ -145,6 +145,7 @@ export function useDownloadQueue({
           return { ...item, stage: event.message, finalizing: event.finalizing ? true : item.finalizing, progress: event.finalizing ? 100 : item.progress };
         }
         if (event.type === "success") return { ...item, status: QUEUE_STATUS.done, progress: 100, files: event.files, stage: "Saved", finalizing: false };
+        if (event.type === "canceled") return { ...item, status: QUEUE_STATUS.canceled, progress: undefined, stage: "Canceled", finalizing: false, notices: [] };
         if (event.type === "error") return { ...item, status: QUEUE_STATUS.failed, error: fetchErrorMessage(event.error || "", consumerErrorMessage, item.url), finalizing: false, notices: [] };
         return item;
       }));
@@ -214,9 +215,11 @@ export function useDownloadQueue({
           title: item.metadata?.title || item.localId,
           cookieSource: item.cookieSource,
         });
-        const result = response.result as { type?: string; files?: QueueItem["files"]; error?: string } | undefined;
+        const result = response.result as { type?: string; files?: QueueItem["files"]; error?: string; message?: string } | undefined;
         if (result?.type === "success") {
           setItems((current) => current.map((candidate) => candidate.localId === item.localId ? { ...candidate, status: QUEUE_STATUS.done, progress: 100, files: result.files, stage: "Saved", jobId: response.jobId } : candidate));
+        } else if (result?.type === "canceled") {
+          setItems((current) => current.map((candidate) => candidate.localId === item.localId ? { ...candidate, status: QUEUE_STATUS.canceled, progress: undefined, stage: result.message || "Canceled", finalizing: false, jobId: response.jobId } : candidate));
         } else if (result?.type === "error") {
           setItems((current) => current.map((candidate) => candidate.localId === item.localId ? { ...candidate, status: QUEUE_STATUS.failed, error: fetchErrorMessage(result.error || "Download failed.", consumerErrorMessage, item.url), notices: [], finalizing: false, jobId: response.jobId } : candidate));
         } else {
@@ -255,6 +258,15 @@ export function useDownloadQueue({
     setItems((current) => current.filter((item) => item.localId !== id));
   }
 
+  async function cancelDownload(item: QueueItem) {
+    if (!desktop || item.status !== QUEUE_STATUS.downloading || !item.jobId) return;
+    setItems((current) => current.map((candidate) => candidate.localId === item.localId ? { ...candidate, stage: "Canceling...", finalizing: false } : candidate));
+    const result = await desktop.cancelDownload(item.jobId);
+    if (!result.ok) {
+      setItems((current) => current.map((candidate) => candidate.localId === item.localId ? { ...candidate, status: QUEUE_STATUS.failed, error: result.error || "Could not cancel this download.", finalizing: false } : candidate));
+    }
+  }
+
   function setItemPreset(id: string, preset: string) {
     setItems((current) => current.map((item) => item.localId === id ? { ...item, preset, presetUserSet: true } : item));
   }
@@ -276,6 +288,7 @@ export function useDownloadQueue({
     downloadReady,
     refetch,
     removeItem,
+    cancelDownload,
     setItemPreset,
     setItemCookieSource,
     bulkSetPreset,

@@ -10,6 +10,7 @@ declare global {
       checkNetworkProxy: (proxy: string) => Promise<NetworkProxyCheckResponse>;
       fetch: (url: string, provider?: ProviderId | "auto", cookieSource?: CookieSource) => Promise<FetchResponse>;
       download: (payload: DownloadRequest) => Promise<DownloadResponse>;
+      cancelDownload: (jobId: string) => Promise<DownloadCancelResponse>;
       openFolder: (folder: string) => Promise<void>;
       openExternal: (url: string) => Promise<void>;
       loadThumbnail: (urls: string[]) => Promise<ThumbnailLoadResult>;
@@ -233,6 +234,12 @@ export type DownloadResponse = {
   result: unknown;
 };
 
+export type DownloadCancelResponse = {
+  ok: boolean;
+  jobId: string;
+  error?: string;
+};
+
 export type SheetImportRequest = {
   sheetUrl: string;
   outputRoot: string;
@@ -276,7 +283,7 @@ export type SheetImportEvent = {
 
 export type DownloadEvent = {
   jobId: string;
-  type: "started" | "progress" | "stage" | "phase" | "success" | "error" | "notice";
+  type: "started" | "progress" | "stage" | "phase" | "success" | "error" | "notice" | "canceled";
   level?: "warning" | "error";
   warnings?: string[];
   percent?: number;

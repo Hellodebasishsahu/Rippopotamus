@@ -1,5 +1,6 @@
 import type {
   CookieSource,
+  DownloadCancelResponse,
   DownloadEvent,
   DownloadRequest,
   DownloadResponse,
@@ -29,6 +30,7 @@ export type DesktopClient = {
   checkNetworkProxy: RippoBridge["checkNetworkProxy"];
   fetch: RippoBridge["fetch"];
   download: (payload: DownloadRequest) => Promise<DownloadResponse>;
+  cancelDownload: (jobId: string) => Promise<DownloadCancelResponse>;
   openFolder: (folder: string) => Promise<void>;
   openExternal: (url: string) => Promise<void>;
   loadThumbnail: (urls: string[]) => Promise<ThumbnailLoadResult>;
@@ -59,6 +61,7 @@ export function createDesktopClient(bridge?: RippoBridge): DesktopClient | null 
     checkNetworkProxy: bridge.checkNetworkProxy,
     fetch: bridge.fetch,
     download: bridge.download,
+    cancelDownload: bridge.cancelDownload,
     openFolder: bridge.openFolder,
     openExternal: bridge.openExternal,
     loadThumbnail: bridge.loadThumbnail,

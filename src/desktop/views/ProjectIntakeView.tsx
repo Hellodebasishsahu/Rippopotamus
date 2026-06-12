@@ -42,6 +42,7 @@ export type ProjectIntakeViewProps = {
   setItemCookieSource: (id: string, source: CookieSource) => void;
   refetch: (item: QueueItem) => Promise<void>;
   removeItem: (id: string) => void;
+  cancelDownload: (item: QueueItem) => Promise<void>;
   bulkSetPreset: (ids: Iterable<string>, preset: string) => void;
 };
 
@@ -70,6 +71,7 @@ export function ProjectIntakeView({
   setItemCookieSource,
   refetch,
   removeItem,
+  cancelDownload,
   bulkSetPreset,
 }: ProjectIntakeViewProps) {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
@@ -251,6 +253,7 @@ export function ProjectIntakeView({
                 setItemCookieSource={setItemCookieSource}
                 refetch={refetch}
                 removeItem={removeItem}
+                cancelDownload={cancelDownload}
               />
             );
           })}

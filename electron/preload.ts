@@ -9,6 +9,7 @@ contextBridge.exposeInMainWorld("rippo", {
   fetch: (url: string, provider?: string, cookieSource?: unknown) => ipcRenderer.invoke("engine:fetch", url, provider, cookieSource),
   download: (payload: { url: string; preset: string; outputRoot?: string; itemId?: string; title?: string; cookieSource?: unknown }) =>
     ipcRenderer.invoke("engine:download", payload),
+  cancelDownload: (jobId: string) => ipcRenderer.invoke("engine:download-cancel", jobId),
   openFolder: (folder: string) => ipcRenderer.invoke("shell:open-folder", folder),
   openExternal: (url: string) => ipcRenderer.invoke("shell:open-external", url),
   loadThumbnail: (urls: string[]) => ipcRenderer.invoke("thumbnail:load", urls),

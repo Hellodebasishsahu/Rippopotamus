@@ -26,6 +26,8 @@ function usefulDownloadError(error: unknown): string {
 }
 
 export function createEngineIpc() {
+  const activeDownloads = new Map<string, { cancel: () => void }>();
+
   async function engineHealthPayload(): Promise<Record<string, unknown>> {
     const browsers = detectBrowsers();
     const source = defaultCookieSource(browsers);
@@ -162,15 +164,41 @@ export function createEngineIpc() {
         ...cookieSourceArgs(cookieSource),
       ];
       try {
+        let cancelRun: (() => void) | null = null;
+        let cancelRequested = false;
+        activeDownloads.set(jobId, {
+          cancel: () => {
+            cancelRequested = true;
+            cancelRun?.();
+          },
+        });
         const result = await runEngine(args, (engineEvent) => {
           event.sender.send("engine:download-event", { jobId, ...engineEvent as Record<string, unknown> });
-        }, proxy ? { RIPPO_NETWORK_PROXY: proxy } : undefined);
+        }, proxy ? { RIPPO_NETWORK_PROXY: proxy } : undefined, (cancel) => {
+          cancelRun = cancel;
+          if (cancelRequested) cancel();
+          activeDownloads.set(jobId, { cancel });
+        });
         return { jobId, result };
       } catch (error) {
         const message = usefulDownloadError(error);
+        if (/download canceled/i.test(message)) {
+          event.sender.send("engine:download-event", { jobId, type: "canceled", message });
+          return { jobId, result: { type: "canceled", message } };
+        }
         event.sender.send("engine:download-event", { jobId, type: "error", error: message });
         return { jobId, result: { type: "error", error: message } };
+      } finally {
+        activeDownloads.delete(jobId);
       }
+    });
+
+    ipcMain.handle("engine:download-cancel", async (_event, jobId?: string) => {
+      const id = typeof jobId === "string" ? jobId.trim() : "";
+      const active = id ? activeDownloads.get(id) : null;
+      if (!id || !active) return { ok: false, jobId: id, error: "Download is not running." };
+      active.cancel();
+      return { ok: true, jobId: id };
     });
   }
 

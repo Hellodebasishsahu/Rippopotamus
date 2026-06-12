@@ -1,4 +1,4 @@
-import { Check, FolderOpen, ImageOff, Link2, Loader2, RefreshCcw, Trash2 } from "lucide-react";
+import { Check, FolderOpen, ImageOff, Link2, Loader2, RefreshCcw, Square, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import type { BrowserInfo, CookieSource, PresetOption } from "../../../electron/types";
 import {
@@ -187,6 +187,7 @@ export function QueueCard({
   setItemCookieSource,
   refetch,
   removeItem,
+  cancelDownload,
 }: {
   item: QueueItem;
   itemPresets: PresetOption[];
@@ -203,12 +204,14 @@ export function QueueCard({
   setItemCookieSource: (id: string, source: CookieSource) => void;
   refetch: (item: QueueItem) => void;
   removeItem: (id: string) => void;
+  cancelDownload: (item: QueueItem) => void;
 }) {
   const statusParts = queueItemStatusParts(item);
   const currentPreset = presetOptions.find((p) => p.id === item.preset);
   const qualityShort = currentPreset?.label || item.preset;
   const canEdit = queueItemCanChangeOutput(item);
   const isFailed = item.status === QUEUE_STATUS.failed;
+  const isCanceled = item.status === QUEUE_STATUS.canceled;
   const isDownloading = item.status === QUEUE_STATUS.downloading;
   const showIndeterminate = item.status === QUEUE_STATUS.queued || item.status === QUEUE_STATUS.resolving;
   const showProgressTrack = isDownloading || showIndeterminate;
@@ -249,6 +252,11 @@ export function QueueCard({
             <button type="button" className="icon-btn icon-btn-sm" onClick={() => void refetch(item)} disabled={!queueItemCanRefetch(item)} title="Refetch" aria-label="Refetch">
               <RefreshCcw size={14} strokeWidth={2} aria-hidden />
             </button>
+            {isDownloading ? (
+              <button type="button" className="icon-btn icon-btn-sm icon-btn-danger" onClick={() => void cancelDownload(item)} title="Cancel download" aria-label="Cancel download">
+                <Square size={12} strokeWidth={2.4} aria-hidden />
+              </button>
+            ) : null}
             <button type="button" className="icon-btn icon-btn-sm icon-btn-danger" onClick={() => removeItem(item.localId)} disabled={!queueItemCanRemove(item)} title="Remove" aria-label="Remove">
               <Trash2 size={14} strokeWidth={2} aria-hidden />
             </button>
@@ -287,9 +295,9 @@ export function QueueCard({
           </div>
         ) : null}
 
-        {isFailed ? (
+        {isFailed || isCanceled ? (
           <div className="queue-failed-strip">
-            <p className="queue-failed-text">{item.error ? consumerErrorMessage(item.error) : "Failed"}</p>
+            <p className="queue-failed-text">{isCanceled ? "Download canceled." : item.error ? consumerErrorMessage(item.error) : "Failed"}</p>
             <button type="button" className="btn btn-primary btn-sm" onClick={() => void refetch(item)} disabled={!queueItemCanRefetch(item)}>
               Retry
             </button>

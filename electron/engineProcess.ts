@@ -158,6 +158,7 @@ function runBundledEngine(
   args: string[],
   env: NodeJS.ProcessEnv,
   onJson?: (payload: unknown) => void,
+  registerCancel?: (cancel: () => void) => void,
 ): Promise<unknown> {
   return new Promise((resolve, reject) => {
     const child = spawn(executable, args, { env, cwd: engineCwd() });
@@ -165,6 +166,17 @@ function runBundledEngine(
     let stdout = "";
     let stderr = "";
     let lastJson: unknown = null;
+    let canceled = false;
+    let closed = false;
+
+    registerCancel?.(() => {
+      if (canceled || closed) return;
+      canceled = true;
+      child.kill("SIGTERM");
+      setTimeout(() => {
+        if (!closed) child.kill("SIGKILL");
+      }, 3000).unref();
+    });
 
     child.stdout.on("data", (chunk: Buffer) => {
       stdout += chunk.toString();
@@ -191,6 +203,7 @@ function runBundledEngine(
     });
 
     child.on("close", (code) => {
+      closed = true;
       if (stdout.trim()) {
         for (const line of stdout.split(/\r?\n/)) {
           if (!line.trim()) continue;
@@ -204,6 +217,11 @@ function runBundledEngine(
         }
       }
 
+      if (canceled) {
+        reject(new Error("Download canceled."));
+        return;
+      }
+
       if (code === 0) {
         resolve(lastJson);
         return;
@@ -214,11 +232,11 @@ function runBundledEngine(
   });
 }
 
-export function runEngine(args: string[], onJson?: (payload: unknown) => void, envOverride: NodeJS.ProcessEnv = {}): Promise<unknown> {
+export function runEngine(args: string[], onJson?: (payload: unknown) => void, envOverride: NodeJS.ProcessEnv = {}, registerCancel?: (cancel: () => void) => void): Promise<unknown> {
   const env = { ...engineEnv(), ...envOverride };
   const bundled = bundledEngineExecutable();
   if (bundled && (app.isPackaged || process.env.RIPPO_ENGINE_BINARY)) {
-    return runBundledEngine(bundled, args, env, onJson);
+    return runBundledEngine(bundled, args, env, onJson, registerCancel);
   }
   const pythons = candidatePythons();
 
@@ -240,6 +258,17 @@ export function runEngine(args: string[], onJson?: (payload: unknown) => void, e
       let stdout = "";
       let stderr = "";
       let lastJson: unknown = null;
+      let canceled = false;
+      let closed = false;
+
+      registerCancel?.(() => {
+        if (canceled || closed) return;
+        canceled = true;
+        child.kill("SIGTERM");
+        setTimeout(() => {
+          if (!closed) child.kill("SIGKILL");
+        }, 3000).unref();
+      });
 
       child.stdout.on("data", (chunk: Buffer) => {
         stdout += chunk.toString();
@@ -262,10 +291,15 @@ export function runEngine(args: string[], onJson?: (payload: unknown) => void, e
       });
 
       child.on("error", () => {
+        if (canceled) {
+          reject(new Error("Download canceled."));
+          return;
+        }
         tryNext();
       });
 
       child.on("close", (code) => {
+        closed = true;
         if (stdout.trim()) {
           for (const line of stdout.split(/\r?\n/)) {
             if (!line.trim()) continue;
@@ -277,6 +311,11 @@ export function runEngine(args: string[], onJson?: (payload: unknown) => void, e
               stderr += `${line}\n`;
             }
           }
+        }
+
+        if (canceled) {
+          reject(new Error("Download canceled."));
+          return;
         }
 
         if (code === 0) {

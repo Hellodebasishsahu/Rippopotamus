@@ -1994,6 +1994,11 @@ html.no-font-smoothing * {
   background: var(--danger-soft);
   border-color: transparent;
 }
+.status-canceled {
+  color: var(--text-muted);
+  background: var(--surface-strong);
+  border-color: var(--border);
+}
 
 @keyframes pulse-glyph {
   0%, 100% { opacity: 1; transform: scale(1); }

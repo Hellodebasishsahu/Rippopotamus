@@ -9,6 +9,7 @@ export const QUEUE_STATUS = {
   /** yt-dlp/gallery final mux pass */
   finalizing: "finalizing",
   done: "done",
+  canceled: "canceled",
   failed: "failed",
 } as const;
 
@@ -48,6 +49,7 @@ export const queueStatusLabels: Record<QueueStatus, string> = {
   [QUEUE_STATUS.downloading]: "Downloading",
   [QUEUE_STATUS.finalizing]: "Finalizing...",
   [QUEUE_STATUS.done]: "Saved",
+  [QUEUE_STATUS.canceled]: "Canceled",
   [QUEUE_STATUS.failed]: "Failed",
 };
 

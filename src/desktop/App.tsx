@@ -537,6 +537,7 @@ export function App() {
     downloadReady,
     refetch,
     removeItem,
+    cancelDownload,
     setItemPreset,
     setItemCookieSource,
     bulkSetPreset,
@@ -711,6 +712,7 @@ export function App() {
             setItemCookieSource={setItemCookieSource}
             refetch={refetch}
             removeItem={removeItem}
+            cancelDownload={cancelDownload}
             bulkSetPreset={bulkSetPreset}
           />
         </section>
