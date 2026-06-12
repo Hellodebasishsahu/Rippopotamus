@@ -496,6 +496,7 @@ class DesktopEngineTests(unittest.TestCase):
 
         self.assertIn("--dht-file-path", command)
         self.assertIn("--dht-file-path6", command)
+        self.assertIn("--continue=true", command)
         self.assertTrue(any(".aria2/dht.dat" in Path(value).as_posix() for value in command))
         self.assertTrue(any(".aria2/dht6.dat" in Path(value).as_posix() for value in command))
 

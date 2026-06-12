@@ -154,8 +154,11 @@ export function useDownloadQueue({
 
   const totals = useMemo(() => ({
     ready: items.filter((item) => item.status === QUEUE_STATUS.ready).length,
+    downloading: items.filter((item) => item.status === QUEUE_STATUS.downloading).length,
     done: items.filter((item) => item.status === QUEUE_STATUS.done).length,
+    interrupted: items.filter((item) => item.status === QUEUE_STATUS.failed || item.status === QUEUE_STATUS.canceled).length,
     failed: items.filter((item) => item.status === QUEUE_STATUS.failed).length,
+    canceled: items.filter((item) => item.status === QUEUE_STATUS.canceled).length,
   }), [items]);
 
   async function queueUrls(urls: string[], providerOverride: ProviderId | "auto" = selectedFetchProvider) {
@@ -204,32 +207,53 @@ export function useDownloadQueue({
     setBusy(true);
 
     await runWithConcurrency(ready, workerCount(downloadWorkerCount, DOWNLOAD_CONCURRENCY), async (item) => {
-      const jobId = item.localId;
-      setItems((current) => current.map((candidate) => candidate.localId === item.localId ? { ...candidate, status: QUEUE_STATUS.downloading, progress: 0, error: undefined, jobId, phase: undefined, phaseIndex: 0, finalizing: false, stage: undefined, notices: [] } : candidate));
-      try {
-        const response = await desktop.download({
-          url: item.url,
-          preset: item.preset,
-          outputRoot,
-          itemId: item.localId,
-          title: item.metadata?.title || item.localId,
-          cookieSource: item.cookieSource,
-        });
-        const result = response.result as { type?: string; files?: QueueItem["files"]; error?: string; message?: string } | undefined;
-        if (result?.type === "success") {
-          setItems((current) => current.map((candidate) => candidate.localId === item.localId ? { ...candidate, status: QUEUE_STATUS.done, progress: 100, files: result.files, stage: "Saved", jobId: response.jobId } : candidate));
-        } else if (result?.type === "canceled") {
-          setItems((current) => current.map((candidate) => candidate.localId === item.localId ? { ...candidate, status: QUEUE_STATUS.canceled, progress: undefined, stage: result.message || "Canceled", finalizing: false, jobId: response.jobId } : candidate));
-        } else if (result?.type === "error") {
-          setItems((current) => current.map((candidate) => candidate.localId === item.localId ? { ...candidate, status: QUEUE_STATUS.failed, error: fetchErrorMessage(result.error || "Download failed.", consumerErrorMessage, item.url), notices: [], finalizing: false, jobId: response.jobId } : candidate));
-        } else {
-          setItems((current) => current.map((candidate) => candidate.localId === item.localId ? { ...candidate, jobId: response.jobId } : candidate));
-        }
-      } catch (error) {
-        setItems((current) => current.map((candidate) => candidate.localId === item.localId ? { ...candidate, status: QUEUE_STATUS.failed, error: fetchErrorMessage(error, consumerErrorMessage, item.url), notices: [] } : candidate));
-      }
+      await startDownload(item);
     });
     setBusy(false);
+  }
+
+  async function startDownload(item: QueueItem) {
+    if (!desktop) return;
+    const jobId = item.localId;
+    setItems((current) => current.map((candidate) => candidate.localId === item.localId ? {
+      ...candidate,
+      status: QUEUE_STATUS.downloading,
+      progress: 0,
+      error: undefined,
+      jobId,
+      phase: undefined,
+      phaseIndex: 0,
+      finalizing: false,
+      stage: undefined,
+      notices: [],
+    } : candidate));
+    try {
+      const response = await desktop.download({
+        url: item.url,
+        preset: item.preset,
+        outputRoot,
+        itemId: item.localId,
+        title: item.metadata?.title || item.localId,
+        cookieSource: item.cookieSource,
+      });
+      const result = response.result as { type?: string; files?: QueueItem["files"]; error?: string; message?: string } | undefined;
+      if (result?.type === "success") {
+        setItems((current) => current.map((candidate) => candidate.localId === item.localId ? { ...candidate, status: QUEUE_STATUS.done, progress: 100, files: result.files, stage: "Saved", jobId: response.jobId } : candidate));
+      } else if (result?.type === "canceled") {
+        setItems((current) => current.map((candidate) => candidate.localId === item.localId ? { ...candidate, status: QUEUE_STATUS.canceled, progress: undefined, stage: result.message || "Canceled", finalizing: false, jobId: response.jobId } : candidate));
+      } else if (result?.type === "error") {
+        setItems((current) => current.map((candidate) => candidate.localId === item.localId ? { ...candidate, status: QUEUE_STATUS.failed, error: fetchErrorMessage(result.error || "Download failed.", consumerErrorMessage, item.url), notices: [], finalizing: false, jobId: response.jobId } : candidate));
+      } else {
+        setItems((current) => current.map((candidate) => candidate.localId === item.localId ? { ...candidate, jobId: response.jobId } : candidate));
+      }
+    } catch (error) {
+      setItems((current) => current.map((candidate) => candidate.localId === item.localId ? { ...candidate, status: QUEUE_STATUS.failed, error: fetchErrorMessage(error, consumerErrorMessage, item.url), notices: [] } : candidate));
+    }
+  }
+
+  async function resumeDownload(item: QueueItem) {
+    if (!desktop || item.status === QUEUE_STATUS.downloading || item.status === QUEUE_STATUS.resolving) return;
+    await startDownload(item);
   }
 
   async function refetch(item: QueueItem) {
@@ -267,6 +291,18 @@ export function useDownloadQueue({
     }
   }
 
+  async function cancelActiveDownloads() {
+    const active = items.filter((item) => item.status === QUEUE_STATUS.downloading && item.jobId);
+    await Promise.all(active.map((item) => cancelDownload(item)));
+  }
+
+  async function resumeInterrupted() {
+    const interrupted = items.filter((item) => item.status === QUEUE_STATUS.failed || item.status === QUEUE_STATUS.canceled);
+    await runWithConcurrency(interrupted, workerCount(downloadWorkerCount, DOWNLOAD_CONCURRENCY), async (item) => {
+      await startDownload(item);
+    });
+  }
+
   function setItemPreset(id: string, preset: string) {
     setItems((current) => current.map((item) => item.localId === id ? { ...item, preset, presetUserSet: true } : item));
   }
@@ -289,6 +325,9 @@ export function useDownloadQueue({
     refetch,
     removeItem,
     cancelDownload,
+    cancelActiveDownloads,
+    resumeDownload,
+    resumeInterrupted,
     setItemPreset,
     setItemCookieSource,
     bulkSetPreset,

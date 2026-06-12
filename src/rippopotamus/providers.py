@@ -232,6 +232,7 @@ def download_command(
             "--dir",
             str(output_dir),
             "--follow-torrent=mem",
+            "--continue=true",
             "--seed-time=0",
             "--dht-file-path",
             str(aria_state_dir / "dht.dat"),

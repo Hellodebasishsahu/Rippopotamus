@@ -27,7 +27,7 @@ export type ProjectIntakeViewProps = {
   pageProbeError: string | null;
   pageProbeNotice: string | null;
   items: QueueItem[];
-  totals: { ready: number; done: number; failed: number };
+  totals: { ready: number; downloading: number; done: number; interrupted: number; failed: number; canceled: number };
   busy: boolean;
   showIntakeEmptyHint: boolean;
   browsers: BrowserInfo[];
@@ -43,6 +43,9 @@ export type ProjectIntakeViewProps = {
   refetch: (item: QueueItem) => Promise<void>;
   removeItem: (id: string) => void;
   cancelDownload: (item: QueueItem) => Promise<void>;
+  cancelActiveDownloads: () => Promise<void>;
+  resumeDownload: (item: QueueItem) => Promise<void>;
+  resumeInterrupted: () => Promise<void>;
   bulkSetPreset: (ids: Iterable<string>, preset: string) => void;
 };
 
@@ -72,6 +75,9 @@ export function ProjectIntakeView({
   refetch,
   removeItem,
   cancelDownload,
+  cancelActiveDownloads,
+  resumeDownload,
+  resumeInterrupted,
   bulkSetPreset,
 }: ProjectIntakeViewProps) {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
@@ -201,7 +207,7 @@ export function ProjectIntakeView({
             ) : (
               <>
                 <div className="queue-toolbar-left">
-                  <span className="queue-toolbar-summary">{totals.ready} ready · {totals.done} done{totals.failed ? ` · ${totals.failed} failed` : ""}</span>
+                  <span className="queue-toolbar-summary">{totals.ready} ready · {totals.downloading} active · {totals.done} done{totals.interrupted ? ` · ${totals.interrupted} interrupted` : ""}</span>
                   {defaultQualityPresets.length ? (
                     <div className="queue-toolbar-default-quality">
                       <span className="queue-toolbar-label">Default quality</span>
@@ -219,6 +225,16 @@ export function ProjectIntakeView({
                   <button type="button" className="btn btn-ghost btn-fetch" onClick={() => desktop?.openFolder(activeOutputRoot)} disabled={!desktop} title={activeOutputRoot || undefined}>
                     <FolderOpen size={14} strokeWidth={2} aria-hidden />
                   </button>
+                  {totals.downloading ? (
+                    <button type="button" className="btn btn-ghost btn-fetch btn-danger-text" onClick={() => void cancelActiveDownloads()} disabled={!desktop}>
+                      Cancel active
+                    </button>
+                  ) : null}
+                  {totals.interrupted ? (
+                    <button type="button" className="btn btn-ghost btn-fetch" onClick={() => void resumeInterrupted()} disabled={!desktop}>
+                      Resume interrupted
+                    </button>
+                  ) : null}
                   <button type="button" className="btn btn-primary btn-fetch" onClick={() => void downloadReady()} disabled={!totals.ready || busy || !desktop}>
                     {busy ? <Loader2 className="spin" size={14} strokeWidth={2} aria-hidden /> : <Download size={14} strokeWidth={2} aria-hidden />}
                     {totals.ready ? `Save ${totals.ready}` : "Save"}
@@ -254,6 +270,7 @@ export function ProjectIntakeView({
                 refetch={refetch}
                 removeItem={removeItem}
                 cancelDownload={cancelDownload}
+                resumeDownload={resumeDownload}
               />
             );
           })}

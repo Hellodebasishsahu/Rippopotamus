@@ -538,6 +538,9 @@ export function App() {
     refetch,
     removeItem,
     cancelDownload,
+    cancelActiveDownloads,
+    resumeDownload,
+    resumeInterrupted,
     setItemPreset,
     setItemCookieSource,
     bulkSetPreset,
@@ -713,6 +716,9 @@ export function App() {
             refetch={refetch}
             removeItem={removeItem}
             cancelDownload={cancelDownload}
+            cancelActiveDownloads={cancelActiveDownloads}
+            resumeDownload={resumeDownload}
+            resumeInterrupted={resumeInterrupted}
             bulkSetPreset={bulkSetPreset}
           />
         </section>

@@ -188,6 +188,7 @@ export function QueueCard({
   refetch,
   removeItem,
   cancelDownload,
+  resumeDownload,
 }: {
   item: QueueItem;
   itemPresets: PresetOption[];
@@ -205,6 +206,7 @@ export function QueueCard({
   refetch: (item: QueueItem) => void;
   removeItem: (id: string) => void;
   cancelDownload: (item: QueueItem) => void;
+  resumeDownload: (item: QueueItem) => void;
 }) {
   const statusParts = queueItemStatusParts(item);
   const currentPreset = presetOptions.find((p) => p.id === item.preset);
@@ -297,9 +299,9 @@ export function QueueCard({
 
         {isFailed || isCanceled ? (
           <div className="queue-failed-strip">
-            <p className="queue-failed-text">{isCanceled ? "Download canceled." : item.error ? consumerErrorMessage(item.error) : "Failed"}</p>
-            <button type="button" className="btn btn-primary btn-sm" onClick={() => void refetch(item)} disabled={!queueItemCanRefetch(item)}>
-              Retry
+            <p className="queue-failed-text">{isCanceled ? "Canceled. Partial files will be reused." : item.error ? consumerErrorMessage(item.error) : "Failed"}</p>
+            <button type="button" className="btn btn-primary btn-sm" onClick={() => void resumeDownload(item)} disabled={isDownloading}>
+              Resume
             </button>
           </div>
         ) : null}
