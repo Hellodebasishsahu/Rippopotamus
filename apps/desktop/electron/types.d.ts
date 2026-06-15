@@ -27,6 +27,7 @@ declare global {
       chooseOutputRoot: () => Promise<{ outputRoot: string; canceled: boolean }>;
       resetOutputRoot: () => Promise<{ outputRoot: string }>;
       listLibrary: (payload?: LibraryListRequest) => Promise<LibraryListResponse>;
+      loadLibraryThumbnail: (path: string) => Promise<LibraryThumbnailResult>;
       openPath: (target: string) => Promise<void>;
       showItemInFolder: (target: string) => Promise<void>;
       onDownloadEvent: (callback: (event: DownloadEvent) => void) => () => void;
@@ -291,7 +292,6 @@ export type LibraryItem = {
 
 export type LibraryListRequest = {
   outputRoot?: string;
-  query?: string;
 };
 
 export type LibraryListResponse = {
@@ -299,5 +299,16 @@ export type LibraryListResponse = {
   outputRoot: string;
   items: LibraryItem[];
   total: number;
+  /** Entries dropped because their files no longer exist on disk. */
+  missing?: number;
+  /** Entries dropped because the ledger record was malformed or unsafe. */
+  skipped?: number;
+  error?: string;
+};
+
+export type LibraryThumbnailResult = {
+  ok: boolean;
+  /** A data: URL (image/png or image/jpeg) ready to drop into an <img src>. */
+  dataUrl?: string;
   error?: string;
 };

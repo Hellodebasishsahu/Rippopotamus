@@ -25,7 +25,8 @@ contextBridge.exposeInMainWorld("rippo", {
   checkAppUpdate: () => ipcRenderer.invoke("app-update:check"),
   chooseOutputRoot: () => ipcRenderer.invoke("output:choose"),
   resetOutputRoot: () => ipcRenderer.invoke("output:reset"),
-  listLibrary: (payload?: { outputRoot?: string; query?: string }) => ipcRenderer.invoke("library:list", payload),
+  listLibrary: (payload?: { outputRoot?: string }) => ipcRenderer.invoke("library:list", payload),
+  loadLibraryThumbnail: (target: string) => ipcRenderer.invoke("library:thumbnail", target),
   openPath: (target: string) => ipcRenderer.invoke("shell:open-path", target),
   showItemInFolder: (target: string) => ipcRenderer.invoke("shell:show-item", target),
   onDownloadEvent: (callback: (event: unknown) => void) => {
