@@ -10,6 +10,7 @@ import type {
   GalleryDlUpdateResult,
   LibraryListRequest,
   LibraryListResponse,
+  LibraryThumbnailResult,
   ThumbnailLoadResult,
   YtDlpUpdateInfo,
   YtDlpUpdateResult,
@@ -42,6 +43,7 @@ export type DesktopClient = {
   chooseOutputRoot: RippoBridge["chooseOutputRoot"];
   resetOutputRoot: RippoBridge["resetOutputRoot"];
   listLibrary: (payload?: LibraryListRequest) => Promise<LibraryListResponse>;
+  loadLibraryThumbnail: (target: string) => Promise<LibraryThumbnailResult>;
   openPath: (target: string) => Promise<void>;
   showItemInFolder: (target: string) => Promise<void>;
   onDownloadEvent: (callback: (event: DownloadEvent) => void) => () => void;
@@ -74,6 +76,7 @@ export function createDesktopClient(bridge?: RippoBridge): DesktopClient | null 
     chooseOutputRoot: bridge.chooseOutputRoot,
     resetOutputRoot: bridge.resetOutputRoot,
     listLibrary: bridge.listLibrary,
+    loadLibraryThumbnail: bridge.loadLibraryThumbnail,
     openPath: bridge.openPath,
     showItemInFolder: bridge.showItemInFolder,
     onDownloadEvent: bridge.onDownloadEvent,

@@ -1,7 +1,8 @@
-import { ExternalLink, File, FileAudio2, FileImage, FileText, FileVideo2, FolderOpen, Link2 } from "lucide-react";
+import { ExternalLink, FolderOpen, Link2 } from "lucide-react";
 import type { LibraryItem, PresetOption } from "../../electron/types";
 import { absoluteLibraryPath, formatBytes, formatSavedAt, presetLabel } from "../app/useLibrary";
 import type { DesktopClient } from "../client/desktopClient";
+import { LibraryThumbnail } from "./LibraryThumbnail";
 
 function shortUrl(url: string) {
   try {
@@ -18,28 +19,21 @@ function fileBasename(path: string): string {
   return index >= 0 ? normalized.slice(index + 1) : normalized;
 }
 
-function kindIcon(kind: LibraryItem["kind"]) {
-  if (kind === "video") return FileVideo2;
-  if (kind === "audio") return FileAudio2;
-  if (kind === "image") return FileImage;
-  if (kind === "document") return FileText;
-  return File;
-}
-
 export function LibraryCard({
   item,
   outputRoot,
   desktop,
   presetOptions,
   openSource,
+  onError,
 }: {
   item: LibraryItem;
   outputRoot: string;
   desktop: DesktopClient | null;
   presetOptions: PresetOption[];
   openSource: (item: LibraryItem) => void;
+  onError: (message: string) => void;
 }) {
-  const Icon = kindIcon(item.kind);
   const absolutePath = absoluteLibraryPath(outputRoot, item.primaryPath);
   const savedLabel = formatSavedAt(item.savedAt);
   const sizeLabel = formatBytes(item.totalSize);
@@ -53,20 +47,26 @@ export function LibraryCard({
 
   async function openFile() {
     if (!desktop) return;
-    await desktop.openPath(absolutePath).catch(() => undefined);
+    try {
+      await desktop.openPath(absolutePath);
+    } catch {
+      onError(`Couldn't open "${item.title}" — the file may have moved.`);
+    }
   }
 
   async function revealFile() {
     if (!desktop) return;
-    await desktop.showItemInFolder(absolutePath).catch(() => undefined);
+    try {
+      await desktop.showItemInFolder(absolutePath);
+    } catch {
+      onError(`Couldn't reveal "${item.title}" — the file may have moved.`);
+    }
   }
 
   return (
     <article className="library-tile queue-tile done">
       <button type="button" className="tile-media library-tile-media" onClick={() => void openFile()} title="Open file">
-        <span className={`library-kind library-kind-${item.kind}`} aria-hidden>
-          <Icon size={28} strokeWidth={1.5} />
-        </span>
+        <LibraryThumbnail desktop={desktop} absolutePath={absolutePath} kind={item.kind} alt={item.title} />
         <div className="tile-actions">
           <button type="button" className="tile-action-btn" onClick={(event) => { event.stopPropagation(); openSource(item); }} title="Open source link" aria-label="Open source link">
             <Link2 size={13} strokeWidth={2} aria-hidden />

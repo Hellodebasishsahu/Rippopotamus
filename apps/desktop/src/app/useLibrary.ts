@@ -48,6 +48,8 @@ export function useLibrary({
   onLoadingChange?: (loading: boolean) => void;
 }) {
   const [items, setItems] = useState<LibraryItem[]>([]);
+  const [missing, setMissing] = useState(0);
+  const [skipped, setSkipped] = useState(0);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -59,6 +61,8 @@ export function useLibrary({
   const refresh = useCallback(async () => {
     if (!desktop || !outputRoot.trim()) {
       setItems([]);
+      setMissing(0);
+      setSkipped(0);
       setError(null);
       return;
     }
@@ -68,12 +72,18 @@ export function useLibrary({
       const result = await desktop.listLibrary({ outputRoot });
       if (!result.ok) {
         setItems([]);
+        setMissing(0);
+        setSkipped(0);
         setError(result.error || "Could not load library.");
         return;
       }
       setItems(result.items || []);
+      setMissing(result.missing ?? 0);
+      setSkipped(result.skipped ?? 0);
     } catch (caught) {
       setItems([]);
+      setMissing(0);
+      setSkipped(0);
       setError(caught instanceof Error ? caught.message : String(caught));
     } finally {
       setLoadingState(false);
@@ -86,6 +96,8 @@ export function useLibrary({
 
   return {
     items,
+    missing,
+    skipped,
     loading,
     error,
     refresh,
