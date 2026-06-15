@@ -1,3 +1,4 @@
+import { useState, useRef } from "react";
 import { MarqueeSection } from "./MarqueeSection";
 import { FeaturesSection } from "./FeaturesSection";
 import { DownloadCta } from "./DownloadCta";
@@ -154,19 +155,7 @@ export function App() {
             </header>
 
             <div className="faq-grid" role="list">
-              {faqItems.map((item) => (
-                <details key={item.id} id={item.id} className="faq-item" name="faq" role="listitem">
-                  <summary className="faq-question">
-                    <span>{item.question}</span>
-                    <span className="faq-icon" aria-hidden="true" />
-                  </summary>
-                  <div className="faq-answer">
-                    <div className="faq-answer-inner">
-                      <p>{item.answer}</p>
-                    </div>
-                  </div>
-                </details>
-              ))}
+              <FaqList items={faqItems} />
             </div>
           </div>
         </section>
@@ -179,5 +168,42 @@ export function App() {
         </section>
       </main>
     </div>
+  );
+}
+
+function FaqList({ items }: { items: { id: string; question: string; answer: string }[] }) {
+  const [openId, setOpenId] = useState<string | null>(null);
+
+  const half = Math.ceil(items.length / 2);
+  const leftItems = items.slice(0, half);
+  const rightItems = items.slice(half);
+
+  const renderItem = (item: { id: string; question: string; answer: string }) => (
+    <div key={item.id} id={item.id} className={`faq-item ${openId === item.id ? "faq-item--open" : ""}`} role="listitem">
+      <button 
+        className="faq-question" 
+        onClick={() => setOpenId(openId === item.id ? null : item.id)}
+        aria-expanded={openId === item.id}
+      >
+        <span>{item.question}</span>
+        <span className="faq-icon" aria-hidden="true" />
+      </button>
+      <div className="faq-answer">
+        <div className="faq-answer-inner">
+          <p>{item.answer}</p>
+        </div>
+      </div>
+    </div>
+  );
+
+  return (
+    <>
+      <div className="faq-column">
+        {leftItems.map(renderItem)}
+      </div>
+      <div className="faq-column">
+        {rightItems.map(renderItem)}
+      </div>
+    </>
   );
 }
