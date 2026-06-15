@@ -1,4 +1,4 @@
-import { Cookie, ExternalLink, FolderOpen, FolderSearch, Globe2, Loader2, Radar as RadarIcon, RefreshCcw, RotateCcw, X } from "lucide-react";
+import { Check, Cookie, ExternalLink, FolderOpen, FolderSearch, Globe2, Loader2, RefreshCcw, RotateCcw, X } from "lucide-react";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { AppUpdateInfo, BrowserInfo, CookieSource, EngineHealth, GalleryDlUpdateInfo, PageProbeCandidate, PresetOption, ProviderId, ProviderOption, YtDlpUpdateInfo } from "../electron/types";
 import { sourceUrl, useDownloadQueue } from "./app/useDownloadQueue";
@@ -8,7 +8,7 @@ import { createDesktopClient } from "./client/desktopClient";
 import { AppHeader, type AppView, type ComposerAction } from "./components/AppHeader";
 import { ProjectIntakeView } from "./views/ProjectIntakeView";
 import { LibraryView } from "./views/LibraryView";
-import { SettingsCard, SettingsEmpty, SettingsToggle, SettingsView, type SettingsSectionId } from "./views/SettingsView";
+import { SettingsCard, SettingsToggle, SettingsView, type SettingsSectionId } from "./views/SettingsView";
 import { consumerErrorMessage, consumerNoticeMessage } from "./app/appFormatters";
 import { extractUrls } from "./urlParser";
 
@@ -255,6 +255,7 @@ export function App() {
   const [appUpdateError, setAppUpdateError] = useState<string | null>(null);
   const [aria2cStatus, setAria2cStatus] = useState<"idle" | "checking">("idle");
   const [ffmpegStatus, setFfmpegStatus] = useState<"idle" | "checking" | "updating">("idle");
+  const [toolAutoUpdateNote, setToolAutoUpdateNote] = useState<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsSection, setSettingsSection] = useState<SettingsSectionId>("general");
   const [fontSmoothing, setFontSmoothing] = useState(() => localStorage.getItem("rippo:appearance:fontSmoothing") !== "false");
@@ -531,6 +532,63 @@ export function App() {
     }
   }
 
+  // Keep the fast-moving tools (yt-dlp, gallery-dl) current on their own. yt-dlp
+  // breaks often as sites change, so a stale binary silently breaks downloads.
+  // Check at most once per ~20h (persisted across launches), update in the
+  // background, and surface only a brief note on success — no prompts, no noise.
+  useEffect(() => {
+    if (!desktop || typeof desktop.checkYtDlpUpdate !== "function") return;
+    const THROTTLE_KEY = "rippo:tools:lastAutoUpdate";
+    const THROTTLE_MS = 20 * 60 * 60 * 1000;
+    const last = Number(localStorage.getItem(THROTTLE_KEY) || 0);
+    if (Number.isFinite(last) && Date.now() - last < THROTTLE_MS) return;
+    localStorage.setItem(THROTTLE_KEY, String(Date.now()));
+
+    let cancelled = false;
+    void (async () => {
+      const updated: string[] = [];
+      try {
+        const info = await desktop.checkYtDlpUpdate();
+        if (!cancelled && info.updateAvailable && typeof desktop.updateYtDlp === "function") {
+          const result = await desktop.updateYtDlp();
+          if (!cancelled) {
+            setYtDlpUpdate(result);
+            if (result.health) setHealth(result.health);
+            updated.push(`yt-dlp${result.currentVersion ? ` ${result.currentVersion}` : ""}`);
+          }
+        }
+      } catch {
+        // Background update — stay silent on failure; the manual button still works.
+      }
+      try {
+        if (typeof desktop.checkGalleryDlUpdate === "function") {
+          const info = await desktop.checkGalleryDlUpdate();
+          if (!cancelled && info.updateAvailable && typeof desktop.updateGalleryDl === "function") {
+            const result = await desktop.updateGalleryDl();
+            if (!cancelled) {
+              setGalleryDlUpdate(result);
+              if (result.health) setHealth(result.health);
+              updated.push(`gallery-dl${result.currentVersion ? ` ${result.currentVersion}` : ""}`);
+            }
+          }
+        }
+      } catch {
+        // Background update — stay silent on failure.
+      }
+      if (!cancelled && updated.length) setToolAutoUpdateNote(`Updated ${updated.join(" · ")}`);
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [desktop]);
+
+  useEffect(() => {
+    if (!toolAutoUpdateNote) return;
+    const timer = setTimeout(() => setToolAutoUpdateNote(null), 6000);
+    return () => clearTimeout(timer);
+  }, [toolAutoUpdateNote]);
+
   useLayoutEffect(() => {
     const el = textareaRef.current;
     if (!el) return;
@@ -718,6 +776,21 @@ export function App() {
           openSettings={() => setSettingsOpen(true)}
         />
 
+        {toolAutoUpdateNote ? (
+          <div className="tool-autoupdate-note" role="status">
+            <Check size={13} strokeWidth={2.5} aria-hidden />
+            <span>{toolAutoUpdateNote}</span>
+            <button
+              type="button"
+              className="tool-autoupdate-dismiss"
+              onClick={() => setToolAutoUpdateNote(null)}
+              aria-label="Dismiss"
+            >
+              <X size={12} strokeWidth={2.5} aria-hidden />
+            </button>
+          </div>
+        ) : null}
+
         <section className="workspace">
           {healthError ? <p className="error-text">{healthError}</p> : null}
           {activeView === "queue" ? (
@@ -805,14 +878,6 @@ export function App() {
                   onToggle={() => setFontSmoothing(!fontSmoothing)}
                 />
               </SettingsCard>
-            )}
-
-            {settingsSection === "watch" && (
-              <SettingsEmpty
-                badge="Coming soon"
-                title="Channel watching"
-                body="Add YouTube channels and RSS feeds here. Rippo will check them on a schedule and surface new finds in your queue."
-              />
             )}
 
             {settingsSection === "access" && (

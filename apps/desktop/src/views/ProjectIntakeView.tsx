@@ -1,4 +1,4 @@
-import { Download, FolderOpen, Loader2, X } from "lucide-react";
+import { Download, FolderOpen, Loader2, X, Link2, AlertCircle, CheckCircle2 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { BrowserInfo, CookieSource, PresetOption, ProviderOption } from "../../electron/types";
 import { queueItemCanRefetch, queueItemCanRemove } from "../app/downloadQueueModel";
@@ -164,7 +164,30 @@ export function ProjectIntakeView({
   return (
     <section className={`intake${anySelected ? " intake-has-selection" : ""}`}>
       <div className="intake-main">
-      {(items.length === 0 || pageProbeError || pageProbeNotice) ? (
+      {items.length === 0 ? (
+        <div className={`intake-empty intake-empty-${intakeStatus.tone}`}>
+          <div className="intake-empty-card">
+            <div className="intake-empty-icon-wrapper">
+              {intakeStatus.tone === "error" || intakeStatus.tone === "warning" ? (
+                <AlertCircle size={28} className="intake-empty-icon" aria-hidden />
+              ) : intakeStatus.tone === "success" ? (
+                <CheckCircle2 size={28} className="intake-empty-icon" aria-hidden />
+              ) : (
+                <Link2 size={28} className="intake-empty-icon" aria-hidden />
+              )}
+            </div>
+            <h3 className="intake-empty-title">
+              {intakeStatus.tone === "idle" ? "Queue" :
+               intakeStatus.tone === "info" ? "Link Detected" :
+               intakeStatus.tone === "warning" ? "Invalid Link" :
+               intakeStatus.tone === "error" ? "Intake Error" : "Ready"}
+            </h3>
+            <p className="intake-empty-body">
+              {intakeStatus.message}
+            </p>
+          </div>
+        </div>
+      ) : (pageProbeError || pageProbeNotice) ? (
         <IntakeStatusBar status={intakeStatus} />
       ) : null}
 

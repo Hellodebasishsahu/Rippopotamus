@@ -3,7 +3,6 @@ import {
   Download,
   FolderOpen,
   Palette,
-  Radar as RadarIcon,
   X,
   type LucideIcon,
 } from "lucide-react";
@@ -12,7 +11,6 @@ import type { ReactNode } from "react";
 export type SettingsSectionId =
   | "general"
   | "appearance"
-  | "watch"
   | "access"
   | "tools";
 
@@ -32,17 +30,6 @@ const RAIL_GROUPS: { label: string; sections: SectionMeta[] }[] = [
         label: "General",
         subtitle: "Where finished downloads are saved.",
         icon: FolderOpen,
-      },
-    ],
-  },
-  {
-    label: "Discovery",
-    sections: [
-      {
-        id: "watch",
-        label: "Watch",
-        subtitle: "Channels and feeds to monitor.",
-        icon: RadarIcon,
       },
     ],
   },
@@ -201,11 +188,13 @@ type SettingsEmptyProps = {
   title: string;
   body: string;
   badge?: string;
+  icon?: LucideIcon;
 };
 
-export function SettingsEmpty({ title, body, badge }: SettingsEmptyProps) {
+export function SettingsEmpty({ title, body, badge, icon: Icon }: SettingsEmptyProps) {
   return (
     <div className="settings-empty">
+      {Icon ? <Icon size={24} className="settings-empty-icon" aria-hidden /> : null}
       {badge ? <span className="settings-empty-badge">{badge}</span> : null}
       <p className="settings-empty-title">{title}</p>
       <p className="settings-empty-body">{body}</p>

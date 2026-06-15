@@ -303,7 +303,7 @@ export function QueueCard({
 
         {item.status === QUEUE_STATUS.done && lastPath ? (
           <p className="tile-file" title={lastPath}>
-            <FolderOpen size={10} strokeWidth={2} aria-hidden />
+            <FolderOpen size={12} strokeWidth={2} aria-hidden />
             {fileBasename(lastPath)}
           </p>
         ) : null}
