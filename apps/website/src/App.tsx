@@ -259,24 +259,8 @@ export function App() {
             Stop fighting with sketchy ad-filled sites and bloated subscription apps.
             <em> Get your media. Get back to creating.</em>
           </blockquote>
-          <div className="section-divider section-divider--footer" aria-hidden="true">
-            <svg viewBox="0 0 1440 120" fill="none" preserveAspectRatio="none" style={{ width: "100%", height: "100%", display: "block" }}>
-              {/* Main Wave — fills the manifesto color above the curve, transparent below so the footer wordmark shows through */}
-              <path
-                d="M0,64 C360,120 720,40 1080,100 C1260,130 1380,90 1440,80 L1440,0 L0,0 Z"
-                fill="var(--ink)"
-              />
-            </svg>
-          </div>
         </section>
       </main>
-
-      {/* Footer */}
-      <footer className="foot">
-        <div className="big-name-wrapper" aria-hidden="true">
-          <div className="big-name">RIPPOPOTAMUS</div>
-        </div>
-      </footer>
     </div>
   );
 }

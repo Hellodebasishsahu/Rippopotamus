@@ -23,7 +23,6 @@
   --mono: "JetBrains Mono", ui-monospace, monospace;
   --gutter: clamp(24px, 5vw, 80px);
   --content: min(1120px, 100% - 2 * var(--gutter));
-  --foot-height: clamp(120px, 16.5vw, 230px);
 }
 
 *,
@@ -34,6 +33,7 @@
 
 html {
   scroll-behavior: smooth;
+  overscroll-behavior: none;
 }
 
 body {
@@ -45,6 +45,7 @@ body {
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
+  overscroll-behavior: none;
 }
 
 a {
@@ -64,6 +65,7 @@ img {
   min-height: 100vh;
   display: flex;
   flex-direction: column;
+  overscroll-behavior: none;
 }
 
 /* Background Texture & Glows */
@@ -123,7 +125,6 @@ main.main-content {
   z-index: 2;
   flex: 1;
   background: var(--ink);
-  margin-bottom: var(--foot-height);
 }
 
 /* Typography & Kicker */
@@ -465,13 +466,6 @@ main.main-content {
   bottom: -1px;
 }
 
-.section-divider--footer {
-  top: 100%;
-  bottom: auto;
-  height: clamp(60px, 8vw, 110px);
-  transform: translateY(-1px);
-}
-
 /* Features Grid */
 .features {
   position: relative;
@@ -621,7 +615,7 @@ main.main-content {
 .manifesto {
   position: relative;
   background-color: var(--ink);
-  padding: clamp(80px, 10vw, 120px) var(--gutter) clamp(40px, 5vw, 70px);
+  padding: clamp(80px, 10vw, 120px) var(--gutter) clamp(100px, 12vw, 140px);
 }
 
 .manifesto blockquote {
@@ -641,47 +635,6 @@ main.main-content {
   margin-top: 0.35em;
   font-style: italic;
   color: var(--coral);
-}
-
-/* Footer styling */
-.foot {
-  position: fixed;
-  bottom: 0;
-  left: 0;
-  width: 100%;
-  height: var(--foot-height);
-  z-index: 1;
-  background-color: var(--deep);
-  overflow: hidden;
-  box-shadow: 0 -24px 48px rgba(0, 0, 0, 0.45);
-}
-
-.big-name-wrapper {
-  position: absolute;
-  inset: 0;
-  display: flex;
-  align-items: flex-end;
-  justify-content: center;
-  overflow: hidden;
-  pointer-events: none;
-}
-
-.big-name {
-  flex: none;
-  margin: 0;
-  padding: 0;
-  font-family: var(--display);
-  font-size: clamp(104px, 21vw, 400px);
-  font-weight: 800;
-  line-height: 0.8;
-  color: var(--text);
-  opacity: 0.04;
-  text-align: center;
-  white-space: nowrap;
-  letter-spacing: -0.06em;
-  -webkit-user-select: none;
-  user-select: none;
-  transform: translateY(20%);
 }
 
 /* BOTANICAL SVG MICRO-ANIMATIONS */
