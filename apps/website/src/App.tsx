@@ -45,13 +45,13 @@ const faqItems: FaqItem[] = [
     id: "playlists",
     question: "Can I batch-download playlists and channels?",
     answer:
-      "Yes. Drop a playlist or channel URL and Rippo queues everything, fetches metadata up front, and runs downloads in the background while you keep working.",
+      "Not yet. Rippo currently focuses on individual media links. You can paste many URLs at once for batch processing, but automatic playlist and channel expansion is on the roadmap.",
   },
   {
     id: "folders",
     question: "Where do my files end up?",
     answer:
-      "Organized project folders—not a messy Downloads dump. Audio, Video, Images, Thumbnails, and Clips each get their own directory with sane filenames, plus a manifest.json that tracks every source URL.",
+      "Organized project folders—not a messy Downloads dump. Source, Audio, Images, Thumbnails, and Clips each get their own directory with sane filenames, plus a manifest.json that tracks every source URL.",
   },
   {
     id: "private",

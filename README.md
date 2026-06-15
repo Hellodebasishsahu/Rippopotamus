@@ -25,20 +25,24 @@ Rippopotamus is not trying to beat downloader engines. It uses `yt-dlp` and `gal
 3. Choose provider and preset:
    - Video / audio resolved through `yt-dlp`
    - Images resolved through `gallery-dl`
+   - Torrents resolved through `aria2c`
+   - Google Drive files
    - Best MP4
    - MP3 audio
    - Thumbnail only
    - Image gallery
    - Proxy MP4
+   - Drive file
+   - Torrent
 4. Download into a structured project folder.
 5. Generate `manifest.json` with source URLs and metadata.
 6. Show failed links with readable errors and retry actions.
 
-## First Architecture
+## Architecture
 
-- Core engine: Python CLI routing resolvers (`yt-dlp`, `gallery-dl`, Drive) into transfer engines (`aria2c`, `ffmpeg`, owned Drive stream)
-- Desktop shell: Electron or Tauri after the CLI engine is stable
-- Local state: SQLite
+- Core engine: Python CLI routing resolvers (`yt-dlp`, `gallery-dl`, Drive, Torrent) into transfer engines (`aria2c`, `ffmpeg`, Drive API)
+- Desktop shell: Electron + Vite calling the Python media engine over local IPC
+- Local state: JSON ledgers (`.rippo-downloads.json`)
 - Output: normal folders on disk
 
 ## Project Folder Output
@@ -82,6 +86,8 @@ Available presets:
 - `thumbnail`
 - `gallery`
 - `proxy`
+- `drive-file`
+- `torrent`
 
 ## Desktop MVP
 

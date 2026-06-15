@@ -10,7 +10,7 @@ Commands:
 rippo init "Client Project"
 rippo add <url>
 rippo fetch
-rippo download --preset mp4
+rippo download --preset mp4-best
 rippo manifest
 ```
 
@@ -33,7 +33,8 @@ Presets:
 - `thumbnail`: best thumbnail
 - `gallery`: image/gallery download through gallery-dl
 - `proxy`: smaller H.264 MP4 for editing/reference
-- `clip`: optional start/end segment extraction
+- `drive-file`: Google Drive file download
+- `torrent`: torrent or magnet link download
 
 ## Phase 3: Desktop MVP
 
