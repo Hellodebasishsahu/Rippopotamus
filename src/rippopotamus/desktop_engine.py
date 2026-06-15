@@ -37,30 +37,22 @@ from rippopotamus.desktop_runtime import (
 )
 from rippopotamus.torrent_downloads import run_torrent_download
 from rippopotamus.resolvers.generic_preview import preview_metadata
-
-
-def emit(payload: dict[str, Any]) -> None:
-    print(json.dumps(payload, sort_keys=True), flush=True)
-
-
-def download_ledger_path(root: Path) -> Path:
-    return root / ".rippo-downloads.json"
+from rippopotamus.library import (
+    LedgerLoadError,
+    command_library_list,
+    download_ledger_path,
+    emit,
+    file_result,
+    library_entry_from_record,
+    load_download_ledger,
+    media_kind_for_path,
+    title_from_relative_path,
+)
 
 
 def download_key(url: str, preset: str) -> str:
     basis = json.dumps({"preset": preset, "url": url.strip()}, sort_keys=True)
     return hashlib.sha1(basis.encode("utf-8")).hexdigest()[:24]
-
-
-def load_download_ledger(root: Path) -> dict[str, Any]:
-    path = download_ledger_path(root)
-    if not path.exists():
-        return {}
-    try:
-        payload = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return {}
-    return payload if isinstance(payload, dict) else {}
 
 
 def write_download_ledger(root: Path, ledger: dict[str, Any]) -> None:
@@ -69,7 +61,11 @@ def write_download_ledger(root: Path, ledger: dict[str, Any]) -> None:
 
 
 def existing_download(root: Path, key: str) -> list[dict[str, Any]] | None:
-    record = load_download_ledger(root).get(key)
+    try:
+        ledger = load_download_ledger(root)
+    except LedgerLoadError:
+        return None
+    record = ledger.get(key)
     if not isinstance(record, dict):
         return None
     paths = record.get("files")
@@ -88,102 +84,6 @@ def existing_download(root: Path, key: str) -> list[dict[str, Any]] | None:
             return None
         files.append(file_result(root, path))
     return sorted(files, key=lambda item: item["path"])
-
-
-def title_from_relative_path(rel_path: str) -> str:
-    stem = Path(rel_path).stem
-    if "--" in stem:
-        stem = stem.rsplit("--", 1)[0]
-    title = stem.replace("-", " ").strip()
-    return title or stem or rel_path
-
-
-def media_kind_for_path(rel_path: str) -> str:
-    ext = Path(rel_path).suffix.lower()
-    if ext in {".mp4", ".m4v", ".webm", ".mkv", ".mov", ".avi", ".ts", ".m2ts"}:
-        return "video"
-    if ext in {".mp3", ".m4a", ".aac", ".wav", ".flac", ".opus", ".ogg"}:
-        return "audio"
-    if ext in {".jpg", ".jpeg", ".png", ".gif", ".webp", ".avif", ".heic"}:
-        return "image"
-    if ext in {".pdf"}:
-        return "document"
-    return "file"
-
-
-def library_entry_from_record(root: Path, key: str, record: dict[str, Any]) -> dict[str, Any] | None:
-    url = record.get("url")
-    preset = record.get("preset")
-    paths = record.get("files")
-    if not isinstance(url, str) or not isinstance(preset, str) or not isinstance(paths, list) or not paths:
-        return None
-
-    files: list[dict[str, Any]] = []
-    saved_at = 0.0
-    for rel in paths:
-        if not isinstance(rel, str) or Path(rel).is_absolute():
-            return None
-        path = (root / rel).resolve()
-        try:
-            path.relative_to(root)
-        except ValueError:
-            return None
-        if not path.is_file():
-            continue
-        item = file_result(root, path)
-        files.append(item)
-        try:
-            saved_at = max(saved_at, path.stat().st_mtime)
-        except OSError:
-            pass
-
-    if not files:
-        return None
-
-    primary = max(files, key=lambda item: item.get("size") or 0)
-    primary_path = str(primary.get("path") or files[0]["path"])
-    total_size = sum(int(item["size"]) for item in files if isinstance(item.get("size"), int))
-    return {
-        "id": key,
-        "url": url,
-        "preset": preset,
-        "title": title_from_relative_path(primary_path),
-        "kind": media_kind_for_path(primary_path),
-        "files": sorted(files, key=lambda item: item["path"]),
-        "fileCount": len(files),
-        "totalSize": total_size or None,
-        "savedAt": saved_at or None,
-        "primaryPath": primary_path,
-    }
-
-
-def command_library_list(args: argparse.Namespace) -> int:
-    root = Path(args.output_root).expanduser().resolve()
-    query = (args.query or "").strip().lower()
-    ledger = load_download_ledger(root)
-    items: list[dict[str, Any]] = []
-    for key, record in ledger.items():
-        if not isinstance(record, dict):
-            continue
-        entry = library_entry_from_record(root, str(key), record)
-        if not entry:
-            continue
-        if query:
-            haystack = " ".join(
-                [
-                    entry.get("title") or "",
-                    entry.get("url") or "",
-                    entry.get("preset") or "",
-                    " ".join(str(file.get("path") or "") for file in entry.get("files") or []),
-                ]
-            ).lower()
-            if query not in haystack:
-                continue
-        items.append(entry)
-
-    items.sort(key=lambda item: item.get("savedAt") or 0, reverse=True)
-    emit({"ok": True, "outputRoot": str(root), "items": items, "total": len(items)})
-    return 0
 
 
 def remember_download(root: Path, key: str, files: list[dict[str, Any]], *, url: str, preset: str) -> None:
@@ -349,15 +249,6 @@ def command_proxy_check(args: argparse.Namespace) -> int:
 
 def snapshot_files(root: Path) -> set[Path]:
     return {path for path in root.rglob("*") if path.is_file() and not any(part.startswith(".") for part in path.relative_to(root).parts)}
-
-
-def file_result(root: Path, path: Path) -> dict[str, Any]:
-    relative = str(path.relative_to(root))
-    try:
-        size = path.stat().st_size
-    except OSError:
-        size = None
-    return {"path": relative, "size": size}
 
 
 def parse_progress(line: str) -> dict[str, Any] | None:
@@ -577,7 +468,6 @@ def build_parser() -> argparse.ArgumentParser:
 
     library_list = sub.add_parser("library-list")
     library_list.add_argument("--output-root", required=True)
-    library_list.add_argument("--query", default="")
     library_list.set_defaults(func=command_library_list)
 
     return parser
