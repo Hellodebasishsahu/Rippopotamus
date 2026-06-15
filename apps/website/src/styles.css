@@ -183,10 +183,75 @@ main.main-content {
 
 .logo-mark {
   position: relative;
-  z-index: 1;
+  z-index: 2;
   width: 100%;
   height: auto;
   filter: drop-shadow(0 28px 56px rgba(0, 0, 0, 0.5));
+}
+
+/* Mobile halo — platform icons ring behind the logo */
+.hero-halo {
+  position: absolute;
+  inset: -22%;
+  z-index: 0;
+  pointer-events: none;
+}
+
+.hero-halo-glow {
+  position: absolute;
+  inset: 5%;
+  border-radius: 50% 50% 50% 50% / 60% 40% 40% 60%;
+  border: 1px solid rgba(168, 210, 188, 0.14);
+  background: radial-gradient(
+    circle at 50% 20%,
+    rgba(93, 255, 177, 0.10) 0%,
+    rgba(255, 107, 74, 0.06) 40%,
+    transparent 70%
+  );
+  box-shadow:
+    0 -20px 48px rgba(93, 255, 177, 0.08),
+    inset 0 20px 32px rgba(255, 107, 74, 0.05);
+  animation: aura-wave 8s ease-in-out infinite alternate;
+  -webkit-mask-image: linear-gradient(to bottom, black 0%, black 35%, transparent 60%);
+  mask-image: linear-gradient(to bottom, black 0%, black 35%, transparent 60%);
+}
+
+@keyframes aura-wave {
+  0% {
+    border-radius: 43% 57% 50% 50% / 38% 35% 50% 50%;
+  }
+  50% {
+    border-radius: 55% 45% 50% 50% / 48% 55% 50% 50%;
+  }
+  100% {
+    border-radius: 47% 53% 50% 50% / 43% 40% 50% 50%;
+  }
+}
+
+.hero-halo-ring {
+  position: absolute;
+  inset: 0;
+}
+
+.hero-halo-spoke {
+  position: absolute;
+  inset: 0;
+  transform: rotate(var(--halo-angle));
+}
+
+.hero-halo-icon {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  margin-left: -15px;
+  color: var(--muted);
+  opacity: 0.5;
+  transform: rotate(calc(var(--halo-angle) * -1));
 }
 
 @keyframes logo-pulse {
@@ -204,6 +269,7 @@ main.main-content {
 
 .hero .line {
   display: block;
+  white-space: nowrap;
 }
 
 .hero .accent {
@@ -287,6 +353,30 @@ main.main-content {
   font-weight: 400;
   font-style: italic;
   opacity: 0.85;
+}
+
+.btn-main--stacked {
+  flex-direction: column;
+  gap: 6px;
+  padding-top: 14px;
+  padding-bottom: 14px;
+}
+
+.btn-main--soon {
+  background: linear-gradient(135deg, rgba(255, 107, 74, 0.55) 0%, rgba(201, 79, 53, 0.55) 100%);
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.15) inset,
+    0 8px 24px rgba(255, 107, 74, 0.12);
+  cursor: default;
+}
+
+.btn-main--soon:hover {
+  transform: none;
+  filter: none;
+  border-color: rgba(255, 255, 255, 0.25);
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.15) inset,
+    0 8px 24px rgba(255, 107, 74, 0.12);
 }
 
 /* Marquee Section */
@@ -1092,6 +1182,15 @@ main.main-content {
     justify-self: center;
     width: min(78vw, 260px);
     margin-bottom: 8px;
+    overflow: visible;
+  }
+
+  .hero {
+    padding-bottom: clamp(64px, 10vw, 96px);
+  }
+
+  .logo-glow {
+    z-index: 1;
   }
 
   .lede {

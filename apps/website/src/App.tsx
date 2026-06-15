@@ -1,8 +1,7 @@
-import { MarqueeIcon, appleIcon } from "./MarqueeIcons";
 import { MarqueeSection } from "./MarqueeSection";
 import { FeaturesSection } from "./FeaturesSection";
-
-const macDownloadUrl = "/downloads/Rippopotamus-0.1.0-arm64.dmg";
+import { DownloadCta } from "./DownloadCta";
+import { HeroIconHalo } from "./HeroIconHalo";
 
 type FaqItem = {
   id: string;
@@ -15,7 +14,7 @@ const faqItems: FaqItem[] = [
     id: "what",
     question: "What is Rippopotamus?",
     answer:
-      "A local desktop app for editors and designers. Paste media links, pick a preset, and Rippo downloads pristine files into clean project folders on your hard drive—no browser tabs, no sketchy converter sites.",
+      "A local desktop media downloader for editors and designers. Paste links, pick a preset, and Rippo downloads pristine files into clean project folders on your hard drive—no browser tabs, no sketchy converter sites.",
   },
   {
     id: "free",
@@ -111,24 +110,18 @@ export function App() {
           <div className="hero-inner">
             <div className="hero-copy">
               <h1 id="hero-title">
-                <span className="line">Drop links.</span>
-                <span className="line">Get assets.</span>
-                <span className="line accent">Create.</span>
+                <span className="line">Paste links.</span>
+                <span className="line">Get files.</span>
+                <span className="line accent">Done.</span>
               </h1>
               <p className="lede">
-                The clean, lightning-fast media downloader built for editors and designers. No ads, no subscriptions, just pristine files straight to your hard drive.
+                A clean media downloader for editors and designers. Save up to 8K video and master audio straight to organized project folders.
               </p>
-              <div className="hero-cta" id="download">
-                <a className="btn-main" href={macDownloadUrl} download>
-                  <span className="btn-main-title">
-                    Download for Mac
-                    <MarqueeIcon icon={appleIcon} size={18} />
-                  </span>
-                </a>
-              </div>
+              <DownloadCta />
             </div>
 
             <div className="hero-brand" aria-hidden="true">
+              <HeroIconHalo />
               <div className="logo-glow" />
               <picture>
                 <source
@@ -162,7 +155,7 @@ export function App() {
 
             <div className="faq-grid" role="list">
               {faqItems.map((item) => (
-                <details key={item.id} className="faq-item" name="faq" role="listitem">
+                <details key={item.id} id={item.id} className="faq-item" name="faq" role="listitem">
                   <summary className="faq-question">
                     <span>{item.question}</span>
                     <span className="faq-icon" aria-hidden="true" />
