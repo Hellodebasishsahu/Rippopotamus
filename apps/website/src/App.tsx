@@ -15,7 +15,7 @@ const faqItems: FaqItem[] = [
     id: "what",
     question: "What is Rippopotamus?",
     answer:
-      "A local desktop media downloader for editors and designers. Paste links, pick a preset, and Rippo downloads pristine files into clean project folders on your hard drive—no browser tabs, no sketchy converter sites.",
+      "A local desktop media downloader for editors and designers. Paste a link, even one behind a login, and Rippo uses your own browser session to pull pristine files into clean project folders on your hard drive. No browser tabs, no sketchy converter sites.",
   },
   {
     id: "free",
@@ -27,19 +27,19 @@ const faqItems: FaqItem[] = [
     id: "platforms",
     question: "What sites and platforms does it support?",
     answer:
-      "YouTube, TikTok, Instagram, Twitch, Vimeo, SoundCloud, Pinterest, Reddit, and dozens more—basically anywhere yt-dlp and gallery-dl can reach. Paste a link and Rippo figures out the best source.",
+      "YouTube, TikTok, Instagram, Twitch, Vimeo, SoundCloud, Pinterest, Reddit, and dozens more. Basically anywhere yt-dlp and gallery-dl can reach. Paste a link and Rippo figures out the best source.",
   },
   {
     id: "windows",
     question: "Does it work on Windows?",
     answer:
-      "Mac is available now. Windows builds are in progress—you can package for Windows from the repo today, and a signed installer is on the roadmap.",
+      "Mac is available now. Windows builds are in progress. You can package for Windows from the repo today, and a signed installer is on the roadmap.",
   },
   {
     id: "quality",
     question: "What quality do I actually get?",
     answer:
-      "The best source available—up to 4K/8K video and master audio when the platform serves it. Rippo pulls uncompressed streams that typical browser extensions can't touch, then hands you MP4, MP3, thumbnails, or image galleries.",
+      "The best source available, up to 4K/8K video and master audio when the platform serves it. Rippo pulls uncompressed streams that typical browser extensions can't touch, then hands you MP4, MP3, thumbnails, or image galleries.",
   },
   {
     id: "playlists",
@@ -51,7 +51,13 @@ const faqItems: FaqItem[] = [
     id: "folders",
     question: "Where do my files end up?",
     answer:
-      "Organized project folders—not a messy Downloads dump. Source, Audio, Images, Thumbnails, and Clips each get their own directory with sane filenames, plus a manifest.json that tracks every source URL.",
+      "Organized project folders, not a messy Downloads dump. Source, Audio, Images, Thumbnails, and Clips each get their own directory with sane filenames, plus a manifest.json that tracks every source URL.",
+  },
+  {
+    id: "sheets",
+    question: "Can I import a tracker spreadsheet?",
+    answer:
+      "Yes. If your team runs projects from a Google Sheet, Rippo can read a tracker tab and turn each row into a downloaded, organized project folder with a manifest. It lives in the app's footer: handy when you need it, out of the way when you don't.",
   },
   {
     id: "private",
@@ -63,7 +69,7 @@ const faqItems: FaqItem[] = [
     id: "privacy",
     question: "Is anything sent to the cloud?",
     answer:
-      "No. Rippo runs entirely on your machine. Links, downloads, and credentials never leave your computer—local-first by design.",
+      "No. Rippo runs entirely on your machine. Links, downloads, and credentials never leave your computer. Local-first by design.",
   },
   {
     id: "vs-extensions",
@@ -81,19 +87,19 @@ const faqItems: FaqItem[] = [
     id: "failures",
     question: "What happens when a link fails?",
     answer:
-      "You get a plain-English error—not a cryptic log dump—and a retry button. Failed links stay in your queue so you can fix cookies, switch presets, or try again without starting over.",
+      "You get a plain-English error, not a cryptic log dump, plus a retry button. Failed links stay in your queue so you can fix cookies, switch presets, or try again without starting over.",
   },
   {
     id: "legal",
     question: "Is downloading content legal?",
     answer:
-      "Rippo is a tool. You're responsible for having the rights to download and use whatever you grab—client deliverables, licensed stock, your own uploads, etc. We don't host or redistribute anyone's content.",
+      "Rippo is a tool. You're responsible for having the rights to download and use whatever you grab: client deliverables, licensed stock, your own uploads, etc. We don't host or redistribute anyone's content.",
   },
   {
     id: "updates",
     question: "How do I get updates?",
     answer:
-      "Check the site for new releases. Auto-update is coming— for now, grab the latest .dmg when we ship a new version.",
+      "Check the site for new releases. Auto-update is coming. For now, grab the latest .dmg when we ship a new version.",
   },
 ];
 
@@ -111,12 +117,11 @@ export function App() {
           <div className="hero-inner">
             <div className="hero-copy">
               <h1 id="hero-title">
-                <span className="line">Paste links.</span>
-                <span className="line">Get files.</span>
-                <span className="line accent">Done.</span>
+                <span className="line">If you can see it,</span>
+                <span className="line accent">you can download it.</span>
               </h1>
               <p className="lede">
-                A clean media downloader for editors and designers. Save up to 8K video and master audio straight to organized project folders.
+                Download full-quality video and audio from anywhere, even the logged-in stuff other tools can't reach.
               </p>
               <DownloadCta />
             </div>

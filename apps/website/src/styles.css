@@ -158,9 +158,9 @@ main.main-content {
   max-width: var(--content);
   margin: 0 auto;
   display: grid;
-  grid-template-columns: minmax(0, 1.2fr) minmax(240px, 0.8fr);
+  grid-template-columns: minmax(0, 1.35fr) minmax(220px, 0.65fr);
   align-items: center;
-  gap: clamp(32px, 6vw, 72px);
+  gap: clamp(28px, 5vw, 60px);
 }
 
 .hero-brand {
@@ -261,9 +261,9 @@ main.main-content {
 
 .hero h1 {
   margin: 0;
-  font-size: clamp(4.5rem, 11vw, 8.5rem);
+  font-size: clamp(2.75rem, 6.8vw, 4.5rem);
   font-weight: 800;
-  line-height: 0.86;
+  line-height: 0.9;
   letter-spacing: -0.05em;
 }
 
@@ -277,16 +277,17 @@ main.main-content {
   font-style: italic;
   font-family: var(--serif);
   font-weight: 500;
+  font-size: 0.78em;
   letter-spacing: -0.04em;
 }
 
 .lede {
-  margin: 32px 0 0;
-  max-width: 32rem;
+  margin: 24px 0 0;
+  max-width: 30rem;
   font-family: var(--serif);
-  font-size: clamp(1.2rem, 2.2vw, 1.45rem);
+  font-size: clamp(0.98rem, 1.4vw, 1.12rem);
   font-weight: 400;
-  line-height: 1.52;
+  line-height: 1.55;
   color: var(--muted);
 }
 
@@ -1248,7 +1249,7 @@ main.main-content {
   }
 
   .hero h1 {
-    font-size: 3.8rem;
+    font-size: clamp(1.75rem, 8vw, 3.8rem);
   }
 
 }

@@ -8,11 +8,11 @@
 
 ## Success criteria
 
-1. One real client project run end-to-end with **sheet → project folder + manifest**.
-2. At least one **repeat Drive dedupe** case validated (download ledger).
+1. One real project run end-to-end pulling from a **gated/logged-in source → editor-ready folder + manifest**.
+2. At least one **repeat dedupe** case validated (download ledger).
 3. Written **before/after** note: time to organized `Source/` tree + manifest path.
 
 ## Exit
 
 - Partner agrees to a **short Loom** or written quote for the landing page.
-- If sheet import is unused after two weeks, re-scope or churn—do not expand scope.
+- If the core download flow (incl. gated/logged-in sources) is unused after two weeks, re-scope or churn—do not expand scope. Tracker/sheet import is a bonus, not a gating metric.
