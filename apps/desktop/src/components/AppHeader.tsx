@@ -1,6 +1,6 @@
 import { Loader2, Settings } from "lucide-react";
 import type { RefObject } from "react";
-import type { ProviderId, ProviderOption } from "../../../electron/types";
+import type { ProviderId, ProviderOption } from "../../electron/types";
 import { AppHero } from "./AppHero";
 
 const logoUrl = `${import.meta.env.BASE_URL}brand-logo.png`;

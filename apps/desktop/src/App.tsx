@@ -1,6 +1,6 @@
 import { Cookie, Download, ExternalLink, FolderOpen, FolderSearch, Globe2, Loader2, Radar as RadarIcon, RefreshCcw, RotateCcw, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { AppUpdateInfo, BrowserInfo, CookieSource, EngineHealth, GalleryDlUpdateInfo, PageProbeCandidate, PresetOption, ProviderId, ProviderOption, YtDlpUpdateInfo } from "../../electron/types";
+import type { AppUpdateInfo, BrowserInfo, CookieSource, EngineHealth, GalleryDlUpdateInfo, PageProbeCandidate, PresetOption, ProviderId, ProviderOption, YtDlpUpdateInfo } from "../electron/types";
 import { readPreferredPresets, writePreferredPresets } from "./app/downloadQueuePrefs";
 import { sourceUrl, useDownloadQueue } from "./app/useDownloadQueue";
 import type { QueueItem } from "./app/useDownloadQueue";

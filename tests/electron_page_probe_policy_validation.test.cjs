@@ -13,7 +13,7 @@ const {
   probePageContentKey,
   sortedProbeCandidates,
   validateProbeUrl,
-} = require("../dist-electron/pageProbePolicy.js");
+} = require("../apps/desktop/dist-electron/pageProbePolicy.js");
 
 // ---------------------------------------------------------------------------
 // URL validation

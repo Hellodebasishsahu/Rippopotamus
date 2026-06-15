@@ -14,7 +14,7 @@ import type {
   ThumbnailLoadResult,
   YtDlpUpdateInfo,
   YtDlpUpdateResult,
-} from "../../../electron/types";
+} from "../../electron/types";
 
 type RippoBridge = Window["rippo"];
 

@@ -1,6 +1,6 @@
 import { Loader2 } from "lucide-react";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
-import type { CookieSource, SheetImportEvent, SheetImportRequest } from "../../../electron/types";
+import type { CookieSource, SheetImportEvent, SheetImportRequest } from "../../electron/types";
 import type { DesktopClient } from "../client/desktopClient";
 import { BrandIcon } from "./BrandIcon";
 

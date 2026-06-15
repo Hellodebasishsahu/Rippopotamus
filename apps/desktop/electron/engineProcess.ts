@@ -56,8 +56,12 @@ function parseEnvFile(content: string): NodeJS.ProcessEnv {
   return parsed;
 }
 
+function repoRoot(): string {
+  return app.isPackaged ? process.resourcesPath : path.resolve(app.getAppPath(), "../..");
+}
+
 function engineCwd(): string {
-  return app.isPackaged ? process.resourcesPath : app.getAppPath();
+  return app.isPackaged ? process.resourcesPath : repoRoot();
 }
 
 function localEnvFile(): NodeJS.ProcessEnv {
@@ -77,7 +81,7 @@ function localEnvFile(): NodeJS.ProcessEnv {
 
 function engineEnv(): NodeJS.ProcessEnv {
   const resourcesEngine = path.join(process.resourcesPath, "engine");
-  const devEngine = path.join(app.getAppPath(), "src");
+  const devEngine = path.join(repoRoot(), "src");
   const pythonPath = app.isPackaged ? resourcesEngine : devEngine;
   const managedGalleryDlRoot = appManagedGalleryDlRoot();
   const bundledFfmpeg = ffmpegPath();

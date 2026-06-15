@@ -1,0 +1,81 @@
+{
+  "name": "@rippopotamus/desktop",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Rippopotamus desktop app",
+  "type": "commonjs",
+  "main": "dist-electron/main.js",
+  "scripts": {
+    "dev": "tsc -p tsconfig.electron.json && concurrently -k \"vite --host 127.0.0.1 --port 5174 --strictPort\" \"wait-on http://127.0.0.1:5174 && VITE_DEV_SERVER_URL=http://127.0.0.1:5174 electron .\"",
+    "build": "tsc -p tsconfig.json --noEmit && vite build && tsc -p tsconfig.electron.json",
+    "build:ui": "tsc -p tsconfig.json --noEmit && vite build",
+    "build:electron": "tsc -p tsconfig.electron.json",
+    "package:mac": "electron-builder --mac dmg",
+    "package:win": "electron-builder --win dir --x64"
+  },
+  "dependencies": {
+    "@ghostery/adblocker-electron": "^2.17.0",
+    "aria2": "^5.0.0",
+    "ffmpeg-static": "^5.3.0",
+    "lucide-react": "^1.14.0",
+    "react": "^19.2.6",
+    "react-dom": "^19.2.6",
+    "simple-icons": "^16.20.0"
+  },
+  "devDependencies": {
+    "@types/node": "^25.6.2",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^6.0.1",
+    "concurrently": "^9.2.1",
+    "electron": "^41.5.1",
+    "electron-builder": "^26.8.1",
+    "typescript": "^6.0.3",
+    "vite": "^8.0.11",
+    "wait-on": "^9.0.5"
+  },
+  "build": {
+    "appId": "app.rippopotamus.desktop",
+    "productName": "Rippopotamus",
+    "asar": true,
+    "afterPack": "../../scripts/after-pack.cjs",
+    "asarUnpack": [
+      "node_modules/ffmpeg-static/**/*"
+    ],
+    "files": [
+      "dist/renderer/**/*",
+      "dist-electron/**/*",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "../../src/rippopotamus",
+        "to": "engine/rippopotamus"
+      },
+      {
+        "from": "../../pyproject.toml",
+        "to": "engine/pyproject.toml"
+      },
+      {
+        "from": "../../build/bin",
+        "to": "bin"
+      }
+    ],
+    "directories": {
+      "output": "../../release"
+    },
+    "mac": {
+      "icon": "public/brand-logo.png",
+      "category": "public.app-category.video",
+      "target": [
+        "dmg"
+      ]
+    },
+    "win": {
+      "icon": "public/brand-logo.ico",
+      "target": [
+        "dir"
+      ]
+    }
+  }
+}

@@ -16,5 +16,5 @@
     "noEmit": true,
     "jsx": "react-jsx"
   },
-  "include": ["src/desktop", "electron/types.d.ts"]
+  "include": ["src", "electron/types.d.ts"]
 }

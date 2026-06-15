@@ -9,6 +9,8 @@ node_modules/
 .pytest_cache/
 dist/
 dist-electron/
+apps/desktop/dist/
+apps/desktop/dist-electron/
 release/
 build/
 downloads/

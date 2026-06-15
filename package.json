@@ -1,21 +1,28 @@
 {
   "name": "rippopotamus",
   "version": "0.1.0",
+  "private": true,
   "description": "Feed it links. It spits out assets.",
-  "main": "dist-electron/main.js",
+  "packageManager": "npm@11.12.1",
+  "workspaces": [
+    "apps/desktop",
+    "apps/website"
+  ],
   "scripts": {
-    "dev": "tsc -p tsconfig.electron.json && concurrently -k \"vite --host 127.0.0.1 --port 5174 --strictPort\" \"wait-on http://127.0.0.1:5174 && VITE_DEV_SERVER_URL=http://127.0.0.1:5174 electron .\"",
-    "dev:website": "vite --config apps/website/vite.config.ts --host 127.0.0.1 --port 5175 --strictPort",
-    "build": "tsc -p tsconfig.json --noEmit && vite build && tsc -p tsconfig.electron.json",
-    "build:website": "tsc -p apps/website/tsconfig.json --noEmit && vite build --config apps/website/vite.config.ts",
-    "build:ui": "tsc -p tsconfig.json --noEmit && vite build",
-    "build:electron": "tsc -p tsconfig.electron.json",
+    "dev": "npm run dev --workspace @rippopotamus/desktop",
+    "dev:desktop": "npm run dev --workspace @rippopotamus/desktop",
+    "dev:website": "npm run dev --workspace @rippopotamus/website",
+    "build": "npm run build --workspace @rippopotamus/desktop",
+    "build:desktop": "npm run build --workspace @rippopotamus/desktop",
+    "build:website": "npm run build --workspace @rippopotamus/website",
+    "build:ui": "npm run build:ui --workspace @rippopotamus/desktop",
+    "build:electron": "npm run build:electron --workspace @rippopotamus/desktop",
     "prepare:ffmpeg:mac": "node scripts/install-ffmpeg-static-target.mjs darwin arm64",
     "prepare:aria2:mac": "node scripts/install-aria2c-resource.mjs darwin",
-    "package:mac": "npm run prepare:ffmpeg:mac && npm run prepare:aria2:mac && npm run build && electron-builder --mac dmg",
+    "package:mac": "npm run prepare:ffmpeg:mac && npm run prepare:aria2:mac && npm run build:desktop && npm run package:mac --workspace @rippopotamus/desktop",
     "prepare:ffmpeg:win": "node scripts/install-ffmpeg-static-target.mjs win32 x64",
     "prepare:aria2:win": "node scripts/install-aria2c-resource.mjs win32",
-    "package:win": "npm run prepare:ffmpeg:win && npm run prepare:aria2:win && npm run build && electron-builder --win dir --x64",
+    "package:win": "npm run prepare:ffmpeg:win && npm run prepare:aria2:win && npm run build:desktop && npm run package:win --workspace @rippopotamus/desktop",
     "package:win:ci": "npm run package:win && npm run verify:package:win",
     "verify:package:mac": "node scripts/verify-package-artifact.mjs mac",
     "verify:package:win": "node scripts/verify-package-artifact.mjs win",
@@ -26,71 +33,5 @@
   },
   "keywords": [],
   "author": "",
-  "license": "UNLICENSED",
-  "type": "commonjs",
-  "dependencies": {
-    "@ghostery/adblocker-electron": "^2.17.0",
-    "aria2": "^5.0.0",
-    "ffmpeg-static": "^5.3.0",
-    "simple-icons": "^16.20.0"
-  },
-  "devDependencies": {
-    "@types/node": "^25.6.2",
-    "@types/react": "^19.2.14",
-    "@types/react-dom": "^19.2.3",
-    "@vitejs/plugin-react": "^6.0.1",
-    "concurrently": "^9.2.1",
-    "electron": "^41.5.1",
-    "electron-builder": "^26.8.1",
-    "lucide-react": "^1.14.0",
-    "react": "^19.2.6",
-    "react-dom": "^19.2.6",
-    "typescript": "^6.0.3",
-    "vite": "^8.0.11",
-    "wait-on": "^9.0.5"
-  },
-  "build": {
-    "appId": "app.rippopotamus.desktop",
-    "productName": "Rippopotamus",
-    "asar": true,
-    "afterPack": "scripts/after-pack.cjs",
-    "asarUnpack": [
-      "node_modules/ffmpeg-static/**/*"
-    ],
-    "files": [
-      "dist/renderer/**/*",
-      "dist-electron/**/*",
-      "package.json"
-    ],
-    "extraResources": [
-      {
-        "from": "src/rippopotamus",
-        "to": "engine/rippopotamus"
-      },
-      {
-        "from": "pyproject.toml",
-        "to": "engine/pyproject.toml"
-      },
-      {
-        "from": "build/bin",
-        "to": "bin"
-      }
-    ],
-    "directories": {
-      "output": "release"
-    },
-    "mac": {
-      "icon": "public/brand-logo.png",
-      "category": "public.app-category.video",
-      "target": [
-        "dmg"
-      ]
-    },
-    "win": {
-      "icon": "public/brand-logo.ico",
-      "target": [
-        "dir"
-      ]
-    }
-  }
+  "license": "UNLICENSED"
 }

@@ -1,4 +1,4 @@
-import type { CookieSource, FetchResponse, ProviderId } from "../../../electron/types";
+import type { CookieSource, FetchResponse, ProviderId } from "../../electron/types";
 
 export const QUEUE_STATUS = {
   queued: "queued",

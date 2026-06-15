@@ -6,7 +6,7 @@ const ts = require("typescript");
 const vm = require("node:vm");
 
 function loadParser() {
-  const sourcePath = path.join(__dirname, "..", "src", "desktop", "urlParser.ts");
+  const sourcePath = path.join(__dirname, "..", "apps", "desktop", "src", "urlParser.ts");
   const source = fs.readFileSync(sourcePath, "utf8");
   const compiled = ts.transpileModule(source, {
     compilerOptions: {

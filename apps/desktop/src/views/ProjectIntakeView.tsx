@@ -1,6 +1,6 @@
 import { Download, FolderOpen, Loader2, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { BrowserInfo, CookieSource, PresetOption, ProviderId, ProviderOption } from "../../../electron/types";
+import type { BrowserInfo, CookieSource, PresetOption, ProviderId, ProviderOption } from "../../electron/types";
 import { queueItemCanRefetch, queueItemCanRemove } from "../app/downloadQueueModel";
 import { preferredPresetForProvider, presetsForProvider } from "../app/downloadQueuePrefs";
 import {

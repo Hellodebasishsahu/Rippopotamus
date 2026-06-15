@@ -42,5 +42,5 @@ const pythonEnv = {
 
 const python = resolvePythonCommand();
 run(python.command, [...python.args, "-m", "unittest", "discover", "-s", "tests"], { env: pythonEnv });
-run("npm", ["run", "build"]);
+run("npm", ["run", "build:desktop"]);
 run("node", ["--test", ...nodeTests]);

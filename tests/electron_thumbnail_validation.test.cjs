@@ -1,7 +1,7 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 
-const { sanitizeThumbnailUrls } = require("../dist-electron/thumbnails.js");
+const { sanitizeThumbnailUrls } = require("../apps/desktop/dist-electron/thumbnails.js");
 
 test("sanitizeThumbnailUrls accepts http and https thumbnail urls", () => {
   assert.deepEqual(

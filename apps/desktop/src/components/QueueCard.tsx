@@ -1,6 +1,6 @@
 import { Check, FolderOpen, ImageOff, Link2, Loader2, RefreshCcw, Square, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
-import type { BrowserInfo, CookieSource, PresetOption } from "../../../electron/types";
+import type { BrowserInfo, CookieSource, PresetOption } from "../../electron/types";
 import {
   QUEUE_STATUS,
   queueItemCanChangeOutput,

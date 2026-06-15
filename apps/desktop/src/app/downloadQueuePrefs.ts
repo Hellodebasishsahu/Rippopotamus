@@ -1,4 +1,4 @@
-import type { PresetOption, ProviderId, ProviderOption } from "../../../electron/types";
+import type { PresetOption, ProviderId, ProviderOption } from "../../electron/types";
 
 export const PREFERRED_PRESETS_STORAGE_KEY = "rippo:queue:preferredPresets";
 

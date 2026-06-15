@@ -1,7 +1,7 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 
-const { cookieSourceFromBrowserId, validateCookieSource, validateCookiesBrowserId } = require("../dist-electron/cookies.js");
+const { cookieSourceFromBrowserId, validateCookieSource, validateCookiesBrowserId } = require("../apps/desktop/dist-electron/cookies.js");
 
 const browsers = [
   { id: "chrome", label: "Chrome", appPath: "/Applications/Google Chrome.app" },

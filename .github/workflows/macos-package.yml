@@ -4,8 +4,8 @@ on:
   workflow_dispatch:
   pull_request:
     paths:
-      - "electron/**"
-      - "src/**"
+      - "apps/desktop/**"
+      - "src/rippopotamus/**"
       - "tests/**"
       - "scripts/**"
       - "package.json"
@@ -32,7 +32,7 @@ jobs:
       - run: npm ci
       - run: npm test
       - run: npm run prepare:ffmpeg:mac
-      - run: npm run build && npx electron-builder --mac dir
+      - run: npm run build:desktop && npm run package:mac --workspace @rippopotamus/desktop -- --mac dir
 
       - uses: actions/upload-artifact@v4
         with:

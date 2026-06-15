@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import type { CookieSource, DownloadEvent, PresetOption, ProviderId, ProviderOption } from "../../../electron/types";
+import type { CookieSource, DownloadEvent, PresetOption, ProviderId, ProviderOption } from "../../electron/types";
 import type { DesktopClient } from "../client/desktopClient";
 import { QUEUE_STATUS, queueItemCanChangeOutput, type QueueItem } from "./downloadQueueModel";
 import { defaultPresetForProvider, preferredPresetForProvider } from "./downloadQueuePrefs";
