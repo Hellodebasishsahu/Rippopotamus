@@ -1,17 +1,17 @@
-import { Cookie, Download, ExternalLink, FolderOpen, FolderSearch, Globe2, Loader2, Radar as RadarIcon, RefreshCcw, RotateCcw, X } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Cookie, ExternalLink, FolderOpen, FolderSearch, Globe2, Loader2, Radar as RadarIcon, RefreshCcw, RotateCcw, X } from "lucide-react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { AppUpdateInfo, BrowserInfo, CookieSource, EngineHealth, GalleryDlUpdateInfo, PageProbeCandidate, PresetOption, ProviderId, ProviderOption, YtDlpUpdateInfo } from "../electron/types";
-import { readPreferredPresets, writePreferredPresets } from "./app/downloadQueuePrefs";
 import { sourceUrl, useDownloadQueue } from "./app/useDownloadQueue";
 import type { QueueItem } from "./app/useDownloadQueue";
+import type { LibraryItem } from "../electron/types";
 import { createDesktopClient } from "./client/desktopClient";
-import { AppHeader, type ComposerAction } from "./components/AppHeader";
+import { AppHeader, type AppView, type ComposerAction } from "./components/AppHeader";
 import { ProjectIntakeView } from "./views/ProjectIntakeView";
+import { LibraryView } from "./views/LibraryView";
 import { SettingsCard, SettingsEmpty, SettingsToggle, SettingsView, type SettingsSectionId } from "./views/SettingsView";
-import { consumerErrorMessage, consumerNoticeMessage, engineToolMessage } from "./app/appFormatters";
+import { consumerErrorMessage, consumerNoticeMessage } from "./app/appFormatters";
 import { extractUrls } from "./urlParser";
 
-const AUTO_PROVIDER = "auto";
 const COOKIE_OFF: CookieSource = { mode: "off" };
 const NETWORK_ACCESS_OPTIONS = [
   {
@@ -131,31 +131,27 @@ function galleryDlPathText(update: GalleryDlUpdateInfo | null, health: EngineHea
   return "Install image support from here.";
 }
 
-function binaryStatusText(ok: boolean | null | undefined, healthError: string | null): string {
-  if (ok === true) return "Ready";
-  if (ok === false) return "Missing";
-  if (healthError) return "Unavailable";
-  return "Checking...";
+function engineInstallDesc(
+  ok: boolean | null | undefined,
+  readyText: string,
+  missingText: string,
+): string {
+  if (ok === true) return readyText;
+  if (ok === false) return missingText;
+  return "Checking…";
 }
 
-function aria2cDetailText(health: EngineHealth | null): string | null {
-  if (health?.aria2cOk) {
-    return health.torrentEngine === "aria2c" ? "Transfer engine" : "Installed";
-  }
-  if (health?.aria2cError) return null;
-  return "Required for reliable transfers and torrent links";
+function enginePathHint(...paths: Array<string | null | undefined>): string | undefined {
+  const path = paths.find((value) => value?.trim());
+  return path?.trim() || undefined;
 }
 
-function ffmpegStatusText(health: EngineHealth | null, healthError: string | null): string {
-  if (health?.ffmpegOk) return "Ready";
-  if (health?.ffmpegOk === false) return "Missing";
-  if (healthError) return "Unavailable";
-  return "Checking...";
-}
-
-function ffmpegPathText(health: EngineHealth | null): string {
-  if (health?.ffmpegOk) return "Ready to merge, convert, and prepare media files.";
-  return "Bundled media processing is not available.";
+function toolRoleLine(version: string | null | undefined, role: string): string {
+  const trimmed = version?.trim();
+  if (!trimmed) return role;
+  const labeled = trimmed.match(/(?:ffmpeg|aria2)\s+version\s+(\S+)/i);
+  const short = labeled?.[1] || trimmed.split(/\s+/)[0];
+  return `${short} · ${role}`;
 }
 
 function isLikelyMediaPageUrl(input: string | undefined): boolean {
@@ -187,12 +183,10 @@ function resolveComposerAction({
   hasText,
   urlCount,
   canUseDesktop,
-  hasProvider,
 }: {
   hasText: boolean;
   urlCount: number;
   canUseDesktop: boolean;
-  hasProvider: boolean;
 }): ComposerAction {
   if (!hasText || urlCount === 0) {
     return {
@@ -205,7 +199,7 @@ function resolveComposerAction({
   return {
     id: "fetch",
     label: "Fetch",
-    disabled: !canUseDesktop || !hasProvider,
+    disabled: !canUseDesktop,
     countSuffix: urlCount > 1 ? ` ${urlCount}` : "",
   };
 }
@@ -239,7 +233,6 @@ export function App() {
   const [health, setHealth] = useState<EngineHealth | null>(null);
   const [healthError, setHealthError] = useState<string | null>(null);
   const [input, setInput] = useState("");
-  const [fetchProvider, setFetchProvider] = useState<ProviderId | typeof AUTO_PROVIDER>(AUTO_PROVIDER);
   const [outputRoot, setOutputRoot] = useState("");
   const [browsers, setBrowsers] = useState<BrowserInfo[]>([]);
   const [cookieSource, setCookieSource] = useState<CookieSource>(COOKIE_OFF);
@@ -260,7 +253,7 @@ export function App() {
   const [appUpdate, setAppUpdate] = useState<AppUpdateInfo | null>(null);
   const [appUpdateStatus, setAppUpdateStatus] = useState<"idle" | "checking">("idle");
   const [appUpdateError, setAppUpdateError] = useState<string | null>(null);
-  const [aria2cStatus, setAria2cStatus] = useState<"idle" | "checking" | "updating">("idle");
+  const [aria2cStatus, setAria2cStatus] = useState<"idle" | "checking">("idle");
   const [ffmpegStatus, setFfmpegStatus] = useState<"idle" | "checking" | "updating">("idle");
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsSection, setSettingsSection] = useState<SettingsSectionId>("general");
@@ -271,7 +264,10 @@ export function App() {
   const [pageProbeIncognito, setPageProbeIncognito] = useState(() => localStorage.getItem("rippo:sniff:incognito") === "true");
   const [fetchWorkerCount, setFetchWorkerCount] = useState(() => readWorkerSetting("rippo:queue:fetchWorkers", FETCH_WORKER_DEFAULT, FETCH_WORKER_MIN, FETCH_WORKER_MAX));
   const [downloadWorkerCount, setDownloadWorkerCount] = useState(() => readWorkerSetting("rippo:queue:downloadWorkers", DOWNLOAD_WORKER_DEFAULT, DOWNLOAD_WORKER_MIN, DOWNLOAD_WORKER_MAX));
-  const [preferredPresets, setPreferredPresets] = useState<Partial<Record<ProviderId, string>>>(() => readPreferredPresets());
+  const [activeView, setActiveView] = useState<AppView>("queue");
+  const [libraryQuery, setLibraryQuery] = useState("");
+  const [libraryLoading, setLibraryLoading] = useState(false);
+  const [libraryRefreshKey, setLibraryRefreshKey] = useState(0);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
 
   useEffect(() => {
@@ -290,10 +286,6 @@ export function App() {
   useEffect(() => {
     localStorage.setItem("rippo:queue:downloadWorkers", String(downloadWorkerCount));
   }, [downloadWorkerCount]);
-
-  useEffect(() => {
-    writePreferredPresets(preferredPresets);
-  }, [preferredPresets]);
 
   useEffect(() => {
     if (!settingsOpen) return;
@@ -370,14 +362,16 @@ export function App() {
     }
   }
 
-  async function saveTransferSettings() {
+  async function saveTransferSettings(overrides?: { aria2MaxConnections?: number; aria2DownloadLimit?: string }) {
     if (!desktop || typeof desktop.setTransferSettings !== "function" || transferStatus !== "idle") return;
+    const aria2MaxConnections = overrides?.aria2MaxConnections ?? aria2MaxConnectionsDraft;
+    const aria2DownloadLimit = overrides?.aria2DownloadLimit ?? aria2DownloadLimitDraft;
     setTransferStatus("saving");
     setTransferError(null);
     try {
       const result = await desktop.setTransferSettings({
-        aria2MaxConnections: aria2MaxConnectionsDraft,
-        aria2DownloadLimit: aria2DownloadLimitDraft,
+        aria2MaxConnections,
+        aria2DownloadLimit,
       });
       setAria2MaxConnectionsDraft(result.transfer.aria2MaxConnections);
       setAria2DownloadLimitDraft(result.transfer.aria2DownloadLimit);
@@ -537,11 +531,16 @@ export function App() {
     }
   }
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const el = textareaRef.current;
     if (!el) return;
+    const scrollPos = window.scrollY;
     el.style.height = "auto";
-    el.style.height = `${Math.min(el.scrollHeight, 192)}px`;
+    const minHeight = 30;
+    el.style.height = `${Math.max(minHeight, Math.min(el.scrollHeight, 120))}px`;
+    if (window.scrollY !== scrollPos) {
+      window.scrollTo(window.scrollX, scrollPos);
+    }
   }, [input]);
 
   const inputUrls = useMemo(() => extractUrls(input), [input]);
@@ -550,11 +549,7 @@ export function App() {
   const providerOptions = health?.providers || [];
   const presetOptions = health?.presets || [];
   const defaultSiteAccess = siteAccessStatus(cookieSource, browsers, health);
-  const selectedFetchProvider = fetchProvider || AUTO_PROVIDER;
   const activeOutputRoot = pageProbeIncognito ? privateOutputRoot(outputRoot) : outputRoot;
-  const setPreferredPreset = useCallback((provider: ProviderId, presetId: string) => {
-    setPreferredPresets((current) => ({ ...current, [provider]: presetId }));
-  }, []);
   const {
     items,
     busy,
@@ -572,10 +567,8 @@ export function App() {
     bulkSetPreset,
   } = useDownloadQueue({
     desktop,
-    selectedFetchProvider,
     providerOptions,
     presetOptions,
-    preferredPresets,
     cookieSource,
     outputRoot: activeOutputRoot,
     fetchWorkerCount,
@@ -587,8 +580,16 @@ export function App() {
       hasText: hasComposerText,
       urlCount: detectedCount,
       canUseDesktop: Boolean(desktop),
-      hasProvider: Boolean(selectedFetchProvider),
-    }), [detectedCount, hasComposerText, desktop, selectedFetchProvider]);
+    }), [detectedCount, hasComposerText, desktop]);
+
+  useEffect(() => {
+    if (!desktop) return undefined;
+    return desktop.onDownloadEvent((event) => {
+      if (event.type === "success") {
+        setLibraryRefreshKey((current) => current + 1);
+      }
+    });
+  }, [desktop]);
 
   useEffect(() => {
     if (!desktop) {
@@ -597,11 +598,6 @@ export function App() {
     }
     void refreshHealth();
   }, [desktop]);
-
-  useEffect(() => {
-    if (!providerOptions.length) return;
-    setFetchProvider((current) => current === AUTO_PROVIDER || providerOptions.some((provider) => provider.id === current) ? current : AUTO_PROVIDER);
-  }, [providerOptions]);
 
   async function addAndFetch() {
     const urls = inputUrls;
@@ -688,34 +684,43 @@ export function App() {
     else window.open(sourceUrl(item), "_blank", "noopener,noreferrer");
   }
 
+  function openLibrarySource(item: LibraryItem) {
+    if (desktop) desktop.openExternal(item.url).catch(() => undefined);
+    else window.open(item.url, "_blank", "noopener,noreferrer");
+  }
+
   function openNetworkAccessOption(url: string) {
     if (desktop) desktop.openExternal(url).catch(() => undefined);
     else window.open(url, "_blank", "noopener,noreferrer");
   }
 
-  const showIntakeEmptyHint = items.length === 0 && !hasComposerText;
 
   return (
     <main className="app">
       <div className="layout">
         <AppHeader
+          activeView={activeView}
+          setActiveView={setActiveView}
           input={input}
+          libraryQuery={libraryQuery}
+          setLibraryQuery={setLibraryQuery}
+          libraryLoading={libraryLoading}
+          activeOutputRoot={activeOutputRoot}
+          desktop={desktop}
+          onRefreshLibrary={() => setLibraryRefreshKey((current) => current + 1)}
           textareaRef={textareaRef}
           detectedCount={detectedCount}
-          selectedFetchProvider={selectedFetchProvider}
-          providerOptions={providerOptions}
           composerAction={composerAction}
           pageProbeBusy={pageProbeBusy}
           setInput={setInput}
           runComposerAction={runComposerAction}
           sniffPage={sniffPage}
-          setFetchProvider={setFetchProvider}
           openSettings={() => setSettingsOpen(true)}
-          showHero={showIntakeEmptyHint}
         />
 
         <section className="workspace">
           {healthError ? <p className="error-text">{healthError}</p> : null}
+          {activeView === "queue" ? (
           <ProjectIntakeView
             desktop={desktop}
             activeOutputRoot={activeOutputRoot}
@@ -723,18 +728,15 @@ export function App() {
             consumerErrorMessage={consumerErrorMessage}
             consumerNoticeMessage={consumerNoticeMessage}
             input={input}
+            detectedCount={detectedCount}
             pageProbeError={pageProbeError}
             pageProbeNotice={pageProbeNotice}
             items={items}
             totals={totals}
             busy={busy}
-            showIntakeEmptyHint={showIntakeEmptyHint}
             browsers={browsers}
             presetOptions={presetOptions}
             providerOptions={providerOptions}
-            selectedFetchProvider={selectedFetchProvider}
-            preferredPresets={preferredPresets}
-            setPreferredPreset={setPreferredPreset}
             downloadReady={downloadReady}
             openSource={openSource}
             setItemPreset={setItemPreset}
@@ -747,6 +749,17 @@ export function App() {
             resumeInterrupted={resumeInterrupted}
             bulkSetPreset={bulkSetPreset}
           />
+          ) : (
+          <LibraryView
+            desktop={desktop}
+            outputRoot={activeOutputRoot}
+            presetOptions={presetOptions}
+            refreshKey={libraryRefreshKey}
+            query={libraryQuery}
+            onLoadingChange={setLibraryLoading}
+            openSource={openLibrarySource}
+          />
+          )}
         </section>
 
       </div>
@@ -881,108 +894,25 @@ export function App() {
             )}
 
             {settingsSection === "tools" && (
-            <section className="settings-section">
-              <div className="settings-row-head">
-                <Download size={14} strokeWidth={2} aria-hidden />
-                <h3 className="settings-row-title">Queue workers</h3>
-                <span className="settings-version">{fetchWorkerCount} read · {downloadWorkerCount} save</span>
-              </div>
-              <p className="settings-hint">More workers speed up large queues; too many can spike CPU and network use.</p>
-              <div className="worker-control-list">
-                <label className="worker-field">
-                  <span className="worker-field-head">
-                    <b>Metadata workers</b>
-                    <strong>{fetchWorkerCount}</strong>
-                  </span>
-                  <input
-                    type="range"
-                    min={FETCH_WORKER_MIN}
-                    max={FETCH_WORKER_MAX}
-                    step={1}
-                    value={fetchWorkerCount}
-                    onChange={(event) => setFetchWorkerCount(clampWorkerSetting(Number(event.target.value), FETCH_WORKER_MIN, FETCH_WORKER_MAX))}
-                    aria-label="Metadata workers"
-                  />
-                </label>
-                <label className="worker-field">
-                  <span className="worker-field-head">
-                    <b>Download workers</b>
-                    <strong>{downloadWorkerCount}</strong>
-                  </span>
-                  <input
-                    type="range"
-                    min={DOWNLOAD_WORKER_MIN}
-                    max={DOWNLOAD_WORKER_MAX}
-                    step={1}
-                    value={downloadWorkerCount}
-                    onChange={(event) => setDownloadWorkerCount(clampWorkerSetting(Number(event.target.value), DOWNLOAD_WORKER_MIN, DOWNLOAD_WORKER_MAX))}
-                    aria-label="Download workers"
-                  />
-                </label>
-              </div>
-              <div className="settings-subsection-head">
-                <h4 className="settings-subsection-title">aria2 transfer</h4>
-                <p className="settings-hint">Native aria2 controls for parallel chunks, resume, retries, and optional speed caps.</p>
-              </div>
-              <div className="worker-control-list">
-                <label className="worker-field">
-                  <span className="worker-field-head">
-                    <b>Connections per file</b>
-                    <strong>{aria2MaxConnectionsDraft}</strong>
-                  </span>
-                  <input
-                    type="range"
-                    min={1}
-                    max={16}
-                    step={1}
-                    value={aria2MaxConnectionsDraft}
-                    onChange={(event) => setAria2MaxConnectionsDraft(Number(event.target.value))}
-                    aria-label="aria2 connections per file"
-                  />
-                </label>
-                <label className="worker-field">
-                  <span className="worker-field-head">
-                    <b>Speed cap</b>
-                    <strong>{aria2DownloadLimitDraft || "Off"}</strong>
-                  </span>
-                  <input
-                    type="text"
-                    className="settings-text-input"
-                    value={aria2DownloadLimitDraft}
-                    onChange={(event) => setAria2DownloadLimitDraft(event.target.value)}
-                    onKeyDown={(event) => { if (event.key === "Enter") void saveTransferSettings(); }}
-                    placeholder="Off, 500K, 5M"
-                    aria-label="aria2 download speed cap"
-                    disabled={!desktop || transferStatus !== "idle"}
-                  />
-                </label>
-              </div>
-              <div className="settings-inline-control">
-                <button type="button" className="btn btn-primary btn-footer" onClick={saveTransferSettings} disabled={!desktop || transferStatus !== "idle"}>
-                  {transferStatus === "saving" ? <Loader2 className="spin" size={14} strokeWidth={2} aria-hidden /> : null}
-                  Save transfer
-                </button>
-                <span className="settings-hint">Blank speed cap means unlimited.</span>
-              </div>
-              {transferError ? <p className="settings-warning">{consumerErrorMessage(transferError, "Could not save transfer settings.")}</p> : null}
-              <div className="settings-subsection-head">
-                <h4 className="settings-subsection-title">Save engines</h4>
-                <p className="settings-hint">Local binaries Rippo calls for metadata, downloads, and transcoding.</p>
-              </div>
+            <>
+            <SettingsCard
+              title="Installed helpers"
+              hint="Binaries Rippo calls on this Mac."
+            >
               <ul className="tool-list" role="list">
 
                 <li className="tool-row">
                   <span className={`tool-dot ${appUpdate?.updateAvailable ? "tool-dot-ok" : "tool-dot-dim"}`} aria-hidden />
                   <div className="tool-body">
-                    <span className="tool-name">Rippopotamus app</span>
-                    <span className="tool-path">
+                    <span className="tool-name">Rippopotamus</span>
+                    <span className="tool-desc">
                       {appUpdate?.latestVersion
                         ? `Current ${appUpdate.currentVersion} · Latest ${appUpdate.latestVersion}`
                         : appUpdate?.configured === false
-                          ? "Set RIPPO_APP_UPDATE_MANIFEST_URL to enable DMG checks."
-                          : `Current ${appUpdate?.currentVersion || "0.1.0"}`}
+                          ? "App update checks are not configured."
+                          : `Version ${appUpdate?.currentVersion || "0.1.0"}`}
                     </span>
-                    {appUpdate?.notes?.[0] ? <span className="tool-path">{appUpdate.notes[0]}</span> : null}
+                    {appUpdate?.notes?.[0] ? <span className="tool-desc">{appUpdate.notes[0]}</span> : null}
                     {appUpdateError ? <span className="tool-error">{consumerErrorMessage(appUpdateError)}</span> : null}
                   </div>
                   <div className="tool-actions">
@@ -1000,11 +930,17 @@ export function App() {
                   </div>
                 </li>
 
-                <li className="tool-row">
+                <li className="tool-row" title={enginePathHint(ytDlpUpdate?.binaryPath, health?.ytDlpPath)}>
                   <span className={`tool-dot ${health?.ytDlp ? "tool-dot-ok" : "tool-dot-dim"}`} aria-hidden />
                   <div className="tool-body">
                     <span className="tool-name">yt-dlp</span>
-                    {(ytDlpUpdate?.binaryPath || health?.ytDlpPath) ? <span className="tool-path">{ytDlpUpdate?.binaryPath || health?.ytDlpPath}</span> : null}
+                    <span className="tool-desc">
+                      {engineInstallDesc(
+                        Boolean(health?.ytDlp),
+                        toolRoleLine(health?.ytDlp, "Video links"),
+                        "Not installed. Required for video.",
+                      )}
+                    </span>
                     {ytDlpError ? <span className="tool-error">{consumerErrorMessage(ytDlpError)}</span> : null}
                   </div>
                   <div className="tool-actions">
@@ -1022,19 +958,24 @@ export function App() {
                   </div>
                 </li>
 
-                <li className="tool-row">
+                <li className="tool-row" title={enginePathHint(galleryDlUpdate?.binaryPath, health?.galleryDlPath)}>
                   <span className={`tool-dot ${health?.galleryDl ? "tool-dot-ok" : "tool-dot-dim"}`} aria-hidden />
                   <div className="tool-body">
                     <span className="tool-name">gallery-dl</span>
-                    {(galleryDlUpdate?.binaryPath || health?.galleryDlPath) ? <span className="tool-path">{galleryDlUpdate?.binaryPath || health?.galleryDlPath}</span> : null}
+                    <span className={`tool-desc ${health?.galleryDl ? "" : "tool-desc-optional"}`}>
+                      {engineInstallDesc(
+                        health?.galleryDlOk ?? Boolean(health?.galleryDl),
+                        toolRoleLine(health?.galleryDl, "Image galleries"),
+                        "Not installed. Optional for images.",
+                      )}
+                    </span>
                     {galleryDlError ? <span className="tool-error">{consumerErrorMessage(galleryDlError)}</span> : null}
-                    {health?.galleryDlError && !galleryDlError ? <span className="tool-error">{consumerErrorMessage(health.galleryDlError)}</span> : null}
                   </div>
                   <div className="tool-actions">
-                    {galleryDlUpdate?.updateAvailable ? (
+                    {galleryDlUpdate?.updateAvailable || !health?.galleryDl ? (
                       <button type="button" className="tool-btn tool-btn-primary" onClick={updateGalleryDl} disabled={!desktop || galleryDlStatus !== "idle"}>
                         {galleryDlStatus === "updating" ? <Loader2 className="spin" size={12} strokeWidth={2} aria-hidden /> : null}
-                        {galleryDlUpdate.currentVersion ? "Update" : "Install"}
+                        {galleryDlUpdate?.currentVersion ? "Update" : "Install"}
                       </button>
                     ) : (
                       <button type="button" className="tool-btn tool-btn-ghost" onClick={checkGalleryDlUpdate} disabled={!desktop || galleryDlStatus !== "idle"}>
@@ -1045,16 +986,19 @@ export function App() {
                   </div>
                 </li>
 
-                <li className="tool-row">
+                <li className="tool-row" title={enginePathHint(health?.aria2cPath)}>
                   <span className={`tool-dot ${health?.aria2cOk ? "tool-dot-ok" : "tool-dot-dim"}`} aria-hidden />
                   <div className="tool-body">
                     <span className="tool-name">aria2c</span>
-                    {health?.aria2c && health.aria2cOk ? <span className="tool-path">{health.aria2c}</span> : null}
-                    {health?.aria2cPath && health.aria2cOk ? <span className="tool-path">{health.aria2cPath}</span> : null}
-                    {aria2cDetailText(health) ? <span className="tool-path">{aria2cDetailText(health)}</span> : null}
-                    {health?.aria2cError ? (
-                      <span className="tool-error">{engineToolMessage(health.aria2cError, "aria2c")}</span>
-                    ) : null}
+                    <span className="tool-desc">
+                      {engineInstallDesc(
+                        health?.aria2cOk,
+                        toolRoleLine(health?.aria2c, "File transfer"),
+                        health?.aria2cError
+                          ? consumerErrorMessage(health.aria2cError, "Not installed.")
+                          : "Not installed. Used for parallel downloads.",
+                      )}
+                    </span>
                   </div>
                   <div className="tool-actions">
                     <button type="button" className="tool-btn tool-btn-ghost" onClick={checkAria2cUpdate} disabled={!desktop || aria2cStatus !== "idle"}>
@@ -1064,11 +1008,17 @@ export function App() {
                   </div>
                 </li>
 
-                <li className="tool-row">
+                <li className="tool-row" title={enginePathHint(health?.ffmpeg)}>
                   <span className={`tool-dot ${health?.ffmpegOk ? "tool-dot-ok" : "tool-dot-dim"}`} aria-hidden />
                   <div className="tool-body">
                     <span className="tool-name">ffmpeg</span>
-                    {health?.ffmpeg ? <span className="tool-path">{health.ffmpeg}</span> : null}
+                    <span className="tool-desc">
+                      {engineInstallDesc(
+                        health?.ffmpegOk,
+                        toolRoleLine(health?.ffmpegVersion, "Merge and convert"),
+                        "Not available.",
+                      )}
+                    </span>
                   </div>
                   <div className="tool-actions">
                     <button type="button" className="tool-btn tool-btn-ghost" onClick={checkFfmpegUpdate} disabled={!desktop || ffmpegStatus !== "idle"}>
@@ -1079,7 +1029,88 @@ export function App() {
                 </li>
 
               </ul>
-            </section>
+            </SettingsCard>
+
+            <SettingsCard
+              title="Advanced"
+              hint="Parallelism tuning. Defaults are fine for most people."
+            >
+              <div className="worker-control-list">
+                <label className="worker-field">
+                  <span className="worker-field-head">
+                    <b>Link lookups</b>
+                    <strong>{fetchWorkerCount}</strong>
+                  </span>
+                  <small>How many links Rippo inspects at the same time.</small>
+                  <input
+                    type="range"
+                    min={FETCH_WORKER_MIN}
+                    max={FETCH_WORKER_MAX}
+                    step={1}
+                    value={fetchWorkerCount}
+                    onChange={(event) => setFetchWorkerCount(clampWorkerSetting(Number(event.target.value), FETCH_WORKER_MIN, FETCH_WORKER_MAX))}
+                    aria-label="Link lookups"
+                  />
+                </label>
+                <label className="worker-field">
+                  <span className="worker-field-head">
+                    <b>Saves at once</b>
+                    <strong>{downloadWorkerCount}</strong>
+                  </span>
+                  <small>How many files download in parallel.</small>
+                  <input
+                    type="range"
+                    min={DOWNLOAD_WORKER_MIN}
+                    max={DOWNLOAD_WORKER_MAX}
+                    step={1}
+                    value={downloadWorkerCount}
+                    onChange={(event) => setDownloadWorkerCount(clampWorkerSetting(Number(event.target.value), DOWNLOAD_WORKER_MIN, DOWNLOAD_WORKER_MAX))}
+                    aria-label="Saves at once"
+                  />
+                </label>
+                <label className="worker-field">
+                  <span className="worker-field-head">
+                    <b>Chunks per file</b>
+                    <strong>{aria2MaxConnectionsDraft}</strong>
+                  </span>
+                  <small>More chunks can speed up large files.</small>
+                  <input
+                    type="range"
+                    min={1}
+                    max={16}
+                    step={1}
+                    value={aria2MaxConnectionsDraft}
+                    onChange={(event) => {
+                      const next = Number(event.target.value);
+                      setAria2MaxConnectionsDraft(next);
+                      void saveTransferSettings({ aria2MaxConnections: next });
+                    }}
+                    aria-label="Chunks per file"
+                    disabled={!desktop || transferStatus !== "idle"}
+                  />
+                </label>
+                <label className="worker-field">
+                  <span className="worker-field-head">
+                    <b>Speed limit</b>
+                    <strong>{aria2DownloadLimitDraft || "Off"}</strong>
+                  </span>
+                  <small>Leave blank for no limit. Examples: 500K, 5M.</small>
+                  <input
+                    type="text"
+                    className="settings-text-input"
+                    value={aria2DownloadLimitDraft}
+                    onChange={(event) => setAria2DownloadLimitDraft(event.target.value)}
+                    onBlur={() => { void saveTransferSettings(); }}
+                    onKeyDown={(event) => { if (event.key === "Enter") void saveTransferSettings(); }}
+                    placeholder="Off"
+                    aria-label="Download speed limit"
+                    disabled={!desktop || transferStatus !== "idle"}
+                  />
+                </label>
+              </div>
+              {transferError ? <p className="settings-warning">{consumerErrorMessage(transferError, "Could not save settings.")}</p> : null}
+            </SettingsCard>
+            </>
             )}
 
 

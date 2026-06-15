@@ -127,8 +127,8 @@ function ThumbnailImage({ urls }: { urls: string[] }) {
     };
   }, [urls.join("\n")]);
 
-  if (loading) return <Loader2 className="thumb-spinner" size={14} strokeWidth={1.8} aria-hidden />;
-  if (failed || !src) return <ImageOff size={18} strokeWidth={1.5} aria-hidden />;
+  if (loading) return <Loader2 className="thumb-spinner" size={18} strokeWidth={1.8} aria-hidden />;
+  if (failed || !src) return <ImageOff size={22} strokeWidth={1.5} aria-hidden />;
 
   const isPortrait = orientation === "portrait";
   return (
@@ -220,86 +220,76 @@ export function QueueCard({
   const progressPct = progress ?? 0;
 
   const host = shortUrl(item.url);
+  const dur = formatDuration(item.metadata?.duration);
+  const size = formatBytes(item.metadata?.filesize ?? item.metadata?.filesize_approx ?? null);
   const metaParts: string[] = [host];
   if (item.metadata?.uploader) metaParts.push(item.metadata.uploader);
-  const dur = formatDuration(item.metadata?.duration);
-  if (dur) metaParts.push(dur);
-  const size = formatBytes(item.metadata?.filesize ?? item.metadata?.filesize_approx ?? null);
   if (size) metaParts.push(size);
-  const metaLine = metaParts.join(" · ");
 
   const lastFile = item.files?.length ? item.files[item.files.length - 1] : null;
   const lastPath = typeof lastFile === "string" ? lastFile : lastFile?.path;
 
   const ytDlpSegments = item.metadata?.provider === "yt-dlp" && itemPresets.length > 0 && itemPresets.length <= 4;
+  const showStatusBadge = !showProgressTrack && !isFailed && item.status !== QUEUE_STATUS.canceled;
 
   return (
-    <article className={`queue-item ${item.status}${selected ? " is-selected" : ""}`}>
-      <div className="queue-item-thumb-col">
+    <article className={`queue-tile ${item.status}${selected ? " is-selected" : ""}`}>
+      <div className="tile-media">
         {showSelectCheckbox ? (
-          <label className="queue-select-hit" onClick={(e) => onSelectClick(e)}>
+          <label className="tile-select" onClick={(e) => onSelectClick(e)}>
             <input type="checkbox" checked={selected} readOnly tabIndex={-1} aria-label="Select item" />
           </label>
         ) : null}
-        <button type="button" className="thumb" onClick={() => openSource(item)} aria-label="Open source" title="Open source">
-          {item.metadata ? <ThumbnailImage urls={thumbnailUrls(item)} /> : <Link2 size={16} strokeWidth={1.5} aria-hidden />}
-        </button>
-      </div>
-      <div className="item-body">
-        <div className="item-head-row">
-          <div className="item-head-main">
-            <h3 className="item-title">{item.metadata?.title || host}</h3>
-          </div>
-          <div className="item-head-actions">
-            <button type="button" className="icon-btn icon-btn-sm" onClick={() => void refetch(item)} disabled={!queueItemCanRefetch(item)} title="Refetch" aria-label="Refetch">
-              <RefreshCcw size={14} strokeWidth={2} aria-hidden />
-            </button>
-            {isDownloading ? (
-              <button type="button" className="icon-btn icon-btn-sm icon-btn-danger" onClick={() => void cancelDownload(item)} title="Cancel download" aria-label="Cancel download">
-                <Square size={12} strokeWidth={2.4} aria-hidden />
-              </button>
-            ) : null}
-            <button type="button" className="icon-btn icon-btn-sm icon-btn-danger" onClick={() => removeItem(item.localId)} disabled={!queueItemCanRemove(item)} title="Remove" aria-label="Remove">
-              <Trash2 size={14} strokeWidth={2} aria-hidden />
-            </button>
-          </div>
-        </div>
 
-        <div className="item-meta-row">
-          <p className="item-meta">{metaLine}</p>
-          {(item.status === QUEUE_STATUS.ready || isDownloading || item.status === QUEUE_STATUS.done || item.status === QUEUE_STATUS.finalizing) && qualityShort ? (
-            <span className="quality-chip" title={currentPreset?.detail}>{qualityShort}</span>
-          ) : null}
-        </div>
-
-        {showProgressTrack ? (
-          <div className={`queue-progress-wrap${showIndeterminate ? " is-indeterminate" : ""}${item.finalizing ? " is-finalizing" : ""}`}>
-            <div className="queue-progress-track">
-              {!showIndeterminate ? <div className="queue-progress-fill" style={{ width: `${progressPct}%` }} /> : <div className="queue-progress-fill queue-progress-indeterminate" />}
-            </div>
-            <div className="queue-progress-meta">
-              {!isFailed && !showIndeterminate ? (
-                <>
-                  <span className="queue-progress-label">{statusParts.label}</span>
-                  {statusParts.detail ? <span className="queue-progress-detail">{statusParts.detail}</span> : null}
-                </>
-              ) : showIndeterminate ? (
-                <span className="queue-progress-label">{statusParts.label}</span>
-              ) : null}
-            </div>
-          </div>
-        ) : !isFailed ? (
-          <div className="queue-status-pill-row">
-            <span className={`status-badge status-${item.status}`} data-status={item.status}>
-              {item.status === QUEUE_STATUS.done ? <Check size={10} strokeWidth={2.5} className="status-check" aria-hidden /> : <span className="status-glyph" />}
+        <button type="button" className="tile-thumb" onClick={() => openSource(item)} aria-label="Open source" title="Open source">
+          {item.metadata ? <ThumbnailImage urls={thumbnailUrls(item)} /> : <Link2 size={20} strokeWidth={1.5} aria-hidden />}
+          <span className="tile-thumb-scrim" aria-hidden />
+          {dur && !showProgressTrack ? <span className="tile-duration">{dur}</span> : null}
+          {showStatusBadge ? (
+            <span className={`tile-status status-${item.status}`} data-status={item.status}>
+              {item.status === QUEUE_STATUS.done ? <Check size={10} strokeWidth={2.5} aria-hidden /> : <span className="status-glyph" aria-hidden />}
               {statusParts.label}
             </span>
-          </div>
-        ) : null}
+          ) : null}
+          {showProgressTrack ? (
+            <div className={`tile-progress${showIndeterminate ? " is-indeterminate" : ""}${item.finalizing ? " is-finalizing" : ""}`}>
+              <div className="tile-progress-track">
+                {!showIndeterminate ? (
+                  <div className="tile-progress-fill" style={{ width: `${progressPct}%` }} />
+                ) : (
+                  <div className="tile-progress-fill tile-progress-indeterminate" />
+                )}
+              </div>
+              <div className="tile-progress-meta">
+                <span>{statusParts.label}</span>
+                {!showIndeterminate && statusParts.detail ? <span>{statusParts.detail}</span> : null}
+              </div>
+            </div>
+          ) : null}
+        </button>
+
+        <div className="tile-actions">
+          <button type="button" className="tile-action-btn" onClick={() => void refetch(item)} disabled={!queueItemCanRefetch(item)} title="Refetch" aria-label="Refetch">
+            <RefreshCcw size={13} strokeWidth={2} aria-hidden />
+          </button>
+          {isDownloading ? (
+            <button type="button" className="tile-action-btn is-danger" onClick={() => void cancelDownload(item)} title="Cancel download" aria-label="Cancel download">
+              <Square size={11} strokeWidth={2.4} aria-hidden />
+            </button>
+          ) : null}
+          <button type="button" className="tile-action-btn is-danger" onClick={() => removeItem(item.localId)} disabled={!queueItemCanRemove(item)} title="Remove" aria-label="Remove">
+            <Trash2 size={13} strokeWidth={2} aria-hidden />
+          </button>
+        </div>
+      </div>
+
+      <div className="tile-body">
+        <h3 className="tile-title">{item.metadata?.title || host}</h3>
+        <p className="tile-meta">{metaParts.join(" · ")}</p>
 
         {isFailed || isCanceled ? (
-          <div className="queue-failed-strip">
-            <p className="queue-failed-text">{isCanceled ? "Canceled. Partial files will be reused." : item.error ? consumerErrorMessage(item.error) : "Failed"}</p>
+          <div className="tile-alert">
+            <p>{isCanceled ? "Canceled. Partial files will be reused." : item.error ? consumerErrorMessage(item.error) : "Failed"}</p>
             <button type="button" className="btn btn-primary btn-sm" onClick={() => void resumeDownload(item)} disabled={isDownloading}>
               Resume
             </button>
@@ -312,14 +302,14 @@ export function QueueCard({
         ))}
 
         {item.status === QUEUE_STATUS.done && lastPath ? (
-          <p className="item-files" title={lastPath}>
-            <FolderOpen size={10} strokeWidth={2} aria-hidden className="item-files-icon" />
+          <p className="tile-file" title={lastPath}>
+            <FolderOpen size={10} strokeWidth={2} aria-hidden />
             {fileBasename(lastPath)}
           </p>
         ) : null}
 
         {canEdit && (itemPresets.length > 0 || showBrowserAccess) ? (
-          <div className="item-controls-row">
+          <div className="tile-controls">
             {ytDlpSegments ? (
               <div className="quality-segments" role="group" aria-label="Quality">
                 {itemPresets.map((p) => (

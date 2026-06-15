@@ -69,7 +69,7 @@ const RAIL_GROUPS: { label: string; sections: SectionMeta[] }[] = [
       {
         id: "tools",
         label: "Tools",
-        subtitle: "Queue workers and local save engines.",
+        subtitle: "Installed helpers and advanced tuning.",
         icon: Download,
       },
     ],

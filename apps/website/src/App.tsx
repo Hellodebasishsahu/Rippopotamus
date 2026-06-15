@@ -54,12 +54,6 @@ const faqItems: FaqItem[] = [
       "Organized project folders, not a messy Downloads dump. Source, Audio, Images, Thumbnails, and Clips each get their own directory with sane filenames, plus a manifest.json that tracks every source URL.",
   },
   {
-    id: "sheets",
-    question: "Can I import a tracker spreadsheet?",
-    answer:
-      "Yes. If your team runs projects from a Google Sheet, Rippo can read a tracker tab and turn each row into a downloaded, organized project folder with a manifest. It lives in the app's footer: handy when you need it, out of the way when you don't.",
-  },
-  {
     id: "private",
     question: "What about private or gated links?",
     answer:

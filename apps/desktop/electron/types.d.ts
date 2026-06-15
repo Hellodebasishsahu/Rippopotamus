@@ -26,9 +26,10 @@ declare global {
       checkAppUpdate: () => Promise<AppUpdateInfo>;
       chooseOutputRoot: () => Promise<{ outputRoot: string; canceled: boolean }>;
       resetOutputRoot: () => Promise<{ outputRoot: string }>;
+      listLibrary: (payload?: LibraryListRequest) => Promise<LibraryListResponse>;
+      openPath: (target: string) => Promise<void>;
+      showItemInFolder: (target: string) => Promise<void>;
       onDownloadEvent: (callback: (event: DownloadEvent) => void) => () => void;
-      importSheet: (payload: SheetImportRequest) => Promise<SheetImportResponse>;
-      onSheetImportEvent: (callback: (event: SheetImportEvent) => void) => () => void;
     };
   }
 }
@@ -251,47 +252,6 @@ export type DownloadCancelResponse = {
   error?: string;
 };
 
-export type SheetImportRequest = {
-  sheetUrl: string;
-  outputRoot: string;
-  projectName?: string;
-  sheetName?: string;
-  jobId?: string;
-  cookieSource?: CookieSource;
-  state?: string;
-  pc?: string;
-  status?: string;
-  limit?: number;
-  requireMaster?: boolean;
-  downloadMaster?: boolean;
-};
-
-export type SheetImportResponse = {
-  jobId: string;
-  ok: boolean;
-  result?: unknown;
-  error?: string;
-};
-
-export type SheetImportEvent = {
-  jobId?: string;
-  type?: string;
-  phase?: string;
-  sheetUrl?: string;
-  projectName?: string;
-  message?: string;
-  error?: string;
-  ok?: boolean;
-  projectRoot?: string;
-  manifestPath?: string;
-  totalRows?: number;
-  selectedRows?: number;
-  row?: number;
-  pcName?: string;
-  percent?: number;
-  [key: string]: unknown;
-};
-
 export type DownloadEvent = {
   jobId: string;
   type: "started" | "progress" | "stage" | "phase" | "success" | "error" | "notice" | "canceled";
@@ -306,5 +266,38 @@ export type DownloadEvent = {
   destination?: string;
   files?: Array<string | { path: string; size?: number | null }>;
   outputRoot?: string;
+  error?: string;
+};
+
+export type LibraryFile = {
+  path: string;
+  size?: number | null;
+};
+
+export type LibraryItemKind = "video" | "audio" | "image" | "document" | "file";
+
+export type LibraryItem = {
+  id: string;
+  url: string;
+  preset: string;
+  title: string;
+  kind: LibraryItemKind;
+  files: LibraryFile[];
+  fileCount: number;
+  totalSize?: number | null;
+  savedAt?: number | null;
+  primaryPath: string;
+};
+
+export type LibraryListRequest = {
+  outputRoot?: string;
+  query?: string;
+};
+
+export type LibraryListResponse = {
+  ok: boolean;
+  outputRoot: string;
+  items: LibraryItem[];
+  total: number;
   error?: string;
 };

@@ -15,4 +15,4 @@
 ## Exit
 
 - Partner agrees to a **short Loom** or written quote for the landing page.
-- If the core download flow (incl. gated/logged-in sources) is unused after two weeks, re-scope or churn—do not expand scope. Tracker/sheet import is a bonus, not a gating metric.
+- If the core download flow (incl. gated/logged-in sources) is unused after two weeks, re-scope or churn—do not expand scope.

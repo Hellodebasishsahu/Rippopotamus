@@ -36,7 +36,6 @@ from rippopotamus.desktop_runtime import (
     yt_dlp_base,
 )
 from rippopotamus.torrent_downloads import run_torrent_download
-from rippopotamus.sheet_import import run_sheet_import_pipeline
 from rippopotamus.resolvers.generic_preview import preview_metadata
 
 
@@ -91,6 +90,102 @@ def existing_download(root: Path, key: str) -> list[dict[str, Any]] | None:
     return sorted(files, key=lambda item: item["path"])
 
 
+def title_from_relative_path(rel_path: str) -> str:
+    stem = Path(rel_path).stem
+    if "--" in stem:
+        stem = stem.rsplit("--", 1)[0]
+    title = stem.replace("-", " ").strip()
+    return title or stem or rel_path
+
+
+def media_kind_for_path(rel_path: str) -> str:
+    ext = Path(rel_path).suffix.lower()
+    if ext in {".mp4", ".m4v", ".webm", ".mkv", ".mov", ".avi", ".ts", ".m2ts"}:
+        return "video"
+    if ext in {".mp3", ".m4a", ".aac", ".wav", ".flac", ".opus", ".ogg"}:
+        return "audio"
+    if ext in {".jpg", ".jpeg", ".png", ".gif", ".webp", ".avif", ".heic"}:
+        return "image"
+    if ext in {".pdf"}:
+        return "document"
+    return "file"
+
+
+def library_entry_from_record(root: Path, key: str, record: dict[str, Any]) -> dict[str, Any] | None:
+    url = record.get("url")
+    preset = record.get("preset")
+    paths = record.get("files")
+    if not isinstance(url, str) or not isinstance(preset, str) or not isinstance(paths, list) or not paths:
+        return None
+
+    files: list[dict[str, Any]] = []
+    saved_at = 0.0
+    for rel in paths:
+        if not isinstance(rel, str) or Path(rel).is_absolute():
+            return None
+        path = (root / rel).resolve()
+        try:
+            path.relative_to(root)
+        except ValueError:
+            return None
+        if not path.is_file():
+            continue
+        item = file_result(root, path)
+        files.append(item)
+        try:
+            saved_at = max(saved_at, path.stat().st_mtime)
+        except OSError:
+            pass
+
+    if not files:
+        return None
+
+    primary = max(files, key=lambda item: item.get("size") or 0)
+    primary_path = str(primary.get("path") or files[0]["path"])
+    total_size = sum(int(item["size"]) for item in files if isinstance(item.get("size"), int))
+    return {
+        "id": key,
+        "url": url,
+        "preset": preset,
+        "title": title_from_relative_path(primary_path),
+        "kind": media_kind_for_path(primary_path),
+        "files": sorted(files, key=lambda item: item["path"]),
+        "fileCount": len(files),
+        "totalSize": total_size or None,
+        "savedAt": saved_at or None,
+        "primaryPath": primary_path,
+    }
+
+
+def command_library_list(args: argparse.Namespace) -> int:
+    root = Path(args.output_root).expanduser().resolve()
+    query = (args.query or "").strip().lower()
+    ledger = load_download_ledger(root)
+    items: list[dict[str, Any]] = []
+    for key, record in ledger.items():
+        if not isinstance(record, dict):
+            continue
+        entry = library_entry_from_record(root, str(key), record)
+        if not entry:
+            continue
+        if query:
+            haystack = " ".join(
+                [
+                    entry.get("title") or "",
+                    entry.get("url") or "",
+                    entry.get("preset") or "",
+                    " ".join(str(file.get("path") or "") for file in entry.get("files") or []),
+                ]
+            ).lower()
+            if query not in haystack:
+                continue
+        items.append(entry)
+
+    items.sort(key=lambda item: item.get("savedAt") or 0, reverse=True)
+    emit({"ok": True, "outputRoot": str(root), "items": items, "total": len(items)})
+    return 0
+
+
 def remember_download(root: Path, key: str, files: list[dict[str, Any]], *, url: str, preset: str) -> None:
     if not files:
         return
@@ -107,39 +202,6 @@ def emit_duplicate_download(root: Path, files: list[dict[str, Any]], *, url: str
     emit({"type": "started", "url": url, "preset": preset})
     emit({"type": "stage", "message": "Already saved", "finalizing": False})
     emit({"type": "success", "files": files, "outputRoot": str(root), "warnings": ["Already saved; skipped duplicate download."]})
-
-
-def command_sheet_import(args: argparse.Namespace) -> int:
-    job_id = (args.job_id or "").strip()
-    cookies_browser = arg_cookies_browser(args)
-    proxy = network_proxy()
-
-    def sheet_emit(payload: dict[str, Any]) -> None:
-        emit({"jobId": job_id, "type": "sheet-import", **payload})
-
-    sheet_emit({"phase": "queued", "sheetUrl": args.sheet_url, "projectName": args.project_name})
-    try:
-        run_sheet_import_pipeline(
-            sheet_url=args.sheet_url.strip(),
-            output_root=Path(args.output_root),
-            project_name=(args.project_name or "sheet-import").strip(),
-            sheet_name=(args.sheet_name or "Tracker").strip(),
-            browser=cookies_browser,
-            yt_dlp_base=yt_dlp_base(),
-            network_proxy=proxy,
-            state_filter=(args.state or "").strip(),
-            pc_filter=(args.pc or "").strip(),
-            status_filter=(args.status or "").strip(),
-            limit=int(args.limit or 0),
-            require_master=bool(args.require_master),
-            download_master=bool(args.download_master),
-            emit=sheet_emit,
-        )
-    except SystemExit as exc:
-        err = cookie_error_message(str(exc))
-        sheet_emit({"phase": "error", "error": err, "ok": False})
-        return 1
-    return 0
 
 
 def command_health(args: argparse.Namespace) -> int:
@@ -513,20 +575,10 @@ def build_parser() -> argparse.ArgumentParser:
     proxy_check.add_argument("--proxy", required=True)
     proxy_check.set_defaults(func=command_proxy_check)
 
-    sheet_import_cmd = sub.add_parser("sheet-import")
-    sheet_import_cmd.add_argument("--sheet-url", required=True)
-    sheet_import_cmd.add_argument("--output-root", required=True)
-    sheet_import_cmd.add_argument("--project-name", default="sheet-import")
-    sheet_import_cmd.add_argument("--sheet-name", default="Tracker")
-    sheet_import_cmd.add_argument("--job-id", default="")
-    sheet_import_cmd.add_argument("--cookies-browser", default="")
-    sheet_import_cmd.add_argument("--state", default="")
-    sheet_import_cmd.add_argument("--pc", default="")
-    sheet_import_cmd.add_argument("--status", default="")
-    sheet_import_cmd.add_argument("--limit", type=int, default=0)
-    sheet_import_cmd.add_argument("--require-master", action="store_true")
-    sheet_import_cmd.add_argument("--download-master", action="store_true")
-    sheet_import_cmd.set_defaults(func=command_sheet_import)
+    library_list = sub.add_parser("library-list")
+    library_list.add_argument("--output-root", required=True)
+    library_list.add_argument("--query", default="")
+    library_list.set_defaults(func=command_library_list)
 
     return parser
 

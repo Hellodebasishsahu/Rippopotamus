@@ -8,9 +8,8 @@ import type {
   AppUpdateInfo,
   GalleryDlUpdateInfo,
   GalleryDlUpdateResult,
-  SheetImportEvent,
-  SheetImportRequest,
-  SheetImportResponse,
+  LibraryListRequest,
+  LibraryListResponse,
   ThumbnailLoadResult,
   YtDlpUpdateInfo,
   YtDlpUpdateResult,
@@ -19,10 +18,6 @@ import type {
 type RippoBridge = Window["rippo"];
 
 export type DesktopClient = {
-  projects: {
-    importSheet: (payload: SheetImportRequest) => Promise<SheetImportResponse>;
-    onSheetImportEvent: (callback: (event: SheetImportEvent) => void) => () => void;
-  };
   health: () => Promise<EngineHealth>;
   probePage: RippoBridge["probePage"];
   clearSniffCache: RippoBridge["clearSniffCache"];
@@ -46,16 +41,15 @@ export type DesktopClient = {
   checkAppUpdate: () => Promise<AppUpdateInfo>;
   chooseOutputRoot: RippoBridge["chooseOutputRoot"];
   resetOutputRoot: RippoBridge["resetOutputRoot"];
+  listLibrary: (payload?: LibraryListRequest) => Promise<LibraryListResponse>;
+  openPath: (target: string) => Promise<void>;
+  showItemInFolder: (target: string) => Promise<void>;
   onDownloadEvent: (callback: (event: DownloadEvent) => void) => () => void;
 };
 
 export function createDesktopClient(bridge?: RippoBridge): DesktopClient | null {
   if (!bridge) return null;
   return {
-    projects: {
-      importSheet: (payload: SheetImportRequest) => bridge.importSheet(payload),
-      onSheetImportEvent: (callback) => bridge.onSheetImportEvent(callback),
-    },
     health: bridge.health,
     probePage: bridge.probePage,
     clearSniffCache: bridge.clearSniffCache,
@@ -79,6 +73,9 @@ export function createDesktopClient(bridge?: RippoBridge): DesktopClient | null 
     checkAppUpdate: bridge.checkAppUpdate,
     chooseOutputRoot: bridge.chooseOutputRoot,
     resetOutputRoot: bridge.resetOutputRoot,
+    listLibrary: bridge.listLibrary,
+    openPath: bridge.openPath,
+    showItemInFolder: bridge.showItemInFolder,
     onDownloadEvent: bridge.onDownloadEvent,
   };
 }

@@ -2,20 +2,20 @@ import { useEffect, useMemo, useState } from "react";
 import type { CookieSource, DownloadEvent, PresetOption, ProviderId, ProviderOption } from "../../electron/types";
 import type { DesktopClient } from "../client/desktopClient";
 import { QUEUE_STATUS, queueItemCanChangeOutput, type QueueItem } from "./downloadQueueModel";
-import { defaultPresetForProvider, preferredPresetForProvider } from "./downloadQueuePrefs";
+import { defaultPresetForProvider } from "./downloadQueuePrefs";
 
 export type { QueueItem } from "./downloadQueueModel";
 export { queueStatusLabels, queueItemProgress, queueItemStatusText, queueItemStatusParts } from "./downloadQueueModel";
+
+const FETCH_PROVIDER = "auto" as const;
 
 const FETCH_CONCURRENCY = 6;
 const DOWNLOAD_CONCURRENCY = 3;
 
 type UseDownloadQueueOptions = {
   desktop: DesktopClient | null;
-  selectedFetchProvider: ProviderId | "auto";
   providerOptions: ProviderOption[];
   presetOptions: PresetOption[];
-  preferredPresets: Partial<Record<ProviderId, string>>;
   cookieSource: CookieSource;
   outputRoot: string;
   fetchWorkerCount?: number;
@@ -47,20 +47,11 @@ function resolvePresetAfterFetch(
   resolvedProvider: ProviderId,
   presetOptions: PresetOption[],
   providerOptions: ProviderOption[],
-  preferredPresets: Partial<Record<ProviderId, string>>,
-  fetchProviderUsed: ProviderId | "auto",
 ): string {
   if (item.presetUserSet) return item.preset;
   const validPreset = Boolean(item.preset && presetOptions.some((p) => p.id === item.preset && p.provider === resolvedProvider));
-  if (!validPreset) {
-    return preferredPresetForProvider(resolvedProvider, presetOptions, providerOptions, preferredPresets);
-  }
-  const guessed: ProviderId = fetchProviderUsed === "auto" ? (providerOptions[0]?.id || resolvedProvider) : fetchProviderUsed;
-  const prevDefault = defaultPresetForProvider(guessed, providerOptions);
-  if (!item.preset || item.preset === prevDefault) {
-    return preferredPresetForProvider(resolvedProvider, presetOptions, providerOptions, preferredPresets);
-  }
-  return item.preset;
+  if (validPreset) return item.preset;
+  return defaultPresetForProvider(resolvedProvider, providerOptions);
 }
 
 function workerCount(value: number | undefined, fallback: number): number {
@@ -110,10 +101,8 @@ async function runWithConcurrency<T>(values: T[], limit: number, worker: (value:
 
 export function useDownloadQueue({
   desktop,
-  selectedFetchProvider,
   providerOptions,
   presetOptions,
-  preferredPresets,
   cookieSource,
   outputRoot,
   fetchWorkerCount,
@@ -138,7 +127,7 @@ export function useDownloadQueue({
       setItems((current) => current.map((candidate) => {
         if (candidate.localId !== item.localId || !isRefreshableStatus(candidate.status)) return candidate;
         const resolvedProvider = result.metadata.provider || providerForItem(candidate, presetOptions, providerOptions);
-        const nextPreset = resolvePresetAfterFetch(candidate, resolvedProvider, presetOptions, providerOptions, preferredPresets, candidate.fetchProvider ?? provider);
+        const nextPreset = resolvePresetAfterFetch(candidate, resolvedProvider, presetOptions, providerOptions);
         return { ...candidate, preset: nextPreset, metadata: result.metadata };
       }));
     } catch {
@@ -187,12 +176,9 @@ export function useDownloadQueue({
     canceled: items.filter((item) => item.status === QUEUE_STATUS.canceled).length,
   }), [items]);
 
-  async function queueUrls(urls: string[], providerOverride: ProviderId | "auto" = selectedFetchProvider) {
-    if (!urls.length || !desktop || !providerOverride) return;
+  async function queueUrls(urls: string[], providerOverride: ProviderId | "auto" = FETCH_PROVIDER) {
+    if (!urls.length || !desktop) return;
     const provider = providerOverride;
-    const initialPreset = provider === "auto"
-      ? ""
-      : preferredPresetForProvider(provider, presetOptions, providerOptions, preferredPresets);
     const initialCookieSource = cookieSource;
 
     const seen = new Set(items.map((item) => item.url));
@@ -200,7 +186,7 @@ export function useDownloadQueue({
     for (const url of urls) {
       if (seen.has(url)) continue;
       seen.add(url);
-      fresh.push({ localId: crypto.randomUUID().slice(0, 10), url, status: QUEUE_STATUS.queued, preset: initialPreset, cookieSource: initialCookieSource, fetchProvider: provider });
+      fresh.push({ localId: crypto.randomUUID().slice(0, 10), url, status: QUEUE_STATUS.queued, preset: "", cookieSource: initialCookieSource, fetchProvider: provider });
     }
 
     if (!fresh.length) return;
@@ -215,7 +201,7 @@ export function useDownloadQueue({
           const resolvedProvider = result.metadata.provider || (provider === "auto" ? providerOptions[0]?.id : provider) || "";
           setItems((current) => current.map((candidate) => {
             if (candidate.localId !== item.localId) return candidate;
-            const nextPreset = resolvePresetAfterFetch(candidate, resolvedProvider, presetOptions, providerOptions, preferredPresets, candidate.fetchProvider ?? provider);
+            const nextPreset = resolvePresetAfterFetch(candidate, resolvedProvider, presetOptions, providerOptions);
             return { ...candidate, status: QUEUE_STATUS.ready, preset: nextPreset, metadata: result.metadata, error: undefined };
           }));
           void refreshFullMetadata({ ...item, metadata: result.metadata }, provider);
@@ -294,7 +280,7 @@ export function useDownloadQueue({
         setItems((current) => current.map((candidate) => {
           if (candidate.localId !== item.localId) return candidate;
           const resolvedProvider = result.metadata.provider || provider || "";
-          const nextPreset = resolvePresetAfterFetch(candidate, resolvedProvider, presetOptions, providerOptions, preferredPresets, candidate.fetchProvider ?? provider);
+          const nextPreset = resolvePresetAfterFetch(candidate, resolvedProvider, presetOptions, providerOptions);
           return { ...candidate, status: QUEUE_STATUS.ready, preset: nextPreset, metadata: result.metadata, error: undefined };
         }));
         void refreshFullMetadata({ ...item, metadata: result.metadata }, provider);

@@ -14,10 +14,6 @@
 - Local-first: links, downloads, and credentials never leave your machine
 - macOS now; Windows in progress
 
-## Secondary feature (not the headline)
-
-- **Tracker import:** teams running projects from a Google Sheet can turn a tracker tab into organized project folders + manifest. Surfaced as a discoverable in-app utility, not the core pitch.
-
 ## CTA
 
 **Primary:** Download for macOS.
@@ -26,4 +22,3 @@
 ## Avoid
 
 - “AI video search” or semantic promises until the product ships it.
-- Leading with the spreadsheet workflow—it's a feature, not the positioning.

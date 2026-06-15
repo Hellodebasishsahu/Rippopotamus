@@ -118,65 +118,6 @@ export function createEngineIpc() {
       }
     });
 
-    ipcMain.handle(
-      "engine:sheet-import",
-      async (event, payload: {
-        sheetUrl: string;
-        outputRoot: string;
-        projectName?: string;
-        sheetName?: string;
-        jobId?: string;
-        cookieSource?: unknown;
-        state?: string;
-        pc?: string;
-        status?: string;
-        limit?: number;
-        requireMaster?: boolean;
-        downloadMaster?: boolean;
-      }) => {
-        const cookieSource = cookieSourceFromInput(payload.cookieSource);
-        const proxy = currentNetworkProxy();
-        const transfer = currentTransferSettings();
-        const jobId = typeof payload.jobId === "string" && payload.jobId.trim() ? payload.jobId.trim() : randomUUID();
-        const sheetUrl = typeof payload.sheetUrl === "string" ? payload.sheetUrl.trim() : "";
-        const outputRoot = typeof payload.outputRoot === "string" ? payload.outputRoot.trim() : "";
-        if (!sheetUrl || !outputRoot) {
-          return { ok: false, error: "Sheet URL and output folder are required." };
-        }
-        fs.mkdirSync(outputRoot, { recursive: true });
-        const args = [
-          "sheet-import",
-          "--sheet-url",
-          sheetUrl,
-          "--output-root",
-          outputRoot,
-          "--project-name",
-          (payload.projectName || "sheet-import").trim() || "sheet-import",
-          "--sheet-name",
-          (payload.sheetName || "Tracker").trim() || "Tracker",
-          "--job-id",
-          jobId,
-          ...cookieSourceArgs(cookieSource),
-        ];
-        if (payload.state) args.push("--state", String(payload.state));
-        if (payload.pc) args.push("--pc", String(payload.pc));
-        if (payload.status) args.push("--status", String(payload.status));
-        if (typeof payload.limit === "number" && payload.limit > 0) args.push("--limit", String(Math.min(payload.limit, 5000)));
-        if (payload.requireMaster) args.push("--require-master");
-        if (payload.downloadMaster) args.push("--download-master");
-        try {
-          const result = await runEngine(args, (engineEvent) => {
-            event.sender.send("engine:sheet-import-event", { jobId, ...(engineEvent as Record<string, unknown>) });
-          }, { ...(proxy ? { RIPPO_NETWORK_PROXY: proxy } : {}), ...transferEnv(transfer) });
-          return { jobId, ok: true, result };
-        } catch (error) {
-          const message = error instanceof Error ? error.message : String(error || "");
-          event.sender.send("engine:sheet-import-event", { jobId, type: "sheet-import", phase: "error", error: message || "Sheet import failed." });
-          return { jobId, ok: false, error: message || "Sheet import failed." };
-        }
-      },
-    );
-
     ipcMain.handle("engine:download", async (event, payload: { url: string; preset: string; outputRoot?: string; itemId?: string; title?: string; cookieSource?: unknown }) => {
       const cookieSource = cookieSourceFromInput(payload.cookieSource);
       const proxy = currentNetworkProxy();

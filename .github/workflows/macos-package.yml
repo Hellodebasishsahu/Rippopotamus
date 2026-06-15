@@ -32,7 +32,7 @@ jobs:
       - run: npm ci
       - run: npm test
       - run: npm run prepare:ffmpeg:mac
-      - run: npm run build:desktop && npm run package:mac --workspace @rippopotamus/desktop -- --mac dir
+      - run: node scripts/run-workspace.mjs @rippopotamus/desktop build && node scripts/run-workspace.mjs @rippopotamus/desktop package:mac -- --mac dir
 
       - uses: actions/upload-artifact@v4
         with:
