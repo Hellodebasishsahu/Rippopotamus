@@ -44,11 +44,26 @@ const command =
     ? `${script} ${extraArgs.map((arg) => JSON.stringify(arg)).join(" ")}`
     : script;
 
+// Workspace scripts call bare binaries (tsc, vite, electron, concurrently, …)
+// that live in node_modules/.bin. We spawn the script directly in a shell
+// rather than through a package manager, so the package manager never gets a
+// chance to inject .bin onto PATH. Do it ourselves — root first (deps are
+// hoisted there in this workspace), then the workspace-local .bin — so launches
+// work with plain `node`, regardless of npm/pnpm/yarn or shell aliases.
+const binDirs = [
+  path.join(rootDir, "node_modules", ".bin"),
+  path.join(workspaceDir, "node_modules", ".bin"),
+];
+const env = {
+  ...process.env,
+  PATH: [...binDirs, process.env.PATH ?? ""].join(path.delimiter),
+};
+
 const result = spawnSync(command, {
   cwd: workspaceDir,
   stdio: "inherit",
   shell: true,
-  env: process.env,
+  env,
 });
 
 process.exit(result.status ?? 1);
