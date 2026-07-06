@@ -37,15 +37,20 @@ Rippopotamus is not trying to beat downloader engines. It uses `yt-dlp` and `gal
    - Drive file
    - Torrent
 4. Download into a structured project folder.
-5. Generate `manifest.json` with source URLs and metadata.
+5. Track sources and outcomes: the desktop app keeps download/failure ledgers; the `rippo` prototype CLI generates `manifest.json` with source URLs and metadata.
 6. Show failed links with readable errors and retry actions.
 
 ## Architecture
 
 - Core engine: Python CLI routing resolvers (`yt-dlp`, `gallery-dl`, Drive, Torrent) into transfer engines (`aria2c`, `ffmpeg`, Drive API)
 - Desktop shell: Electron + Vite calling the Python media engine over local IPC
-- Local state: JSON ledgers (`.rippo-downloads.json`)
+- Local state: JSON ledgers (`.rippo-downloads.json`, `.rippo-failures.json`) for the desktop engine; `.rippo/project.json` + `manifest.json` for the `rippo` prototype CLI
 - Output: normal folders on disk
+
+There are two CLI surfaces:
+
+- `rippo` — the stateful prototype workspace CLI (`init`/`add`/`fetch`/`download`/`manifest`/`status`/`zip`), which owns `manifest.json`
+- `rippo-engine` (`python -m rippopotamus.desktop_engine`) — the stateless JSON-emitting engine the desktop app drives (`health`/`fetch`/`download`/`failures-list`/`library-list`/`proxy-check`)
 
 See [`docs/rippo-architecture-lld.md`](docs/rippo-architecture-lld.md) for the full architecture writeup.
 
