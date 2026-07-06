@@ -83,76 +83,94 @@ pub fn assert_within_roots(target: &str, roots: &[String]) -> Result<PathBuf, St
 mod tests {
     use super::*;
 
+    // Build a platform-native absolute path from a POSIX-ish spec so these tests
+    // exercise the guard with REAL inputs on each OS. On Windows a leading-slash
+    // path is not absolute (no drive prefix), so we anchor it to `C:`.
+    fn abs(posix: &str) -> String {
+        #[cfg(windows)]
+        {
+            format!("C:{}", posix.replace('/', "\\"))
+        }
+        #[cfg(not(windows))]
+        {
+            posix.to_string()
+        }
+    }
+
+    fn absp(posix: &str) -> PathBuf {
+        PathBuf::from(abs(posix))
+    }
+
     fn root() -> String {
-        "/a/lib".to_string()
+        abs("/a/lib")
     }
 
     #[test]
     fn accepts_a_file_directly_inside_root() {
         assert_eq!(
-            resolve_within_roots("/a/lib/video.mp4", &[root()]),
-            Some(PathBuf::from("/a/lib/video.mp4"))
+            resolve_within_roots(&abs("/a/lib/video.mp4"), &[root()]),
+            Some(absp("/a/lib/video.mp4"))
         );
     }
 
     #[test]
     fn accepts_a_file_in_a_nested_subdir() {
         assert_eq!(
-            resolve_within_roots("/a/lib/.rippo-private/2024/clip.mov", &[root()]),
-            Some(PathBuf::from("/a/lib/.rippo-private/2024/clip.mov"))
+            resolve_within_roots(&abs("/a/lib/.rippo-private/2024/clip.mov"), &[root()]),
+            Some(absp("/a/lib/.rippo-private/2024/clip.mov"))
         );
     }
 
     #[test]
     fn accepts_the_root_itself() {
-        assert_eq!(resolve_within_roots("/a/lib", &[root()]), Some(PathBuf::from("/a/lib")));
+        assert_eq!(resolve_within_roots(&abs("/a/lib"), &[root()]), Some(absp("/a/lib")));
         // Trailing slash / dot segments normalize to the root too.
-        assert_eq!(resolve_within_roots("/a/lib/", &[root()]), Some(PathBuf::from("/a/lib")));
+        assert_eq!(resolve_within_roots(&abs("/a/lib/"), &[root()]), Some(absp("/a/lib")));
         assert_eq!(
-            resolve_within_roots("/a/lib/./sub/..", &[root()]),
-            Some(PathBuf::from("/a/lib"))
+            resolve_within_roots(&abs("/a/lib/./sub/.."), &[root()]),
+            Some(absp("/a/lib"))
         );
     }
 
     #[test]
     fn rejects_an_absolute_path_outside_the_root() {
-        assert_eq!(resolve_within_roots("/etc/passwd", &[root()]), None);
+        assert_eq!(resolve_within_roots(&abs("/etc/passwd"), &[root()]), None);
     }
 
     #[test]
     fn rejects_parent_traversal_out_of_the_root() {
-        assert_eq!(resolve_within_roots("/a/lib/../secret", &[root()]), None);
-        assert_eq!(resolve_within_roots("/a/lib/sub/../../secret", &[root()]), None);
+        assert_eq!(resolve_within_roots(&abs("/a/lib/../secret"), &[root()]), None);
+        assert_eq!(resolve_within_roots(&abs("/a/lib/sub/../../secret"), &[root()]), None);
     }
 
     #[test]
     fn rejects_a_sibling_dir_sharing_a_name_prefix() {
         // The classic bug: naive string prefix would wrongly accept "/a/library".
-        assert_eq!(resolve_within_roots("/a/library/x", &[root()]), None);
-        assert_eq!(resolve_within_roots("/a/lib-extra/x", &[root()]), None);
+        assert_eq!(resolve_within_roots(&abs("/a/library/x"), &[root()]), None);
+        assert_eq!(resolve_within_roots(&abs("/a/lib-extra/x"), &[root()]), None);
     }
 
     #[test]
     fn accepts_when_contained_in_at_least_one_of_several_roots() {
-        let other = "/b/other".to_string();
+        let other = abs("/b/other");
         assert_eq!(
-            resolve_within_roots("/b/other/file.png", &[root(), other]),
-            Some(PathBuf::from("/b/other/file.png"))
+            resolve_within_roots(&abs("/b/other/file.png"), &[root(), other]),
+            Some(absp("/b/other/file.png"))
         );
     }
 
     #[test]
     fn assert_within_roots_returns_the_resolved_path_when_contained() {
         assert_eq!(
-            assert_within_roots("/a/lib/x.png", &[root()]),
-            Ok(PathBuf::from("/a/lib/x.png"))
+            assert_within_roots(&abs("/a/lib/x.png"), &[root()]),
+            Ok(absp("/a/lib/x.png"))
         );
     }
 
     #[test]
     fn assert_within_roots_errors_when_outside() {
         assert_eq!(
-            assert_within_roots("/etc/passwd", &[root()]),
+            assert_within_roots(&abs("/etc/passwd"), &[root()]),
             Err("Refusing to access a path outside the library.".to_string())
         );
     }
