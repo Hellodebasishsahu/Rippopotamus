@@ -266,6 +266,7 @@ export function App() {
   const [appUpdate, setAppUpdate] = useState<AppUpdateInfo | null>(null);
   const [appUpdateStatus, setAppUpdateStatus] = useState<"idle" | "checking">("idle");
   const [appUpdateError, setAppUpdateError] = useState<string | null>(null);
+  const [appUpdateInstallStatus, setAppUpdateInstallStatus] = useState<"idle" | "installing">("idle");
   const [toolAutoUpdateNote, setToolAutoUpdateNote] = useState<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsSection, setSettingsSection] = useState<SettingsSectionId>("general");
@@ -438,7 +439,21 @@ export function App() {
 
   async function downloadAppUpdate() {
     if (!desktop || !appUpdate?.dmgUrl) return;
-    await desktop.openExternal(appUpdate.dmgUrl);
+    if (typeof desktop.installAppUpdate !== "function") {
+      await desktop.openExternal(appUpdate.dmgUrl);
+      return;
+    }
+    setAppUpdateInstallStatus("installing");
+    setAppUpdateError(null);
+    try {
+      await desktop.installAppUpdate();
+      // Relaunch happens inside installAppUpdate; if we get here without a
+      // reload, the app is restarting.
+    } catch (error) {
+      setAppUpdateError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setAppUpdateInstallStatus("idle");
+    }
   }
 
   // Keep the fast-moving tools (yt-dlp, gallery-dl) current on their own. yt-dlp
@@ -811,9 +826,22 @@ export function App() {
                   </div>
                   <div className="tool-actions">
                     {appUpdate?.updateAvailable && appUpdate.dmgUrl ? (
-                      <button type="button" className="tool-btn tool-btn-primary" onClick={downloadAppUpdate} disabled={!desktop}>
-                        <ExternalLink size={12} strokeWidth={2} aria-hidden />
-                        Download
+                      <button
+                        type="button"
+                        className="tool-btn tool-btn-primary"
+                        onClick={downloadAppUpdate}
+                        disabled={!desktop || appUpdateInstallStatus !== "idle"}
+                      >
+                        {appUpdateInstallStatus === "installing" ? (
+                          <Loader2 className="spin" size={12} strokeWidth={2} aria-hidden />
+                        ) : (
+                          <ExternalLink size={12} strokeWidth={2} aria-hidden />
+                        )}
+                        {appUpdateInstallStatus === "installing"
+                          ? "Installing…"
+                          : typeof desktop?.installAppUpdate === "function"
+                            ? "Install update"
+                            : "Download"}
                       </button>
                     ) : (
                       <button type="button" className="tool-btn tool-btn-ghost" onClick={checkAppUpdate} disabled={!desktop || appUpdateStatus !== "idle"}>

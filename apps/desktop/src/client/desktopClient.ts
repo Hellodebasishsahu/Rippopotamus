@@ -1,5 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { check as checkForUpdate } from "@tauri-apps/plugin-updater";
+import { relaunch } from "@tauri-apps/plugin-process";
 import type {
   CookieSource,
   CookiesBrowserResponse,
@@ -40,6 +42,10 @@ export type DesktopClient = {
   checkHelpers: () => Promise<HelperCheckResult[]>;
   updateHelpers: () => Promise<HelperUpdateResult[]>;
   checkAppUpdate: () => Promise<AppUpdateInfo>;
+  // Real in-place update via tauri-plugin-updater (P3). Electron has no
+  // equivalent — the frontend falls back to `openExternal(dmgUrl)` when this
+  // is undefined.
+  installAppUpdate?: (onProgress?: (downloaded: number, total: number | null) => void) => Promise<void>;
   chooseOutputRoot: RippoBridge["chooseOutputRoot"];
   resetOutputRoot: RippoBridge["resetOutputRoot"];
   listLibrary: (payload?: LibraryListRequest) => Promise<LibraryListResponse>;
@@ -140,6 +146,21 @@ const tauriDesktopClient: DesktopClient = {
   checkHelpers: () => invoke<HelperCheckResult[]>("check_helpers"),
   updateHelpers: () => invoke<HelperUpdateResult[]>("update_helpers"),
   checkAppUpdate: () => invoke<AppUpdateInfo>("check_app_update"),
+  installAppUpdate: async (onProgress) => {
+    const update = await checkForUpdate();
+    if (!update?.available) return;
+    let downloaded = 0;
+    let total: number | null = null;
+    await update.downloadAndInstall((event) => {
+      if (event.event === "Started") {
+        total = event.data.contentLength ?? null;
+      } else if (event.event === "Progress") {
+        downloaded += event.data.chunkLength;
+      }
+      onProgress?.(downloaded, total);
+    });
+    await relaunch();
+  },
   chooseOutputRoot: () => invoke("choose_output_root"),
   resetOutputRoot: () => invoke("reset_output_root"),
   openPath: (target: string) => invoke("open_path", { target }),

@@ -29,6 +29,8 @@ tauri-plugin-dialog = "2.7.1"
 tauri-plugin-opener = "2.5.4"
 reqwest = { version = "0.13.3", default-features = false, features = ["json", "rustls"] }
 url = "2.5.8"
+tauri-plugin-updater = "2.10.1"
+tauri-plugin-process = "2.3.1"
 
 [dev-dependencies]
 tempfile = "3.27.0"
