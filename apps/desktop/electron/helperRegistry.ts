@@ -6,6 +6,7 @@ import {
   appManagedYtDlpPath,
 } from "./appPaths";
 import { runPython } from "./engineProcess";
+import { normalizeVersion, compareVersions } from "./versionUtils";
 
 export type HelperCheckResult = {
   name: string;
@@ -52,23 +53,6 @@ type HelperDescriptor = {
   fetchLatest?: () => Promise<LatestInfo>;
   install?: (installArg: string) => Promise<void>;
 };
-
-function normalizeVersion(value: string | null | undefined): string | null {
-  if (!value) return null;
-  return value.trim().replace(/^v/i, "") || null;
-}
-
-function compareVersions(left: string, right: string): number {
-  const leftParts = normalizeVersion(left)?.split(/[.-]/).map((part) => Number(part)) || [];
-  const rightParts = normalizeVersion(right)?.split(/[.-]/).map((part) => Number(part)) || [];
-  const length = Math.max(leftParts.length, rightParts.length);
-  for (let index = 0; index < length; index += 1) {
-    const a = Number.isFinite(leftParts[index]) ? leftParts[index] : 0;
-    const b = Number.isFinite(rightParts[index]) ? rightParts[index] : 0;
-    if (a !== b) return a > b ? 1 : -1;
-  }
-  return 0;
-}
 
 function ytDlpAssetName(): string {
   if (process.platform === "darwin") return "yt-dlp_macos";

@@ -39,7 +39,7 @@ const RAIL_GROUPS: { label: string; sections: SectionMeta[] }[] = [
       {
         id: "access",
         label: "Access",
-        subtitle: "Browser sessions, privacy, and proxies.",
+        subtitle: "Browser sessions and privacy.",
         icon: Cookie,
       },
     ],

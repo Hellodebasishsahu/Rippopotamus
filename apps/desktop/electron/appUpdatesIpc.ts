@@ -1,4 +1,5 @@
 import { app, ipcMain } from "electron";
+import { normalizeVersion, compareVersions } from "./versionUtils";
 
 const GITHUB_RELEASES_LATEST = "https://api.github.com/repos/Hellodebasishsahu/Rippopotamus/releases/latest";
 
@@ -33,23 +34,6 @@ type AppUpdateInfo = {
   notes: string[];
   error?: string;
 };
-
-function normalizeVersion(value: string | null | undefined): string | null {
-  if (!value) return null;
-  return value.trim().replace(/^v/i, "") || null;
-}
-
-function compareVersions(left: string, right: string): number {
-  const leftParts = normalizeVersion(left)?.split(/[.-]/).map((part) => Number(part)) || [];
-  const rightParts = normalizeVersion(right)?.split(/[.-]/).map((part) => Number(part)) || [];
-  const length = Math.max(leftParts.length, rightParts.length);
-  for (let index = 0; index < length; index += 1) {
-    const a = Number.isFinite(leftParts[index]) ? leftParts[index] : 0;
-    const b = Number.isFinite(rightParts[index]) ? rightParts[index] : 0;
-    if (a !== b) return a > b ? 1 : -1;
-  }
-  return 0;
-}
 
 function configuredManifestUrl(): string | null {
   const raw = (process.env.RIPPO_APP_UPDATE_MANIFEST_URL || "").trim();
