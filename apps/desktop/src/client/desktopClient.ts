@@ -81,14 +81,15 @@ export function createDesktopClient(bridge?: RippoBridge): DesktopClient | null 
 
 // --- Tauri transport -------------------------------------------------------
 //
-// P1 of the Electron -> Tauri migration (docs/tauri-migration-lld.md). Wires
-// the core loop only: health, fetch(-full), download + progress events,
-// cancel_download, listLibrary. Everything else (page probe / sniff, cookies,
-// helper registry, app-update, output-root picker, thumbnails, shell/open)
-// is P2+ and stubbed here so the UI doesn't crash — it lands with settings +
-// path-guard + helper-registry parity. `@tauri-apps/api` is safe to import
-// unconditionally: it only touches `window.__TAURI_INTERNALS__` when a call
-// is actually made, so this module loads fine under plain Electron too.
+// P1+P2 of the Electron -> Tauri migration (docs/tauri-migration-lld.md).
+// P1 wired the core loop: health, fetch(-full), download + progress events,
+// cancel_download, listLibrary. P2 adds settings, the path-guard-backed shell
+// commands, cookie-browser listing, the helper registry, the app-update
+// check, and the output-root picker. Page probe / sniff and native
+// thumbnails stay stubbed — they weren't in the P2 scope. `@tauri-apps/api`
+// is safe to import unconditionally: it only touches
+// `window.__TAURI_INTERNALS__` when a call is actually made, so this module
+// loads fine under plain Electron too.
 
 function isTauriRuntime(): boolean {
   return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
@@ -124,7 +125,27 @@ const tauriDesktopClient: DesktopClient = {
     };
   },
 
-  // P2 — settings, path guard, cookies, helper registry, app update, thumbnails.
+  setTransferSettings: (payload) =>
+    invoke("set_transfer_settings", {
+      aria2MaxConnections: payload?.aria2MaxConnections,
+      aria2DownloadLimit: payload?.aria2DownloadLimit,
+    }),
+  openFolder: (folder: string) => invoke("open_folder", { folder }),
+  openExternal: (url: string) => invoke("open_external", { url }),
+  listBrowsers: () => invoke<CookiesBrowserResponse>("list_cookie_browsers"),
+  setDefaultCookieSource: (source: CookieSource) =>
+    invoke<CookiesBrowserResponse>("set_default_cookie_source", { source }),
+  setCookiesBrowser: (browserId: string | null) =>
+    invoke<CookiesBrowserResponse>("set_cookies_browser", { browserId }),
+  checkHelpers: () => invoke<HelperCheckResult[]>("check_helpers"),
+  updateHelpers: () => invoke<HelperUpdateResult[]>("update_helpers"),
+  checkAppUpdate: () => invoke<AppUpdateInfo>("check_app_update"),
+  chooseOutputRoot: () => invoke("choose_output_root"),
+  resetOutputRoot: () => invoke("reset_output_root"),
+  openPath: (target: string) => invoke("open_path", { target }),
+  showItemInFolder: (target: string) => invoke("show_item_in_folder", { target }),
+
+  // Not in P2 scope — page probe/sniff and native thumbnails.
   probePage: notImplemented<PageProbeResponse>("probePage", {
     ok: false,
     url: "",
@@ -132,47 +153,8 @@ const tauriDesktopClient: DesktopClient = {
     candidates: [],
   }),
   clearSniffCache: notImplemented("clearSniffCache", { ok: true }),
-  setTransferSettings: notImplemented("setTransferSettings", {
-    transfer: { aria2MaxConnections: 8, aria2DownloadLimit: "" },
-    health: { ok: false, outputRoot: "", packaged: false } as EngineHealth,
-  }),
-  openFolder: notImplemented("openFolder", undefined),
-  openExternal: notImplemented("openExternal", undefined),
   loadThumbnail: notImplemented("loadThumbnail", { src: null, url: null }),
-  listBrowsers: notImplemented<CookiesBrowserResponse>("listBrowsers", {
-    browsers: [],
-    selected: null,
-    source: { mode: "off" },
-    supported: false,
-  }),
-  setDefaultCookieSource: notImplemented<CookiesBrowserResponse>("setDefaultCookieSource", {
-    browsers: [],
-    selected: null,
-    source: { mode: "off" },
-    supported: false,
-  }),
-  setCookiesBrowser: notImplemented<CookiesBrowserResponse>("setCookiesBrowser", {
-    browsers: [],
-    selected: null,
-    source: { mode: "off" },
-    supported: false,
-  }),
-  checkHelpers: notImplemented("checkHelpers", []),
-  updateHelpers: notImplemented("updateHelpers", []),
-  checkAppUpdate: notImplemented("checkAppUpdate", {
-    currentVersion: "0.0.0",
-    latestVersion: null,
-    updateAvailable: false,
-    configured: false,
-    manifestUrl: null,
-    dmgUrl: null,
-    notes: [],
-  }),
-  chooseOutputRoot: notImplemented("chooseOutputRoot", { outputRoot: "", canceled: true }),
-  resetOutputRoot: notImplemented("resetOutputRoot", { outputRoot: "" }),
   loadLibraryThumbnail: notImplemented("loadLibraryThumbnail", { ok: false, error: "Not implemented yet." }),
-  openPath: notImplemented("openPath", undefined),
-  showItemInFolder: notImplemented("showItemInFolder", undefined),
 };
 
 export function getDesktopClient(): DesktopClient | null {

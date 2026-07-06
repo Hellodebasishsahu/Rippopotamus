@@ -39,8 +39,14 @@ Tauri points its `devUrl`/`frontendDist` at the existing Vite build.
 Request/response commands: `health`, `fetch`, `library_list`, `failures_list`,
 `check_helpers`, `update_helpers`, `check_app_update`, `get/set_settings`,
 `list_cookie_browsers`, `open_path`, `open_external`.
-Streaming: `download` emits `download:progress:<id>` / `download:done:<id>` /
-`download:error:<id>` events; cancellation via a `cancel_download(id)` command.
+Streaming: `download` emits a single `engine:download-event` channel, with the
+job id embedded in each event payload (`{ jobId, ...engineEvent }`) rather than
+per-id event names — the frontend's one `listen("engine:download-event", ...)`
+subscription demultiplexes by `event.payload.jobId`. (P1 implemented this
+matching the real Electron code's single-channel + embedded-id shape; this
+doc's earlier `download:progress:<id>` / `download:done:<id>` naming was
+aspirational and never what either side actually did.) Cancellation is via a
+`cancel_download(jobId)` command.
 
 ## Backend components (Rust rewrites)
 
