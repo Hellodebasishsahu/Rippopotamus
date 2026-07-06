@@ -251,4 +251,33 @@ mod tests {
         assert_eq!(normalize_aria2_download_limit(None), "");
         assert_eq!(normalize_aria2_download_limit(Some("")), "");
     }
+
+    fn browsers() -> Vec<BrowserInfo> {
+        vec![BrowserInfo { id: "chrome".to_string(), label: "Chrome".to_string(), app_path: "/Applications/Google Chrome.app".to_string() }]
+    }
+
+    #[test]
+    fn parse_cookie_source_accepts_structured_supported_sources() {
+        assert_eq!(parse_cookie_source(&serde_json::json!(null), &browsers()), Ok(CookieSource::Off));
+        assert_eq!(
+            parse_cookie_source(&serde_json::json!({ "mode": "off" }), &browsers()),
+            Ok(CookieSource::Off)
+        );
+        assert_eq!(
+            parse_cookie_source(&serde_json::json!({ "mode": "browser", "browserId": "chrome" }), &browsers()),
+            Ok(CookieSource::Browser { browser_id: "chrome".to_string() })
+        );
+    }
+
+    #[test]
+    fn parse_cookie_source_rejects_unsupported_shapes() {
+        assert_eq!(
+            parse_cookie_source(&serde_json::json!({ "mode": "browser", "browserId": "../../../cookies.txt" }), &browsers()),
+            Err("Unsupported browser selection.".to_string())
+        );
+        assert_eq!(
+            parse_cookie_source(&serde_json::json!("chrome"), &browsers()),
+            Err("Unsupported cookie source.".to_string())
+        );
+    }
 }

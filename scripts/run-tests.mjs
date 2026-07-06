@@ -1,12 +1,7 @@
 import { spawnSync } from "node:child_process";
 import path from "node:path";
 
-const nodeTests = [
-  "tests/electron_cookie_validation.test.cjs",
-  "tests/electron_thumbnail_validation.test.cjs",
-  "tests/electron_page_probe_policy_validation.test.cjs",
-  "tests/url_parser_validation.test.cjs",
-];
+const nodeTests = ["tests/url_parser_validation.test.cjs"];
 
 function run(command, args, options = {}) {
   const result = spawnSync(command, args, {
@@ -44,3 +39,4 @@ const python = resolvePythonCommand();
 run(python.command, [...python.args, "-m", "unittest", "discover", "-s", "tests"], { env: pythonEnv });
 run("npm", ["run", "build:desktop"]);
 run("node", ["--test", ...nodeTests]);
+run("cargo", ["test", "--lib"], { cwd: path.join(process.cwd(), "apps/desktop/src-tauri") });

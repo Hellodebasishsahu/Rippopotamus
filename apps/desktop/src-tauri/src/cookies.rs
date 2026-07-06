@@ -163,3 +163,42 @@ pub fn set_cookies_browser(app: AppHandle, browser_id: Option<String>) -> Result
     crate::settings::write_settings(&app, &settings)?;
     Ok(cookies_response(&app, browsers))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn browsers() -> Vec<BrowserInfo> {
+        vec![
+            BrowserInfo { id: "chrome".to_string(), label: "Chrome".to_string(), app_path: "/Applications/Google Chrome.app".to_string() },
+            BrowserInfo { id: "safari".to_string(), label: "Safari".to_string(), app_path: "/Applications/Safari.app".to_string() },
+        ]
+    }
+
+    #[test]
+    fn validate_cookies_browser_id_accepts_none() {
+        assert_eq!(validate_cookies_browser_id(None, &browsers()), Ok(None));
+    }
+
+    #[test]
+    fn validate_cookies_browser_id_accepts_detected_browser_ids() {
+        assert_eq!(validate_cookies_browser_id(Some("chrome"), &browsers()), Ok(Some("chrome".to_string())));
+    }
+
+    #[test]
+    fn validate_cookies_browser_id_rejects_arbitrary_input() {
+        assert_eq!(
+            validate_cookies_browser_id(Some("../../../cookies.txt"), &browsers()),
+            Err("Unsupported browser selection.".to_string())
+        );
+    }
+
+    #[test]
+    fn cookie_source_from_browser_id_normalizes_off_and_browser_sources() {
+        assert_eq!(cookie_source_from_browser_id(None, &browsers()), Ok(CookieSource::Off));
+        assert_eq!(
+            cookie_source_from_browser_id(Some("safari"), &browsers()),
+            Ok(CookieSource::Browser { browser_id: "safari".to_string() })
+        );
+    }
+}
