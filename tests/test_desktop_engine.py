@@ -289,7 +289,8 @@ class DesktopEngineTests(unittest.TestCase):
         )
 
         self.assertIn("--ffmpeg-location", command)
-        self.assertEqual(command[command.index("--ffmpeg-location") + 1], "/opt/ffmpeg/bin")
+        # providers.py renders the parent dir via Path, which uses native separators.
+        self.assertEqual(command[command.index("--ffmpeg-location") + 1], str(Path("/opt/ffmpeg/bin")))
         self.assertIn("--downloader", command)
         self.assertEqual(command[command.index("--downloader") + 1], "m3u8:ffmpeg")
         self.assertIn("--hls-use-mpegts", command)
