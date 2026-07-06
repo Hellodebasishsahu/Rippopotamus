@@ -72,7 +72,10 @@ jobs:
           Start-Process -FilePath $installer.FullName -ArgumentList "/S" -Wait
           $engine = Get-ChildItem "$env:LOCALAPPDATA","$env:ProgramFiles","${env:ProgramFiles(x86)}" -Recurse -Filter "rippo-engine.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
           if (-not $engine) { throw "Could not locate installed rippo-engine.exe after silent install." }
-          $resources = Split-Path (Split-Path $engine.FullName -Parent) -Parent
+          # Engine is at <root>\bin\rippo-engine\rippo-engine.exe. The verifier
+          # wants the resource ROOT (it appends bin\ itself), so climb three
+          # parents: rippo-engine.exe -> rippo-engine -> bin -> <root>.
+          $resources = Split-Path (Split-Path (Split-Path $engine.FullName -Parent) -Parent) -Parent
           "RIPPO_VERIFY_RESOURCES=$resources" | Out-File -FilePath $env:GITHUB_ENV -Append
 
       - run: node scripts/verify-packaged-engine-health.mjs win-tauri
