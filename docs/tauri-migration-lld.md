@@ -76,10 +76,25 @@ aspirational and never what either side actually did.) Cancellation is via a
 
 ## Self-update
 
-Keep parity: manual "open the GitHub release" flow (a command that opens the
-asset URL). **Upgrade opportunity, later:** `tauri-plugin-updater` does real
-signed in-place auto-update — needs a signing keypair, so it's a follow-up, not
-part of parity.
+**Decided: adopt `tauri-plugin-updater` (real signed, in-place auto-update).**
+This is the marquee capability win of moving to Tauri — one-click download +
+install + relaunch instead of Electron's "open the DMG in a browser, re-drag to
+Applications."
+
+- **Update-integrity signing** (Tauri's minisign, NOT Apple/Windows code signing):
+  `tauri signer generate` once. Public key goes in `tauri.conf.json`; private key
+  + password go in **GitHub Actions secrets** (`TAURI_SIGNING_PRIVATE_KEY`,
+  `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`). Requires a one-time human action to paste
+  the key into repo secrets — flagged for the owner.
+- **Endpoint:** GitHub releases. CI publishes a `latest.json` manifest (version,
+  notes, per-platform signed artifact URLs) alongside the `.dmg`/`.exe`; the
+  updater plugin reads it. Website CTA + the release ritual update to match.
+- **Frontend:** `@tauri-apps/plugin-updater` `check()` → `downloadAndInstall()`,
+  wired behind the existing `desktopClient` app-update methods so the Settings UI
+  is unchanged.
+- The P2 `check_app_update` command stays only as a lightweight version display /
+  fallback; the actual update *action* is the plugin. This is P3 work (tied to the
+  bundle + signing + release artifacts).
 
 ## Phases (each ends at a verifiable gate)
 
@@ -91,8 +106,12 @@ part of parity.
   metadata → download a real MP4 → it shows in Library.
 - **P2 — Supporting.** settings, path guard, cookie-browser list, helper registry,
   app-update check.
-- **P3 — Packaging.** Tauri bundler (dmg + nsis), engine/ffmpeg/aria2c resources,
-  rewire GitHub Releases asset names + website + CI. Cut a test build.
+- **P3 — Packaging + auto-update.** Tauri bundler (dmg + nsis), engine/ffmpeg/aria2c
+  resources, rewire GitHub Releases asset names + website + CI. **Adopt
+  `tauri-plugin-updater`:** generate signing keypair, configure updater endpoint,
+  CI signs artifacts + publishes `latest.json`, frontend uses the plugin. Use
+  `tauri-plugin-dialog`/`tauri-plugin-opener` for pickers/opening (not hand-rolled).
+  Cut a test build and verify an in-place update from v0.2.0.
 - **P4 — Teardown.** Delete `electron/`, prune electron-only Node tests, update
   README / CONTRIBUTING / PRE_RELEASE_CHECKLIST / architecture docs.
 
