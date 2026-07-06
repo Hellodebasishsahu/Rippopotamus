@@ -53,7 +53,9 @@ fn bundled_engine_executable(app: &AppHandle) -> Option<PathBuf> {
         }
     }
     if let Some(bin_dir) = resources_bin_dir(app) {
-        candidates.push(bin_dir.join(name));
+        // PyInstaller --onedir layout: bin/rippo-engine/rippo-engine(.exe) plus
+        // an adjacent _internal/ directory the executable loads at runtime.
+        candidates.push(bin_dir.join("rippo-engine").join(name));
     }
     candidates.into_iter().find(|p| p.exists())
 }
@@ -81,17 +83,29 @@ fn candidate_pythons() -> Vec<String> {
     out
 }
 
-fn ffmpeg_path() -> Option<String> {
+fn ffmpeg_path(app: &AppHandle) -> Option<String> {
     if let Ok(configured) = std::env::var("RIPPO_FFMPEG_PATH") {
         if !configured.trim().is_empty() {
             return Some(configured);
         }
     }
-    // ffmpeg-static's node_modules binary, same one electron-builder unpacks today.
-    let node_bin = dev_repo_root()
-        .join("apps/desktop/node_modules/ffmpeg-static/ffmpeg");
-    if node_bin.exists() {
-        return Some(node_bin.to_string_lossy().to_string());
+    let name = if cfg!(windows) { "ffmpeg.exe" } else { "ffmpeg" };
+    if let Some(bin_dir) = resources_bin_dir(app) {
+        let bundled = bin_dir.join(name);
+        if bundled.exists() {
+            return Some(bundled.to_string_lossy().to_string());
+        }
+    }
+    // Dev fallback: ffmpeg-static's node_modules binary, the same one
+    // electron-builder unpacked before the Tauri migration. npm workspaces
+    // hoist it to the repo root; check that first, then the workspace itself.
+    for candidate in [
+        dev_repo_root().join("node_modules/ffmpeg-static").join(name),
+        dev_repo_root().join("apps/desktop/node_modules/ffmpeg-static").join(name),
+    ] {
+        if candidate.exists() {
+            return Some(candidate.to_string_lossy().to_string());
+        }
     }
     None
 }
@@ -150,7 +164,7 @@ pub fn engine_env(app: &AppHandle) -> HashMap<String, String> {
     let delimiter = if cfg!(windows) { ";" } else { ":" };
     env.insert("PYTHONPATH".into(), pythonpath_parts.join(delimiter));
 
-    if let Some(ffmpeg) = ffmpeg_path() {
+    if let Some(ffmpeg) = ffmpeg_path(app) {
         env.insert("RIPPO_FFMPEG_PATH".into(), ffmpeg);
     }
 

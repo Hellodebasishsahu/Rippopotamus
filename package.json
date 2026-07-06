@@ -28,6 +28,10 @@
     "verify:package:mac:engine": "node scripts/verify-packaged-engine-health.mjs mac",
     "verify:package:win:engine": "node scripts/verify-packaged-engine-health.mjs win",
     "build:engine": "bash scripts/build-engine.sh",
+    "stage:tauri-resources:mac": "node scripts/stage-tauri-resources.mjs darwin",
+    "stage:tauri-resources:win": "node scripts/stage-tauri-resources.mjs win32",
+    "package:tauri:mac": "npm run build:engine && npm run prepare:ffmpeg:mac && npm run prepare:aria2:mac && npm run stage:tauri-resources:mac && npm run build:ui && node scripts/run-workspace.mjs @rippopotamus/desktop package:tauri:mac",
+    "package:tauri:win": "npm run build:engine && npm run prepare:ffmpeg:win && npm run prepare:aria2:win && npm run stage:tauri-resources:win && npm run build:ui && node scripts/run-workspace.mjs @rippopotamus/desktop package:tauri:win",
     "test": "node scripts/run-tests.mjs"
   },
   "keywords": [],
