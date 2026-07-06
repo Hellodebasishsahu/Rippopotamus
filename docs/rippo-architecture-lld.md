@@ -2,6 +2,18 @@
 
 Last updated: 2026-05-13
 
+> **2026-07-06 update:** the desktop shell has since migrated from Electron to
+> Tauri v2 (Rust) — see `docs/tauri-migration-lld.md` for the migration LLD and
+> `apps/desktop/src-tauri/` for the current backend. The `electron/*` files,
+> IPC vocabulary, and file paths referenced below (`electron/main.ts`,
+> `electron/engineIpc.ts`, etc.) are historical — they described the Electron
+> host and have been deleted. The React renderer (`apps/desktop/src/`), the
+> Python media engine, and the general shape of the architecture (renderer ->
+> desktop shell -> Python engine -> resolver/transfer tools) are unchanged and
+> still described accurately below; only the desktop-shell implementation
+> language and IPC mechanism changed (Electron main/preload -> Tauri Rust
+> commands + `@tauri-apps/api` `invoke`/`listen`).
+
 This is the pleasant lunch-read version.
 
 Rippo should not become an architecture museum. It is a local media workbench. The goal is simple: keep the user flow obvious, keep provider weirdness contained, and stop giant files from becoming the place where every decision goes to hide.

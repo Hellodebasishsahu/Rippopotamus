@@ -2,11 +2,13 @@
 
 Use this before cutting any local test build or sharing a macOS/Windows app package.
 
-## Release ritual (Tauri, P3) - 2026-07-06
+## Release ritual (Tauri, P4 teardown complete) - 2026-07-06
 
-The desktop shell is migrating Electron -> Tauri v2 (`docs/tauri-migration-lld.md`).
-As of P3, packaging + signed auto-update are wired through Tauri; Electron is
-still present for now (deleted in the P4 teardown) but is no longer what ships.
+The desktop shell migration from Electron -> Tauri v2 (`docs/tauri-migration-lld.md`)
+is complete. Packaging + signed auto-update ship through Tauri, and the
+Electron main process (`apps/desktop/electron/`), electron-builder config,
+and the electron-only Node tests have been removed. The desktop app is Tauri
+(Rust) + the shared Vite/React frontend only.
 
 **Cutting a real release:**
 
@@ -144,10 +146,11 @@ This currently covers:
 
 - Python CLI unit tests in `tests/`
 - Vite renderer production build
-- Electron TypeScript build
+- Remaining Node (`node:test`) suites in `tests/`
+- `cargo test --lib` for the Tauri Rust backend (`apps/desktop/src-tauri`)
 
 - [x] If `npm test` fails, fix the failing check before packaging.
-- [x] Confirm `dist/renderer/` and `dist-electron/` are regenerated from current source.
+- [x] Confirm `dist/renderer/` is regenerated from current source.
 
 ## 4. CLI Smoke Test
 
@@ -209,23 +212,22 @@ npm run dev
 - [x] Build the packaged app:
 
 ```bash
-npm run package:mac
+npm run package:tauri:mac
 ```
 
-- [ ] Open `release/mac-arm64/Rippopotamus.app`.
+- [ ] Open `apps/desktop/src-tauri/target/release/bundle/macos/Rippopotamus.app`.
 - [ ] For Windows test builds, run:
 
 ```bash
-npm run package:win
+npm run package:tauri:win
 ```
 
-- [ ] Open `release/win-unpacked/Rippopotamus.exe` on a Windows x64 machine.
-- [x] Confirm packaged renderer loads from `dist/renderer/index.html`.
-- [x] Confirm packaged Electron main loads from `dist-electron/main.js`.
-- [ ] Confirm packaged app can run `engine:health`.
-- [x] Confirm bundled ffmpeg path resolves in packaged mode.
-- [x] Confirm the app still needs local Python/yt-dlp unless the release explicitly includes a frozen engine.
-- [x] If sharing with non-developers, do not release until the Python/yt-dlp runtime is frozen into the app or clearly documented as required.
+- [ ] Run the NSIS installer at `apps/desktop/src-tauri/target/release/bundle/nsis/*-setup.exe` on a Windows x64 machine.
+- [x] Confirm packaged renderer loads from the bundled `frontendDist` (`dist/renderer/`).
+- [x] Confirm the packaged Rust backend runs the frozen `rippo-engine` binary staged as a Tauri resource.
+- [ ] Confirm packaged app can run `engine:health` (`node scripts/verify-packaged-engine-health.mjs mac-tauri` / `win-tauri`).
+- [x] Confirm bundled ffmpeg and aria2c paths resolve in packaged mode.
+- [x] Confirm the packaged app needs no system Python, yt-dlp, ffmpeg, or aria2c install (frozen engine + bundled binaries).
 
 ## 8. Release Artifact Review
 

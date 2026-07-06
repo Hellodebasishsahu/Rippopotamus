@@ -43,7 +43,7 @@ Rippopotamus is not trying to beat downloader engines. It uses `yt-dlp` and `gal
 ## Architecture
 
 - Core engine: Python CLI routing resolvers (`yt-dlp`, `gallery-dl`, Drive, Torrent) into transfer engines (`aria2c`, `ffmpeg`, Drive API)
-- Desktop shell: Electron + Vite calling the Python media engine over local IPC
+- Desktop shell: Tauri (Rust) + Vite/React calling the Python media engine as a spawned subprocess
 - Local state: JSON ledgers (`.rippo-downloads.json`, `.rippo-failures.json`) for the desktop engine; `.rippo/project.json` + `manifest.json` for the `rippo` prototype CLI
 - Output: normal folders on disk
 
@@ -58,6 +58,7 @@ See [`docs/rippo-architecture-lld.md`](docs/rippo-architecture-lld.md) for the f
 
 - Python >= 3.11
 - Node.js (CI runs on Node 24)
+- Rust stable + the [Tauri v2 prerequisites](https://v2.tauri.app/start/prerequisites/) for your OS (Xcode command line tools on macOS, WebView2 on Windows) — only needed to build/run the desktop app from source; the packaged app bundles a frozen engine and needs none of this on the end user's machine
 - `ffmpeg` — pulled in for CLI use via the `imageio-ffmpeg` Python dependency; the packaged desktop app bundles its own binary
 - `aria2c` on your `PATH` — only needed for torrent transfers when running the CLI directly; the packaged desktop app bundles its own binary
 - `yt-dlp` and `gallery-dl` install automatically as Python dependencies
@@ -65,12 +66,14 @@ See [`docs/rippo-architecture-lld.md`](docs/rippo-architecture-lld.md) for the f
 ## Project Layout
 
 ```text
-apps/desktop/        Electron + Vite desktop app (renderer + main process)
-apps/website/        Marketing site workspace
-src/rippopotamus/    Python engine: CLI, resolvers, providers, desktop IPC bridge
-tests/               Python (unittest) and Node (node:test) test suites
-docs/                Architecture and design notes
-scripts/             Build, packaging, and dev-workflow scripts
+apps/desktop/         Desktop app: Tauri (Rust) shell + shared Vite/React frontend
+apps/desktop/src-tauri/  Rust backend (Tauri commands, engine spawn, packaging config)
+apps/desktop/src/     Shared React frontend
+apps/website/         Marketing site workspace
+src/rippopotamus/     Python engine: CLI, resolvers, providers, desktop IPC bridge
+tests/                Python (unittest) and Node (node:test) test suites
+docs/                 Architecture and design notes
+scripts/              Build, packaging, and dev-workflow scripts
 ```
 
 ## Project Folder Output
@@ -118,22 +121,24 @@ Available presets:
 
 ## Quickstart: Desktop app (dev)
 
-The desktop shell is Electron + Vite calling the Python media engine over local subprocess IPC. It focuses on link intake, metadata, presets, queue state, readable failures, local output, and opening the output folder.
+The desktop shell is Tauri (Rust) + Vite/React calling the Python media engine as a spawned subprocess. It focuses on link intake, metadata, presets, queue state, readable failures, local output, and opening the output folder.
 
 ```bash
 npm install
 npm run dev
 ```
 
+This starts the Vite dev server and launches `tauri dev`, which opens a native window pointed at it and runs the Rust backend against your local Python engine and system `ffmpeg`/`aria2c` (or `RIPPO_*_PATH` overrides — see below).
+
 Other useful scripts from the repo root:
 
 ```bash
-npm run build            # build the desktop app
-npm run package:mac      # package a macOS .dmg (macOS only)
-npm run package:win      # package a Windows build (Windows only)
+npm run build            # typecheck + build the shared frontend
+npm run package:tauri:mac  # build the frozen engine + package a macOS .app/.dmg (macOS only)
+npm run package:tauri:win  # build the frozen engine + package a Windows NSIS installer (Windows only)
 ```
 
-The macOS and Windows app packages currently include the renderer, Electron main process, Python engine source, bundled `ffmpeg-static`, and a bundled `aria2c` resource. Set `RIPPO_ENGINE_BINARY` to a `rippo-engine` PyInstaller binary (see `scripts/build-engine.sh` and `pip install -e ".[engine-build]"`) to run without a system Python install. Rippo reads bundled `aria2c` from `resources/bin/aria2c` or `resources/bin/aria2c.exe`; `RIPPO_ARIA2C_PATH` overrides that. The remaining distribution step is freezing provider runtimes (`yt-dlp`, `gallery-dl`) for friends who do not already use them.
+The macOS and Windows packaged apps bundle a frozen `rippo-engine` binary (PyInstaller `--onedir`, built via `scripts/build-engine.sh` / `npm run build:engine`), a bundled `ffmpeg-static` binary, and a bundled `aria2c` resource — end users need no system Python, ffmpeg, or aria2c install. Rippo reads the bundled `aria2c` from `resources/bin/aria2c` or `resources/bin/aria2c.exe` (`RIPPO_ARIA2C_PATH` overrides that) and the frozen engine from `resources/bin/rippo-engine/` (`RIPPO_ENGINE_BINARY` overrides that for local dev). Signed, in-place auto-update ships via `tauri-plugin-updater` (see `.github/workflows/release.yml`).
 
 ## Running Tests
 

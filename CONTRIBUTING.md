@@ -4,7 +4,7 @@ Thanks for considering a contribution. This project is small and local-first by 
 
 ## Dev Setup
 
-You need Python >= 3.11 and Node.js (CI runs on Node 24).
+You need Python >= 3.11, Node.js (CI runs on Node 24), and Rust stable + the [Tauri v2 prerequisites](https://v2.tauri.app/start/prerequisites/) for your OS to build/run the desktop app (the packaged app itself needs none of this for end users — it bundles a frozen engine).
 
 ```bash
 git clone <your-fork-url>
@@ -17,7 +17,7 @@ pip install -e .
 npm install
 ```
 
-Run the desktop app in dev mode:
+Run the desktop app in dev mode (starts Vite and opens the Tauri window against your local Python engine):
 
 ```bash
 npm run dev
@@ -35,7 +35,7 @@ rippo init "Client Project" --path .prototype/client-project
 npm test
 ```
 
-This runs the Python `unittest` suite in `tests/`, a desktop build, and the Node (`node:test`) suites in `tests/`. Run it before opening a PR.
+This runs the Python `unittest` suite in `tests/`, a desktop (frontend) build, the Node (`node:test`) suites in `tests/`, and `cargo test --lib` for the Tauri Rust backend (`apps/desktop/src-tauri`). Run it before opening a PR.
 
 To iterate on just the Python side:
 
