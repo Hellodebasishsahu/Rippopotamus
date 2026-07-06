@@ -1,5 +1,20 @@
 import { app, ipcMain } from "electron";
 
+const GITHUB_RELEASES_LATEST = "https://api.github.com/repos/Hellodebasishsahu/Rippopotamus/releases/latest";
+
+type GitHubReleaseAsset = {
+  name?: string;
+  browser_download_url?: string;
+};
+
+type GitHubRelease = {
+  tag_name?: string;
+  published_at?: string;
+  html_url?: string;
+  body?: string;
+  assets?: GitHubReleaseAsset[];
+};
+
 type AppUpdateManifest = {
   version?: string;
   date?: string;
@@ -71,16 +86,59 @@ async function checkAppUpdate(): Promise<AppUpdateInfo> {
     };
   }
 
+  // Default channel: latest GitHub release. The env manifest above is a dev override.
   if (!manifestUrl) {
-    return {
-      currentVersion,
-      latestVersion: null,
-      updateAvailable: false,
-      configured: false,
-      manifestUrl: null,
-      dmgUrl: null,
-      notes: [],
-    };
+    try {
+      const response = await fetch(GITHUB_RELEASES_LATEST, {
+        headers: {
+          "Accept": "application/vnd.github+json",
+          "User-Agent": "Rippopotamus",
+        },
+      });
+      if (response.status === 404) {
+        // No releases published yet — report current version as latest.
+        return {
+          currentVersion,
+          latestVersion: null,
+          updateAvailable: false,
+          configured: true,
+          manifestUrl: GITHUB_RELEASES_LATEST,
+          dmgUrl: null,
+          notes: [],
+        };
+      }
+      if (!response.ok) throw new Error(`App update check failed: ${response.status}`);
+
+      const release = await response.json() as GitHubRelease;
+      const latestVersion = normalizeVersion(release.tag_name);
+      const assetName = process.platform === "win32" ? ".exe" : ".dmg";
+      const asset = (release.assets || []).find((candidate) => candidate.name?.toLowerCase().endsWith(assetName));
+      // Fall back to the release page so users without a platform asset can still get the update.
+      const dmgUrl = validateDmgUrl(asset?.browser_download_url) || validateDmgUrl(release.html_url);
+      return {
+        currentVersion,
+        latestVersion,
+        updateAvailable: Boolean(latestVersion && dmgUrl && compareVersions(latestVersion, currentVersion) > 0),
+        configured: true,
+        manifestUrl: GITHUB_RELEASES_LATEST,
+        dmgUrl,
+        date: typeof release.published_at === "string" ? release.published_at.slice(0, 10) : undefined,
+        notes: typeof release.body === "string"
+          ? release.body.split("\n").map((line) => line.trim()).filter(Boolean).slice(0, 10)
+          : [],
+      };
+    } catch (error) {
+      return {
+        currentVersion,
+        latestVersion: null,
+        updateAvailable: false,
+        configured: true,
+        manifestUrl: GITHUB_RELEASES_LATEST,
+        dmgUrl: null,
+        notes: [],
+        error: error instanceof Error ? error.message : String(error),
+      };
+    }
   }
 
   try {
