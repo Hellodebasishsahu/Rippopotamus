@@ -268,6 +268,7 @@ src/rippopotamus/
     torrent.py
     ffmpeg.py
 
+experiments/semantic-script/
     video_chunker.py
     gemini_embeddings.py
 ```
@@ -696,7 +697,7 @@ Do this gradually. Big rewrites are how local apps get haunted by half-finished 
 1. Create `desktopClient.ts` and make renderer calls go through it.
 2. Pull queue logic out of `App.tsx` into `useDownloadQueue.ts`.
 3. Split Electron IPC handlers by active domain.
-4. Split Python runtime by `providers`, download routing, and sheet import.
+4. Split Python runtime by `providers` and download routing.
 5. Add job state types and test the transitions.
 6. Tighten provider catalog truth so UI stops guessing.
 
@@ -731,7 +732,7 @@ Completed Python slices:
 - `src/rippopotamus/providers.py` now exposes provider capability data such as `supportsBrowserAccess` through `provider_catalog()`.
 - `src/rippopotamus/desktop_runtime.py` owns desktop tool discovery, cookie checks, provider context creation, runtime health helpers, and subprocess JSON/text execution.
 - `src/rippopotamus/torrent_downloads.py` owns aria2 torrent execution, progress parsing, and torrent-specific output events.
-- `src/rippopotamus/desktop_engine.py` now stays closer to command orchestration: health, fetch, sheet import, and provider download routing.
+- `src/rippopotamus/desktop_engine.py` now stays closer to command orchestration: health, fetch, and provider download routing.
 
 Current verification:
 

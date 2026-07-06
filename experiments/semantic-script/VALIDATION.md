@@ -89,15 +89,13 @@ Observed:
 ### Tests
 
 ```bash
-PYTHONPATH=src python3 -m unittest tests.test_gemini_narrate_experiment tests.test_semantic_script_experiment
 PYTHONPATH=src python3 -m unittest discover -s tests
 npm run build
 ```
 
 Observed:
 
-- targeted experiment tests: `7` passed
-- full Python tests: `73` passed
+- full Python tests: passed
 - UI/Electron build: passed
 
 ## Completion State

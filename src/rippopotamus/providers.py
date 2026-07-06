@@ -96,7 +96,6 @@ class ProviderContext:
     aria2c_path: str | None = None
     aria2_max_connections: int = 8
     aria2_download_limit: str | None = None
-    network_proxy: str | None = None
 
 
 def provider_catalog() -> dict[str, list[dict[str, Any]]]:
@@ -127,10 +126,7 @@ def gallery_dl_base() -> list[str]:
 
 
 def gallery_dl_run(context: ProviderContext | None = None) -> list[str]:
-    command = gallery_dl_base()
-    if context and context.network_proxy:
-        command += ["--proxy", context.network_proxy]
-    return command
+    return gallery_dl_base()
 
 
 def aria2c_base() -> list[str]:
@@ -214,10 +210,20 @@ def yt_dlp_base(context: ProviderContext | None = None) -> list[str]:
         raise SystemExit("Missing yt-dlp. Install the Python package or place yt-dlp on PATH.")
 
 
+# Some networks (DPI/ISP interference on certain domains) reset ~1/3 of
+# connections mid-handshake (curl error 35). These retries cover both the
+# extraction webpage fetch and the file download so a single reset no longer
+# fails the whole job.
+YT_DLP_RETRY_ARGS = [
+    "--socket-timeout", "15",
+    "--retries", "5",
+    "--extractor-retries", "5",
+    "--retry-sleep", "3",
+]
+
+
 def yt_dlp_run(context: ProviderContext | None = None) -> list[str]:
-    command = [*yt_dlp_base(context), "--ignore-config"]
-    if context and context.network_proxy:
-        command += ["--proxy", context.network_proxy]
+    command = [*yt_dlp_base(context), "--ignore-config", *YT_DLP_RETRY_ARGS]
     if context and context.cookies_browser:
         command += ["--cookies-from-browser", context.cookies_browser]
     return command
@@ -296,7 +302,8 @@ def download_command(
         command += ["--ffmpeg-location", str(Path(context.ffmpeg_path).parent)]
         if "--skip-download" not in spec["extra"]:
             command += ["--downloader", "m3u8:ffmpeg", "--hls-use-mpegts"]
-    if context and context.aria2c_path and "--skip-download" not in spec["extra"]:
+    use_aria2 = bool(context and context.aria2c_path) and "--skip-download" not in spec["extra"]
+    if use_aria2:
         command += [
             "--downloader",
             f"http,https:{context.aria2c_path}",
@@ -489,8 +496,31 @@ def parse_metadata_output(provider: str, url: str, output: str) -> dict[str, Any
     raise SystemExit(f"Unknown provider `{provider}`.")
 
 
+# When an ISP/network blocks a domain (e.g. India DoT block via Airtel), the
+# request is either reset (curl 35) or served a tiny block-page stub. This is
+# the canonical, actionable message; the UI keys off it to point at the VPN.
+NETWORK_BLOCKED_MESSAGE = "Your network is blocking this site. Turn on a VPN (Settings → Network access) and try again."
+
+_NETWORK_BLOCK_PATTERNS = (
+    "recv failure: connection reset by peer",
+    "connection reset by peer",
+    "curl: (35)",
+    "airtel.in/dot",
+    "/dot/",
+    "department of telecommunications",
+    "blocked as per",
+)
+
+
+def looks_network_blocked(text: str) -> bool:
+    lower = (text or "").lower()
+    return any(pattern in lower for pattern in _NETWORK_BLOCK_PATTERNS)
+
+
 def friendly_error(message: str) -> str:
     lower = message.lower()
+    if looks_network_blocked(message):
+        return NETWORK_BLOCKED_MESSAGE
     if "Unsupported URL" in message:
         return "unsupported URL"
     if "Video unavailable" in message:

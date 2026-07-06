@@ -13,7 +13,26 @@ function packagedResourcesPath(context) {
   return path.join(context.appOutDir, "resources");
 }
 
+function pruneCompiledPython(root) {
+  if (!fs.existsSync(root)) return;
+
+  for (const entry of fs.readdirSync(root, { withFileTypes: true })) {
+    const entryPath = path.join(root, entry.name);
+    if (entry.isDirectory()) {
+      if (entry.name === "__pycache__") {
+        fs.rmSync(entryPath, { recursive: true, force: true });
+        continue;
+      }
+      pruneCompiledPython(entryPath);
+    } else if (entry.isFile() && (entry.name.endsWith(".pyc") || entry.name.endsWith(".pyo"))) {
+      removeIfExists(entryPath);
+    }
+  }
+}
+
 exports.default = async function afterPack(context) {
+  pruneCompiledPython(path.join(packagedResourcesPath(context), "engine"));
+
   const ffmpegRoot = path.join(
     packagedResourcesPath(context),
     "app.asar.unpacked",

@@ -39,11 +39,11 @@ STOPWORDS = {
 }
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-SRC_ROOT = REPO_ROOT / "src"
-if str(SRC_ROOT) not in sys.path:
-    sys.path.insert(0, str(SRC_ROOT))
+EXPERIMENT_ROOT = Path(__file__).resolve().parent
+if str(EXPERIMENT_ROOT) not in sys.path:
+    sys.path.insert(0, str(EXPERIMENT_ROOT))
 
-from rippopotamus.gemini_embeddings import (  # noqa: E402
+from gemini_embeddings import (  # noqa: E402
     DEFAULT_EMBEDDING_DIMENSIONS,
     DEFAULT_GEMINI_EMBED_MODEL,
     GeminiEmbedder,

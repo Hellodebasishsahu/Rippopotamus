@@ -280,18 +280,6 @@ class DesktopEngineTests(unittest.TestCase):
 
         self.assertLess(command.index("--ignore-config"), command.index("--cookies-from-browser"))
 
-    def test_build_download_command_adds_network_proxy_after_config_ignore(self) -> None:
-        command = desktop_download_command(
-            "https://www.youtube.com/watch?v=TQd2k1pEXp4",
-            "mp4-best",
-            output_template="/tmp/out.%(ext)s",
-            context=ProviderContext(yt_dlp_base=("yt-dlp",), network_proxy="socks5://127.0.0.1:9050"),
-        )
-
-        self.assertIn("--proxy", command)
-        self.assertLess(command.index("--ignore-config"), command.index("--proxy"))
-        self.assertEqual(command[command.index("--proxy") + 1], "socks5://127.0.0.1:9050")
-
     def test_build_download_command_uses_ffmpeg_for_hls_when_available(self) -> None:
         command = desktop_download_command(
             "https://example.com/live",
@@ -301,7 +289,8 @@ class DesktopEngineTests(unittest.TestCase):
         )
 
         self.assertIn("--ffmpeg-location", command)
-        self.assertEqual(command[command.index("--ffmpeg-location") + 1], "/opt/ffmpeg/bin")
+        # providers.py renders the parent dir via Path, which uses native separators.
+        self.assertEqual(command[command.index("--ffmpeg-location") + 1], str(Path("/opt/ffmpeg/bin")))
         self.assertIn("--downloader", command)
         self.assertEqual(command[command.index("--downloader") + 1], "m3u8:ffmpeg")
         self.assertIn("--hls-use-mpegts", command)
@@ -323,17 +312,6 @@ class DesktopEngineTests(unittest.TestCase):
         self.assertIn("--continue=true", downloader_args)
         self.assertIn("--max-download-limit=5M", downloader_args)
 
-    def test_gallery_download_command_adds_network_proxy(self) -> None:
-        with mock.patch("rippopotamus.providers.gallery_dl_base", return_value=["gallery-dl"]):
-            command = desktop_download_command(
-                "https://example.com/gallery",
-                "gallery",
-                output_dir="/tmp/images",
-                context=ProviderContext(network_proxy="http://127.0.0.1:8080"),
-            )
-
-        self.assertEqual(command[:3], ["gallery-dl", "--proxy", "http://127.0.0.1:8080"])
-
     def test_file_result_includes_relative_path_and_size(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -342,19 +320,6 @@ class DesktopEngineTests(unittest.TestCase):
             asset.write_bytes(b"12345")
 
             self.assertEqual(desktop_engine.file_result(root, asset), {"path": "Source/clip.mp4", "size": 5})
-
-    def test_proxy_check_reports_exit_ip(self) -> None:
-        args = argparse.Namespace(proxy="socks5://127.0.0.1:9050")
-        completed = subprocess.CompletedProcess(args=[], returncode=0, stdout='{"ip":"203.0.113.7"}', stderr="")
-        with mock.patch("rippopotamus.desktop_engine.subprocess.run", return_value=completed) as run:
-            stream = io.StringIO()
-            with redirect_stdout(stream):
-                self.assertEqual(desktop_engine.command_proxy_check(args), 0)
-
-        payload = json.loads(stream.getvalue())
-        self.assertTrue(payload["ok"])
-        self.assertEqual(payload["ip"], "203.0.113.7")
-        self.assertIn("--proxy", run.call_args.args[0])
 
     def test_fetch_uses_explicit_gallery_provider(self) -> None:
         args = argparse.Namespace(url="https://example.com/gallery", provider="gallery-dl")
@@ -390,7 +355,7 @@ class DesktopEngineTests(unittest.TestCase):
 
         payload = json.loads(stream.getvalue())
         self.assertEqual(payload["metadata"], metadata)
-        drive_metadata.assert_called_once_with(url, "chrome", yt_dlp_base=["yt-dlp"], network_proxy=None)
+        drive_metadata.assert_called_once_with(url, "chrome", yt_dlp_base=["yt-dlp"])
 
     def test_drive_file_id_accepts_view_and_download_urls(self) -> None:
         self.assertEqual(

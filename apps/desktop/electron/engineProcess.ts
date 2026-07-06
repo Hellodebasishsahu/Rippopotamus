@@ -8,6 +8,13 @@ import {
   bundledAria2cPath,
   ffmpegPath,
 } from "./appPaths";
+import { logEngineEnd, logEngineStart } from "./engineLog";
+
+let engineInvocationSeq = 0;
+function nextEngineLogId(): string {
+  engineInvocationSeq += 1;
+  return `e${engineInvocationSeq}`;
+}
 
 function bundledEngineExecutable(): string | null {
   const name = process.platform === "win32" ? "rippo-engine.exe" : "rippo-engine";
@@ -165,6 +172,9 @@ function runBundledEngine(
   registerCancel?: (cancel: () => void) => void,
 ): Promise<unknown> {
   return new Promise((resolve, reject) => {
+    const logId = nextEngineLogId();
+    const startedAt = Date.now();
+    logEngineStart(logId, path.basename(executable), args);
     const child = spawn(executable, args, { env, cwd: engineCwd() });
 
     let stdout = "";
@@ -221,6 +231,8 @@ function runBundledEngine(
         }
       }
 
+      logEngineEnd(logId, code, Date.now() - startedAt, stderr);
+
       if (canceled) {
         reject(new Error("Download canceled."));
         return;
@@ -254,6 +266,9 @@ export function runEngine(args: string[], onJson?: (payload: unknown) => void, e
         return;
       }
 
+      const logId = nextEngineLogId();
+      const startedAt = Date.now();
+      logEngineStart(logId, `python -m rippopotamus.desktop_engine`, args);
       const child = spawn(python, ["-m", "rippopotamus.desktop_engine", ...args], {
         env,
         cwd: engineCwd(),
@@ -316,6 +331,8 @@ export function runEngine(args: string[], onJson?: (payload: unknown) => void, e
             }
           }
         }
+
+        logEngineEnd(logId, code, Date.now() - startedAt, stderr);
 
         if (canceled) {
           reject(new Error("Download canceled."));

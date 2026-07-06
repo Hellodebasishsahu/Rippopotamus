@@ -24,3 +24,6 @@ experiments/out/
 experiments/**/runs/
 
 *.egg-info/
+
+# internal business docs, not for publishing
+docs/gtm/

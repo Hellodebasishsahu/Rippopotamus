@@ -6,28 +6,20 @@ import type {
   DownloadResponse,
   EngineHealth,
   AppUpdateInfo,
-  GalleryDlUpdateInfo,
-  GalleryDlUpdateResult,
-  SheetImportEvent,
-  SheetImportRequest,
-  SheetImportResponse,
+  HelperCheckResult,
+  HelperUpdateResult,
+  LibraryListRequest,
+  LibraryListResponse,
+  LibraryThumbnailResult,
   ThumbnailLoadResult,
-  YtDlpUpdateInfo,
-  YtDlpUpdateResult,
 } from "../../electron/types";
 
 type RippoBridge = Window["rippo"];
 
 export type DesktopClient = {
-  projects: {
-    importSheet: (payload: SheetImportRequest) => Promise<SheetImportResponse>;
-    onSheetImportEvent: (callback: (event: SheetImportEvent) => void) => () => void;
-  };
   health: () => Promise<EngineHealth>;
   probePage: RippoBridge["probePage"];
   clearSniffCache: RippoBridge["clearSniffCache"];
-  setNetworkProxy: RippoBridge["setNetworkProxy"];
-  checkNetworkProxy: RippoBridge["checkNetworkProxy"];
   setTransferSettings: RippoBridge["setTransferSettings"];
   fetch: RippoBridge["fetch"];
   fetchFull: RippoBridge["fetchFull"];
@@ -39,28 +31,24 @@ export type DesktopClient = {
   listBrowsers: RippoBridge["listBrowsers"];
   setDefaultCookieSource: (source: CookieSource) => ReturnType<RippoBridge["setDefaultCookieSource"]>;
   setCookiesBrowser: RippoBridge["setCookiesBrowser"];
-  checkYtDlpUpdate: () => Promise<YtDlpUpdateInfo>;
-  updateYtDlp: () => Promise<YtDlpUpdateResult>;
-  checkGalleryDlUpdate: () => Promise<GalleryDlUpdateInfo>;
-  updateGalleryDl: () => Promise<GalleryDlUpdateResult>;
+  checkHelpers: () => Promise<HelperCheckResult[]>;
+  updateHelpers: () => Promise<HelperUpdateResult[]>;
   checkAppUpdate: () => Promise<AppUpdateInfo>;
   chooseOutputRoot: RippoBridge["chooseOutputRoot"];
   resetOutputRoot: RippoBridge["resetOutputRoot"];
+  listLibrary: (payload?: LibraryListRequest) => Promise<LibraryListResponse>;
+  loadLibraryThumbnail: (target: string) => Promise<LibraryThumbnailResult>;
+  openPath: (target: string) => Promise<void>;
+  showItemInFolder: (target: string) => Promise<void>;
   onDownloadEvent: (callback: (event: DownloadEvent) => void) => () => void;
 };
 
 export function createDesktopClient(bridge?: RippoBridge): DesktopClient | null {
   if (!bridge) return null;
   return {
-    projects: {
-      importSheet: (payload: SheetImportRequest) => bridge.importSheet(payload),
-      onSheetImportEvent: (callback) => bridge.onSheetImportEvent(callback),
-    },
     health: bridge.health,
     probePage: bridge.probePage,
     clearSniffCache: bridge.clearSniffCache,
-    setNetworkProxy: bridge.setNetworkProxy,
-    checkNetworkProxy: bridge.checkNetworkProxy,
     setTransferSettings: bridge.setTransferSettings,
     fetch: bridge.fetch,
     fetchFull: bridge.fetchFull,
@@ -72,13 +60,15 @@ export function createDesktopClient(bridge?: RippoBridge): DesktopClient | null 
     listBrowsers: bridge.listBrowsers,
     setDefaultCookieSource: bridge.setDefaultCookieSource,
     setCookiesBrowser: bridge.setCookiesBrowser,
-    checkYtDlpUpdate: bridge.checkYtDlpUpdate,
-    updateYtDlp: bridge.updateYtDlp,
-    checkGalleryDlUpdate: bridge.checkGalleryDlUpdate,
-    updateGalleryDl: bridge.updateGalleryDl,
+    checkHelpers: bridge.checkHelpers,
+    updateHelpers: bridge.updateHelpers,
     checkAppUpdate: bridge.checkAppUpdate,
     chooseOutputRoot: bridge.chooseOutputRoot,
     resetOutputRoot: bridge.resetOutputRoot,
+    listLibrary: bridge.listLibrary,
+    loadLibraryThumbnail: bridge.loadLibraryThumbnail,
+    openPath: bridge.openPath,
+    showItemInFolder: bridge.showItemInFolder,
     onDownloadEvent: bridge.onDownloadEvent,
   };
 }

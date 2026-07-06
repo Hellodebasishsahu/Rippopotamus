@@ -1,6 +1,8 @@
 import { useEffect, useRef, type CSSProperties } from "react";
 import { marqueeIcons, MarqueeIcon } from "./MarqueeIcons";
 
+import { useMediaQuery } from "./useMediaQuery";
+
 const MARQUEE_COUNT = marqueeIcons.length;
 const MARQUEE_DURATION_S = 36;
 
@@ -13,9 +15,11 @@ function buildMarqueePath(width: number, height: number): string {
 }
 
 export function MarqueeSection() {
+  const isMobile = useMediaQuery("(max-width: 900px)");
   const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
+    if (isMobile) return;
     const el = containerRef.current;
     if (!el) return;
 
@@ -31,7 +35,9 @@ export function MarqueeSection() {
     observer.observe(el);
 
     return () => observer.disconnect();
-  }, []);
+  }, [isMobile]);
+
+  if (isMobile) return null;
 
   return (
     <section className="marquee-section" aria-hidden="true">

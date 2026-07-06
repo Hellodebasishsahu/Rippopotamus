@@ -18,6 +18,14 @@ export function consumerErrorMessage(message: string, fallback = "Download faile
     .trim();
   const lower = cleaned.toLowerCase();
 
+  if (
+    lower.includes("your network is blocking") ||
+    lower.includes("connection reset by peer") ||
+    lower.includes("curl: (35)") ||
+    lower.includes("airtel.in/dot")
+  ) {
+    return "Your network is blocking this site. Turn on a VPN (Settings → Network access) and try again.";
+  }
   if (/unsupported url/i.test(cleaned)) {
     return "This link is not supported yet.";
   }

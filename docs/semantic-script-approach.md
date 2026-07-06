@@ -121,7 +121,7 @@ Current implementation:
 
 - `experiments/semantic-script/gemini_narrate.py`
 - `experiments/semantic-script/semantic_script.py`
-- `src/rippopotamus/gemini_embeddings.py`
+- `experiments/semantic-script/gemini_embeddings.py`
 
 SQLite is good enough for the local prototype. It keeps the experiment simple and lets us test retrieval quality without setting up cloud plumbing too early.
 

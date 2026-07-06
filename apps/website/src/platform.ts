@@ -1,7 +1,8 @@
 import type { IconDef } from "./MarqueeIcons";
 import { appleIcon, linuxIcon, windowsIcon } from "./MarqueeIcons";
 
-export const APP_VERSION = "0.1.0";
+export const RELEASES_LATEST_PAGE = "https://github.com/Hellodebasishsahu/Rippopotamus/releases/latest";
+export const RELEASES_LATEST_API = "https://api.github.com/repos/Hellodebasishsahu/Rippopotamus/releases/latest";
 
 export type OsPlatform = "mac" | "windows" | "linux" | "ios" | "android" | "unknown";
 
@@ -15,8 +16,10 @@ export type DownloadCta = {
 };
 
 const downloads = {
-  mac: `/downloads/Rippopotamus-${APP_VERSION}-arm64.dmg`,
-  // Set when a Windows installer is hosted under public/downloads/.
+  // Release page as the no-JS baseline; DownloadCta upgrades to the direct
+  // .dmg asset URL from the GitHub API after mount.
+  mac: RELEASES_LATEST_PAGE,
+  // Set when a Windows installer asset ships with releases.
   windows: null as string | null,
 } as const;
 
@@ -48,7 +51,6 @@ function macCta(): DownloadCta {
     href: downloads.mac,
     icon: appleIcon,
     available: true,
-    download: true,
   };
 }
 

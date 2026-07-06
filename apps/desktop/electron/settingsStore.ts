@@ -6,7 +6,6 @@ import type { CookieSource } from "./cookies";
 export type Settings = {
   cookieSource?: CookieSource;
   cookiesBrowser?: string;
-  networkProxy?: string;
   outputRoot?: string;
   aria2MaxConnections?: number;
   aria2DownloadLimit?: string;
@@ -37,21 +36,6 @@ export function currentOutputRoot(): string {
   const saved = readSettings().outputRoot;
   if (saved && typeof saved === "string" && saved.trim()) return saved;
   return defaultOutputRoot();
-}
-
-export function currentNetworkProxy(): string {
-  const saved = readSettings().networkProxy;
-  if (saved && typeof saved === "string" && saved.trim()) return saved.trim().slice(0, 400);
-  return process.env.RIPPO_NETWORK_PROXY || "";
-}
-
-export function writeNetworkProxy(proxy: string): string {
-  const normalized = proxy.trim().slice(0, 400);
-  const settings = readSettings();
-  if (normalized) settings.networkProxy = normalized;
-  else delete settings.networkProxy;
-  writeSettings(settings);
-  return normalized;
 }
 
 export type TransferSettings = {

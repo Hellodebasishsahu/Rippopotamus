@@ -32,6 +32,8 @@ export type QueueItem = {
   metadata?: Extract<FetchResponse, { ok: true }>["metadata"];
   error?: string;
   progress?: number;
+  speed?: string | null;
+  eta?: string | null;
   stage?: string;
   phase?: string;
   phaseIndex?: number;
@@ -58,25 +60,59 @@ export function queueItemProgress(item: QueueItem): number | null {
   return Math.max(2, Math.round(item.progress || 0));
 }
 
-export type QueueItemStatusParts = { label: string; detail: string };
+export type QueueItemStatusParts = { label: string; detail: string; speed: string; eta: string };
 
-/** Split download progress line: label (percent / phase) vs detail (speed · ETA from stage). */
+export function queueItemSizeLabel(item: QueueItem): string {
+  const fromMeta = item.metadata?.filesize ?? item.metadata?.filesize_approx ?? null;
+  if (fromMeta != null && Number.isFinite(fromMeta) && fromMeta > 0) {
+    return formatBytes(fromMeta) ?? "—";
+  }
+  const lastFile = item.files?.length ? item.files[item.files.length - 1] : null;
+  const fileSize = typeof lastFile === "object" && lastFile ? lastFile.size : null;
+  if (fileSize != null && Number.isFinite(fileSize) && fileSize > 0) {
+    return formatBytes(fileSize) ?? "—";
+  }
+  return "—";
+}
+
+function formatBytes(n: number): string | null {
+  if (!Number.isFinite(n) || n <= 0) return null;
+  if (n < 1024) return `${Math.round(n)} B`;
+  const units = ["KB", "MB", "GB", "TB"];
+  let v = n / 1024;
+  let u = 0;
+  while (v >= 1024 && u < units.length - 1) {
+    v /= 1024;
+    u += 1;
+  }
+  return `${v < 10 ? v.toFixed(1) : Math.round(v)} ${units[u]}`;
+}
+
+/** Split download progress: percent label, speed, and ETA for table columns. */
 export function queueItemStatusParts(item: QueueItem): QueueItemStatusParts {
+  const empty = { label: "", detail: "", speed: "—", eta: "—" };
   if (item.status !== QUEUE_STATUS.downloading) {
-    return { label: queueStatusLabels[item.status], detail: "" };
+    const stage = item.stage?.trim();
+    const label = stage && (item.status === QUEUE_STATUS.queued || item.status === QUEUE_STATUS.resolving)
+      ? stage
+      : queueStatusLabels[item.status];
+    return { ...empty, label };
   }
   const progress = queueItemProgress(item);
   if (item.finalizing) {
-    return { label: item.stage || "Finalizing...", detail: "" };
+    return { ...empty, label: item.stage || "Finalizing..." };
   }
+  const speed = item.speed?.trim() || "—";
+  const eta = item.eta?.replace(/\s*left$/i, "").trim() || "—";
   let detail = "";
-  const stage = item.stage?.trim();
-  if (stage) {
-    const comma = stage.indexOf(",");
-    detail = comma >= 0 ? `${stage.slice(0, comma).trim()} · ${stage.slice(comma + 1).trim()}` : stage;
+  if (speed !== "—" && eta !== "—") detail = `${speed} · ${eta}`;
+  else if (speed !== "—") detail = speed;
+  else if (item.stage?.trim()) {
+    const comma = item.stage.indexOf(",");
+    detail = comma >= 0 ? `${item.stage.slice(0, comma).trim()} · ${item.stage.slice(comma + 1).trim()}` : item.stage;
   }
-  if (item.phase) return { label: `${item.phase} · ${progress}%`, detail };
-  return { label: `${progress}%`, detail };
+  if (item.phase) return { label: `${item.phase} · ${progress}%`, detail, speed, eta };
+  return { label: `${progress}%`, detail, speed, eta };
 }
 
 export function queueItemStatusText(item: QueueItem): string {

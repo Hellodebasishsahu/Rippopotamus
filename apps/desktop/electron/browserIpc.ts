@@ -6,11 +6,13 @@ import {
   firstHeaderValue,
   hasStrongMedia,
   isAllowedProbePageUrl,
+  isLikelyAdOrTrackingUrl,
   isRejectedUrl,
   probePageContentKey,
   sortedProbeCandidates,
   validateProbeUrl,
   type PageProbeCandidate,
+  type PageProbeCandidateKind,
   type PendingProbeCandidate,
 } from "./pageProbePolicy";
 import { runEngine } from "./engineProcess";
@@ -103,6 +105,13 @@ const PAGE_PROBE_CACHE_TTL_MS = 10 * 60_000;
 const PAGE_PROBE_CACHE_MAX = 80;
 const SERP_SCOUT_TIMEOUT_MS = 18_000;
 const PAGE_PROBE_MAX_TRACKED_REQUESTS = 1_000;
+// Embedded-player resolution: only the top-level page resolves embeds, and only
+// a bounded set, since each one spawns the engine (yt-dlp/gallery-dl).
+const PAGE_PROBE_EMBED_LIMIT = 6;
+const PAGE_PROBE_EMBED_CONCURRENCY = 2;
+const PAGE_PROBE_EMBED_TIMEOUT_MS = 12_000;
+// How long to wait after provoking playback for lazy HLS/DASH manifests to fire.
+const PAGE_PROBE_PROVOKE_WAIT_MS = 1_400;
 
 // ---------------------------------------------------------------------------
 // State
@@ -128,6 +137,7 @@ const pageProbeCache = new Map<string, { storedAt: number; response: PageProbeRe
 const DOM_EXTRACT_SCRIPT = `(() => {
   const media = [];
   const links = [];
+  const embeds = [];
   const push = (url, label, contentType) => {
     if (typeof url === "string" && url.trim()) media.push({ url: url.trim(), label, contentType });
   };
@@ -204,6 +214,7 @@ const DOM_EXTRACT_SCRIPT = `(() => {
     const src = el.src || el.getAttribute("src") || el.getAttribute("data") || "";
     push(src, el.tagName.toLowerCase(), el.type || "");
     links.push({ url: src, text: "" });
+    if (typeof src === "string" && src.trim()) embeds.push(src.trim());
   }
 
   // 6. Data attributes on player containers
@@ -235,7 +246,31 @@ const DOM_EXTRACT_SCRIPT = `(() => {
     links.push(...Array.from(text.matchAll(/https?:\\\\?\\/\\\\?\\/[^"'<>\\s\\\\]+/g)).map((m) => ({ url: cleanUrl(m[0]) })));
   }
 
-  return { media, links };
+  return { media, links, embeds };
+})()`;
+
+// ---------------------------------------------------------------------------
+// Playback provocation — injected to surface lazy-loaded streams
+// ---------------------------------------------------------------------------
+// Many sites only request the master .m3u8/.mpd after a play gesture. We mute
+// and call play() on every media element, and click likely play controls
+// (skipping anchors so we don't navigate away from the page).
+// ---------------------------------------------------------------------------
+
+const PLAY_PROVOKE_SCRIPT = `(() => {
+  try {
+    for (const m of document.querySelectorAll("video, audio")) {
+      try { m.muted = true; const p = m.play(); if (p && p.catch) p.catch(() => {}); } catch {}
+    }
+    const selector = '[class*="play" i], [aria-label*="play" i], [title*="play" i], button.ytp-large-play-button, .vjs-big-play-button';
+    let clicks = 0;
+    for (const el of document.querySelectorAll(selector)) {
+      if (clicks >= 8) break;
+      if (el.tagName === "A" && el.getAttribute("href")) continue;
+      try { el.click(); clicks += 1; } catch {}
+    }
+  } catch {}
+  return true;
 })()`;
 
 // ---------------------------------------------------------------------------
@@ -249,7 +284,89 @@ export function browserSerpEnabled(): boolean {
   return ["1", "true", "yes", "on"].includes((process.env.RIPPO_SERP_BROWSER || "").trim().toLowerCase());
 }
 
-async function probePage(inputUrl: unknown, timeoutMs = PAGE_PROBE_TIMEOUT_MS, options: { fastSettle?: boolean } = {}): Promise<PageProbeResponse> {
+// ---------------------------------------------------------------------------
+// Embedded-player resolution via the engine (yt-dlp / gallery-dl)
+// ---------------------------------------------------------------------------
+
+type EngineFetchResult = {
+  ok?: boolean;
+  metadata?: {
+    title?: string;
+    extractor?: string;
+    webpage_url?: string;
+    duration?: number;
+    // Set when the engine only scraped OpenGraph/title tags rather than
+    // confirming a downloadable extraction — not a real media embed.
+    provisional?: boolean;
+  };
+};
+
+function runEngineWithTimeout(args: string[], timeoutMs: number): Promise<unknown> {
+  let cancel: (() => void) | null = null;
+  const run = runEngine(args, undefined, {}, (fn) => {
+    cancel = fn;
+  });
+  const timeout = new Promise<never>((_resolve, reject) => {
+    setTimeout(() => {
+      cancel?.();
+      reject(new Error("Embed resolution timed out."));
+    }, timeoutMs).unref();
+  });
+  return Promise.race([run, timeout]);
+}
+
+// For each discovered <iframe>/<embed>, ask the engine whether yt-dlp/gallery-dl
+// can extract it. A success means it's a real, directly-downloadable embed —
+// add it as a strong candidate (the headline "embedded player → its media").
+async function resolveEmbedCandidates(
+  embeds: string[],
+  pageUrl: string,
+  candidates: Map<string, PendingProbeCandidate>,
+): Promise<void> {
+  const seen = new Set<string>();
+  const targets: string[] = [];
+  for (const raw of embeds) {
+    let absolute: string;
+    try {
+      absolute = new URL(raw, pageUrl).toString();
+    } catch {
+      continue;
+    }
+    if (!isAllowedProbePageUrl(absolute)) continue;
+    if (isLikelyAdOrTrackingUrl(absolute)) continue;
+    if (seen.has(absolute)) continue;
+    seen.add(absolute);
+    targets.push(absolute);
+    if (targets.length >= PAGE_PROBE_EMBED_LIMIT) break;
+  }
+
+  await runWithConcurrency(targets, PAGE_PROBE_EMBED_CONCURRENCY, async (embedUrl) => {
+    try {
+      // --full skips the OpenGraph preview shortcut and forces a real
+      // yt-dlp/gallery-dl extraction, which is what confirms a downloadable
+      // embed (e.g. a youtube.com/embed iframe → the actual watch URL).
+      const payload = (await runEngineWithTimeout(
+        ["fetch", "--url", embedUrl, "--provider", "auto", "--full"],
+        PAGE_PROBE_EMBED_TIMEOUT_MS,
+      )) as EngineFetchResult;
+      if (!payload?.ok || !payload.metadata) return;
+      const meta = payload.metadata;
+      // Provisional = OG/title scrape only; not a confirmed downloadable embed.
+      if (meta.provisional) return;
+      const target = meta.webpage_url || embedUrl;
+      const label = meta.title
+        ? `${meta.extractor || "Embed"}: ${meta.title}`.slice(0, 140)
+        : meta.extractor || "Embedded media";
+      const kind: PageProbeCandidateKind = "video";
+      addProbeCandidate(candidates, target, "embed", "GET", undefined, label, kind);
+    } catch {
+      // Unsupported URL, private, or timed out — not a resolvable embed.
+      undefined;
+    }
+  });
+}
+
+async function probePage(inputUrl: unknown, timeoutMs = PAGE_PROBE_TIMEOUT_MS, options: { fastSettle?: boolean; provoke?: boolean; loadImages?: boolean; resolveEmbeds?: boolean } = {}): Promise<PageProbeResponse> {
   const startedAt = Date.now();
   let targetUrl = "";
   const candidates = new Map<string, PendingProbeCandidate>();
@@ -325,7 +442,9 @@ async function probePage(inputUrl: unknown, timeoutMs = PAGE_PROBE_TIMEOUT_MS, o
         contextIsolation: true,
         nodeIntegration: false,
         sandbox: true,
-        images: false,
+        // Top-level scans load images so preview/thumbnail media is captured;
+        // deeplink children stay image-free for speed.
+        images: options.loadImages === true,
         javascript: true,
       },
     });
@@ -368,11 +487,23 @@ async function probePage(inputUrl: unknown, timeoutMs = PAGE_PROBE_TIMEOUT_MS, o
     if (timedOut && !win.isDestroyed()) win.webContents.stop();
     if (!fastSettled) await new Promise((resolve) => setTimeout(resolve, 650));
 
+    // Provoke playback so lazy-loaded HLS/DASH manifests are requested (and
+    // captured by the network listeners above) before we read the DOM.
+    if (options.provoke && !timedOut && win && !win.isDestroyed()) {
+      try {
+        await win.webContents.executeJavaScript(PLAY_PROVOKE_SCRIPT, true);
+        await new Promise((resolve) => setTimeout(resolve, PAGE_PROBE_PROVOKE_WAIT_MS));
+      } catch {
+        undefined;
+      }
+    }
+
     if (!win.isDestroyed()) {
       try {
         const domResult = await win.webContents.executeJavaScript(DOM_EXTRACT_SCRIPT, true) as {
           media?: DomProbeCandidate[];
           links?: ProbePageLink[];
+          embeds?: string[];
         };
         const pageUrl = win.webContents.getURL();
         for (const candidate of domResult.media || []) {
@@ -391,6 +522,13 @@ async function probePage(inputUrl: unknown, timeoutMs = PAGE_PROBE_TIMEOUT_MS, o
           } catch {
             undefined;
           }
+        }
+        if (options.resolveEmbeds) {
+          // Resolve the page itself plus any iframes. Resolving the page URL is
+          // what makes direct-provider pages (xHamster, YouTube watch pages, and
+          // ~1800 other sites) work reliably without depending on network
+          // sniffing — the video is often the page's own player, not an iframe.
+          await resolveEmbedCandidates([pageUrl, ...(domResult.embeds || [])], pageUrl, candidates);
         }
       } catch {
         undefined;
@@ -521,7 +659,7 @@ function mergePageProbeResponses(source: PageProbeResponse, children: PageProbeR
 
 async function probePageWithDeeplinks(url: string): Promise<PageProbeResponse> {
   const startedAt = Date.now();
-  const source = await probePage(url, PAGE_PROBE_TIMEOUT_MS, { fastSettle: false });
+  const source = await probePage(url, PAGE_PROBE_TIMEOUT_MS, { fastSettle: false, provoke: true, loadImages: true, resolveEmbeds: true });
   if (!source.ok || !source.pageLinks?.length) return source;
   if (hasStrongMedia(source.candidates) && source.candidates.filter((c) => c.score >= 40).length >= 3) return source;
   const linksToCrawl = source.pageLinks.slice(0, PAGE_PROBE_DEEPLINK_CRAWL_LIMIT);

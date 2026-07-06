@@ -1,29 +1,28 @@
 {
   "name": "rippopotamus",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "description": "Feed it links. It spits out assets.",
-  "packageManager": "npm@11.12.1",
   "workspaces": [
     "apps/desktop",
     "apps/website"
   ],
   "scripts": {
-    "dev": "npm run dev --workspace @rippopotamus/desktop",
-    "dev:desktop": "npm run dev --workspace @rippopotamus/desktop",
-    "dev:website": "npm run dev --workspace @rippopotamus/website",
-    "build": "npm run build --workspace @rippopotamus/desktop",
-    "build:desktop": "npm run build --workspace @rippopotamus/desktop",
-    "build:website": "npm run build --workspace @rippopotamus/website",
-    "build:ui": "npm run build:ui --workspace @rippopotamus/desktop",
-    "build:electron": "npm run build:electron --workspace @rippopotamus/desktop",
+    "dev": "node scripts/run-workspace.mjs @rippopotamus/desktop dev",
+    "dev:desktop": "node scripts/run-workspace.mjs @rippopotamus/desktop dev",
+    "dev:website": "node scripts/run-workspace.mjs @rippopotamus/website dev",
+    "build": "node scripts/run-workspace.mjs @rippopotamus/desktop build",
+    "build:desktop": "node scripts/run-workspace.mjs @rippopotamus/desktop build",
+    "build:website": "node scripts/run-workspace.mjs @rippopotamus/website build",
+    "build:ui": "node scripts/run-workspace.mjs @rippopotamus/desktop build:ui",
+    "build:electron": "node scripts/run-workspace.mjs @rippopotamus/desktop build:electron",
     "prepare:ffmpeg:mac": "node scripts/install-ffmpeg-static-target.mjs darwin arm64",
     "prepare:aria2:mac": "node scripts/install-aria2c-resource.mjs darwin",
-    "package:mac": "npm run prepare:ffmpeg:mac && npm run prepare:aria2:mac && npm run build:desktop && npm run package:mac --workspace @rippopotamus/desktop",
+    "package:mac": "node scripts/install-ffmpeg-static-target.mjs darwin arm64 && node scripts/install-aria2c-resource.mjs darwin && node scripts/run-workspace.mjs @rippopotamus/desktop build && node scripts/run-workspace.mjs @rippopotamus/desktop package:mac",
     "prepare:ffmpeg:win": "node scripts/install-ffmpeg-static-target.mjs win32 x64",
     "prepare:aria2:win": "node scripts/install-aria2c-resource.mjs win32",
-    "package:win": "npm run prepare:ffmpeg:win && npm run prepare:aria2:win && npm run build:desktop && npm run package:win --workspace @rippopotamus/desktop",
-    "package:win:ci": "npm run package:win && npm run verify:package:win",
+    "package:win": "node scripts/install-ffmpeg-static-target.mjs win32 x64 && node scripts/install-aria2c-resource.mjs win32 && node scripts/run-workspace.mjs @rippopotamus/desktop build && node scripts/run-workspace.mjs @rippopotamus/desktop package:win",
+    "package:win:ci": "node scripts/install-ffmpeg-static-target.mjs win32 x64 && node scripts/install-aria2c-resource.mjs win32 && node scripts/run-workspace.mjs @rippopotamus/desktop build && node scripts/run-workspace.mjs @rippopotamus/desktop package:win && node scripts/verify-package-artifact.mjs win",
     "verify:package:mac": "node scripts/verify-package-artifact.mjs mac",
     "verify:package:win": "node scripts/verify-package-artifact.mjs win",
     "verify:package:mac:engine": "node scripts/verify-packaged-engine-health.mjs mac",
@@ -33,5 +32,5 @@
   },
   "keywords": [],
   "author": "",
-  "license": "UNLICENSED"
+  "license": "MIT"
 }

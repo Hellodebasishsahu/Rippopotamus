@@ -1,7 +1,7 @@
 import { app, BrowserWindow } from "electron";
 import path from "node:path";
 import { registerCookieIpcHandlers } from "./cookiesIpc";
-import { registerToolUpdateIpcHandlers } from "./toolUpdatesIpc";
+import { registerHelperIpcHandlers } from "./helperRegistry";
 import { registerAppUpdateIpcHandlers } from "./appUpdatesIpc";
 import { registerShellOutputIpcHandlers } from "./shellOutputIpc";
 import { registerLibraryIpcHandlers } from "./libraryIpc";
@@ -49,7 +49,7 @@ app.whenReady().then(() => {
   registerShellOutputIpcHandlers(() => mainWindow);
   registerCookieIpcHandlers();
 
-  registerToolUpdateIpcHandlers(engineIpc.engineHealthPayload);
+  registerHelperIpcHandlers(engineIpc.engineHealthPayload);
   registerAppUpdateIpcHandlers();
 
   createWindow();

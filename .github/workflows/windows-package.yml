@@ -34,6 +34,23 @@ jobs:
       - run: python -m pip install -e .
       - run: npm ci
       - run: npm test
+
+      # The runner's PATH aria2c.exe is a Chocolatey shim that breaks when copied
+      # out of place — fetch the real static binary from the official release.
+      - name: Fetch aria2c static binary
+        shell: pwsh
+        run: |
+          $url = "https://github.com/aria2/aria2/releases/download/release-1.37.0/aria2-1.37.0-win-64bit-build1.zip"
+          Invoke-WebRequest -Uri $url -OutFile aria2.zip
+          $hash = (Get-FileHash aria2.zip -Algorithm SHA256).Hash.ToLower()
+          if ($hash -ne "67d015301eef0b612191212d564c5bb0a14b5b9c4796b76454276a4d28d9b288") {
+            throw "aria2 download hash mismatch: $hash"
+          }
+          Expand-Archive aria2.zip -DestinationPath aria2-tmp
+          $exe = Get-ChildItem aria2-tmp -Recurse -Filter aria2c.exe | Select-Object -First 1
+          & $exe.FullName --version
+          "RIPPO_ARIA2C_SOURCE=$($exe.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append
+
       - run: npm run package:win:ci
       - run: npm run verify:package:win:engine
 
@@ -41,3 +58,8 @@ jobs:
         with:
           name: rippopotamus-win-unpacked
           path: release/win-unpacked
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: rippopotamus-win-installer
+          path: release/Rippopotamus-Setup-*.exe

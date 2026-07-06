@@ -1,7 +1,7 @@
 {
   "name": "@rippopotamus/desktop",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Rippopotamus desktop app",
   "type": "commonjs",
   "main": "dist-electron/main.js",
@@ -11,7 +11,7 @@
     "build:ui": "tsc -p tsconfig.json --noEmit && vite build",
     "build:electron": "tsc -p tsconfig.electron.json",
     "package:mac": "electron-builder --mac dmg",
-    "package:win": "electron-builder --win dir --x64"
+    "package:win": "electron-builder --win dir nsis --x64"
   },
   "dependencies": {
     "@ghostery/adblocker-electron": "^2.17.0",
@@ -28,7 +28,7 @@
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^6.0.1",
     "concurrently": "^9.2.1",
-    "electron": "^41.5.1",
+    "electron": "41.5.1",
     "electron-builder": "^26.8.1",
     "typescript": "^6.0.3",
     "vite": "^8.0.11",
@@ -50,7 +50,13 @@
     "extraResources": [
       {
         "from": "../../src/rippopotamus",
-        "to": "engine/rippopotamus"
+        "to": "engine/rippopotamus",
+        "filter": [
+          "**/*",
+          "!**/__pycache__/**",
+          "!**/*.pyc",
+          "!**/*.pyo"
+        ]
       },
       {
         "from": "../../pyproject.toml",
@@ -74,8 +80,13 @@
     "win": {
       "icon": "public/brand-logo.ico",
       "target": [
-        "dir"
+        "dir",
+        "nsis"
       ]
+    },
+    "nsis": {
+      "oneClick": true,
+      "artifactName": "Rippopotamus-Setup-${version}.exe"
     }
   }
 }

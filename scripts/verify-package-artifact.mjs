@@ -36,6 +36,23 @@ function readPrefix(filePath, length) {
   }
 }
 
+function assertNoCompiledPython(dirPath, label) {
+  const absolute = path.join(root, dirPath);
+  if (!fs.existsSync(absolute)) return;
+
+  for (const entry of fs.readdirSync(absolute, { withFileTypes: true })) {
+    const entryPath = path.join(absolute, entry.name);
+    if (entry.isDirectory()) {
+      if (entry.name === "__pycache__") {
+        fail(`${label} must not contain __pycache__: ${path.relative(root, entryPath)}`);
+      }
+      assertNoCompiledPython(path.relative(root, entryPath), label);
+    } else if (entry.isFile() && (entry.name.endsWith(".pyc") || entry.name.endsWith(".pyo"))) {
+      fail(`${label} must not contain compiled Python bytecode: ${path.relative(root, entryPath)}`);
+    }
+  }
+}
+
 function assertDmg(filePath) {
   const absolute = assertFile(filePath, "macOS DMG artifact");
   if (process.platform !== "darwin") return absolute;
@@ -61,6 +78,7 @@ if (target === "win") {
       fail(`Expected PE executable header in ${path.relative(root, file)}`);
     }
   }
+  assertNoCompiledPython("release/win-unpacked/resources/engine", "Windows packaged engine");
   console.log("Windows package artifact shape is valid.");
 } else if (target === "mac") {
   assertDmg("release/Rippopotamus-0.1.0-arm64.dmg");
@@ -86,6 +104,7 @@ if (target === "win") {
       fail(`Expected Mach-O executable header in ${path.relative(root, file)}`);
     }
   }
+  assertNoCompiledPython("release/mac-arm64/Rippopotamus.app/Contents/Resources/engine", "macOS packaged engine");
   console.log("macOS package artifact shape is valid.");
 } else {
   fail("Usage: node scripts/verify-package-artifact.mjs <mac|win>");

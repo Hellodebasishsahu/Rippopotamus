@@ -6,8 +6,6 @@ declare global {
       health: () => Promise<EngineHealth>;
       probePage: (url: string, options?: PageProbeOptions) => Promise<PageProbeResponse>;
       clearSniffCache: () => Promise<{ ok: boolean }>;
-      setNetworkProxy: (proxy: string) => Promise<{ networkProxy: string; health: EngineHealth }>;
-      checkNetworkProxy: (proxy: string) => Promise<NetworkProxyCheckResponse>;
       setTransferSettings: (payload: Partial<TransferSettings>) => Promise<{ transfer: TransferSettings; health: EngineHealth }>;
       fetch: (url: string, provider?: ProviderId | "auto", cookieSource?: CookieSource) => Promise<FetchResponse>;
       fetchFull: (url: string, provider?: ProviderId | "auto", cookieSource?: CookieSource) => Promise<FetchResponse>;
@@ -19,16 +17,16 @@ declare global {
       listBrowsers: () => Promise<CookiesBrowserResponse>;
       setDefaultCookieSource: (source: CookieSource) => Promise<CookiesBrowserResponse>;
       setCookiesBrowser: (browserId: string | null) => Promise<CookiesBrowserResponse>;
-      checkYtDlpUpdate: () => Promise<YtDlpUpdateInfo>;
-      updateYtDlp: () => Promise<YtDlpUpdateResult>;
-      checkGalleryDlUpdate: () => Promise<GalleryDlUpdateInfo>;
-      updateGalleryDl: () => Promise<GalleryDlUpdateResult>;
+      checkHelpers: () => Promise<HelperCheckResult[]>;
+      updateHelpers: () => Promise<HelperUpdateResult[]>;
       checkAppUpdate: () => Promise<AppUpdateInfo>;
       chooseOutputRoot: () => Promise<{ outputRoot: string; canceled: boolean }>;
       resetOutputRoot: () => Promise<{ outputRoot: string }>;
+      listLibrary: (payload?: LibraryListRequest) => Promise<LibraryListResponse>;
+      loadLibraryThumbnail: (path: string) => Promise<LibraryThumbnailResult>;
+      openPath: (target: string) => Promise<void>;
+      showItemInFolder: (target: string) => Promise<void>;
       onDownloadEvent: (callback: (event: DownloadEvent) => void) => () => void;
-      importSheet: (payload: SheetImportRequest) => Promise<SheetImportResponse>;
-      onSheetImportEvent: (callback: (event: SheetImportEvent) => void) => () => void;
     };
   }
 }
@@ -60,8 +58,6 @@ export type EngineHealth = {
   providers?: ProviderOption[];
   presets?: PresetOption[];
   outputRoot: string;
-  networkProxy?: string;
-  networkProxyEnabled?: boolean;
   transfer?: TransferSettings;
   aria2MaxConnections?: number;
   aria2DownloadLimit?: string;
@@ -87,13 +83,6 @@ export type AppUpdateInfo = {
 };
 
 export type BrowserInfo = { id: string; label: string; appPath: string };
-
-export type NetworkProxyCheckResponse = {
-  ok: boolean;
-  proxy: string;
-  ip?: string | null;
-  error?: string;
-};
 
 export type CookieSource = {
   mode: "off";
@@ -186,24 +175,21 @@ export type PageProbeResponse = {
   cachedAt?: number;
 };
 
-export type YtDlpUpdateInfo = {
+export type HelperCheckResult = {
+  name: string;
   currentVersion: string | null;
   latestVersion: string | null;
+  updatable: boolean;
   updateAvailable: boolean;
-  binaryPath: string;
-  managedBinaryExists: boolean;
-  downloadUrl?: string;
   error?: string;
 };
 
-export type YtDlpUpdateResult = YtDlpUpdateInfo & {
-  health: EngineHealth;
-};
-
-export type GalleryDlUpdateInfo = YtDlpUpdateInfo;
-
-export type GalleryDlUpdateResult = GalleryDlUpdateInfo & {
-  health: EngineHealth;
+export type HelperUpdateResult = {
+  name: string;
+  from: string | null;
+  to: string | null;
+  ok: boolean;
+  error?: string;
 };
 
 export type FetchResponse = {
@@ -251,47 +237,6 @@ export type DownloadCancelResponse = {
   error?: string;
 };
 
-export type SheetImportRequest = {
-  sheetUrl: string;
-  outputRoot: string;
-  projectName?: string;
-  sheetName?: string;
-  jobId?: string;
-  cookieSource?: CookieSource;
-  state?: string;
-  pc?: string;
-  status?: string;
-  limit?: number;
-  requireMaster?: boolean;
-  downloadMaster?: boolean;
-};
-
-export type SheetImportResponse = {
-  jobId: string;
-  ok: boolean;
-  result?: unknown;
-  error?: string;
-};
-
-export type SheetImportEvent = {
-  jobId?: string;
-  type?: string;
-  phase?: string;
-  sheetUrl?: string;
-  projectName?: string;
-  message?: string;
-  error?: string;
-  ok?: boolean;
-  projectRoot?: string;
-  manifestPath?: string;
-  totalRows?: number;
-  selectedRows?: number;
-  row?: number;
-  pcName?: string;
-  percent?: number;
-  [key: string]: unknown;
-};
-
 export type DownloadEvent = {
   jobId: string;
   type: "started" | "progress" | "stage" | "phase" | "success" | "error" | "notice" | "canceled";
@@ -306,5 +251,48 @@ export type DownloadEvent = {
   destination?: string;
   files?: Array<string | { path: string; size?: number | null }>;
   outputRoot?: string;
+  error?: string;
+};
+
+export type LibraryFile = {
+  path: string;
+  size?: number | null;
+};
+
+export type LibraryItemKind = "video" | "audio" | "image" | "document" | "file";
+
+export type LibraryItem = {
+  id: string;
+  url: string;
+  preset: string;
+  title: string;
+  kind: LibraryItemKind;
+  files: LibraryFile[];
+  fileCount: number;
+  totalSize?: number | null;
+  savedAt?: number | null;
+  primaryPath: string;
+};
+
+export type LibraryListRequest = {
+  outputRoot?: string;
+};
+
+export type LibraryListResponse = {
+  ok: boolean;
+  outputRoot: string;
+  items: LibraryItem[];
+  total: number;
+  /** Entries dropped because their files no longer exist on disk. */
+  missing?: number;
+  /** Entries dropped because the ledger record was malformed or unsafe. */
+  skipped?: number;
+  error?: string;
+};
+
+export type LibraryThumbnailResult = {
+  ok: boolean;
+  /** A data: URL (image/png or image/jpeg) ready to drop into an <img src>. */
+  dataUrl?: string;
   error?: string;
 };

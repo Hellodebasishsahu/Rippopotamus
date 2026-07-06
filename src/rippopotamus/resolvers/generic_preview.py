@@ -3,6 +3,8 @@ from __future__ import annotations
 import html
 import json
 import re
+import subprocess
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -46,20 +48,31 @@ def _attrs(raw: str) -> dict[str, str]:
     return {key.lower(): html.unescape(value.strip()) for key, _quote, value in ATTR_RE.findall(raw)}
 
 
-def _fetch_text(url: str, network_proxy: str | None, timeout: int = 6, limit: int = 2_000_000) -> str:
-    handlers: list[Any] = []
-    if network_proxy:
-        handlers.append(urllib.request.ProxyHandler({"http": network_proxy, "https": network_proxy}))
-    opener = urllib.request.build_opener(*handlers)
-    request = urllib.request.Request(
-        url,
-        headers={
-            "User-Agent": "Mozilla/5.0",
-            "Accept": "text/html,application/xhtml+xml,application/json;q=0.9,*/*;q=0.8",
-        },
-    )
+_FETCH_HEADERS = {
+    "User-Agent": "Mozilla/5.0",
+    "Accept": "text/html,application/xhtml+xml,application/json;q=0.9,*/*;q=0.8",
+}
+
+
+def _fetch_via_urllib(url: str, timeout: int, limit: int) -> str:
+    opener = urllib.request.build_opener()
+    request = urllib.request.Request(url, headers=_FETCH_HEADERS)
     with opener.open(request, timeout=timeout) as response:
         return response.read(limit).decode("utf-8", errors="ignore")
+
+
+def _fetch_text(url: str, timeout: int = 6, limit: int = 2_000_000, attempts: int = 3) -> str:
+    # Some networks reset ~1/3 of connections to certain domains (curl 35 /
+    # ConnectionResetError); a couple of retries turns that into a success.
+    last_error: Exception | None = None
+    for attempt in range(max(1, attempts)):
+        try:
+            return _fetch_via_urllib(url, timeout, limit)
+        except (ConnectionResetError, urllib.error.URLError, OSError, TimeoutError, subprocess.SubprocessError) as exc:
+            last_error = exc
+            if attempt + 1 < attempts:
+                time.sleep(1)
+    raise last_error if last_error else OSError("Failed to fetch page.")
 
 
 def _is_previewable_url(url: str) -> bool:
@@ -234,12 +247,12 @@ def _oembed_url(page: str, base_url: str) -> str | None:
     return None
 
 
-def _oembed_values(page: str, base_url: str, network_proxy: str | None) -> dict[str, Any]:
+def _oembed_values(page: str, base_url: str) -> dict[str, Any]:
     url = _oembed_url(page, base_url)
     if not url:
         return {}
     try:
-        payload = json.loads(_fetch_text(url, network_proxy, timeout=4, limit=200_000))
+        payload = json.loads(_fetch_text(url, timeout=4, limit=200_000))
     except (OSError, TimeoutError, urllib.error.URLError, json.JSONDecodeError):
         return {}
     if not isinstance(payload, dict):
@@ -252,11 +265,11 @@ def _oembed_values(page: str, base_url: str, network_proxy: str | None) -> dict[
     }
 
 
-def preview_metadata(url: str, network_proxy: str | None = None, provider: str = "yt-dlp") -> dict[str, Any] | None:
+def preview_metadata(url: str, provider: str = "yt-dlp") -> dict[str, Any] | None:
     if not _is_previewable_url(url):
         return None
     try:
-        page = _fetch_text(url, network_proxy)
+        page = _fetch_text(url)
     except (OSError, TimeoutError, urllib.error.URLError):
         return None
 
@@ -265,7 +278,7 @@ def preview_metadata(url: str, network_proxy: str | None = None, provider: str =
         return x_metadata
 
     jsonld = _jsonld_values(page)
-    oembed = _oembed_values(page, url, network_proxy)
+    oembed = _oembed_values(page, url)
     title = _first_meta(page, META_TITLE_KEYS) or oembed.get("title") or jsonld.get("title") or _page_title(page)
     description = _first_meta(page, META_DESCRIPTION_KEYS) or oembed.get("description") or jsonld.get("description")
     thumbnails = _all_meta_urls(page, META_IMAGE_KEYS, url)

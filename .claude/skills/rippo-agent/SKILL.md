@@ -89,7 +89,7 @@ Search the local library:
 ```bash
 PYTHONPATH=src python -m rippopotamus.agent_cli library-search \
   --index-root "$HOME/Library/Application Support/rippopotamus/library-index" \
-  --query "Rohtak Modi" \
+  --query "city hall rally" \
   --limit 10
 ```
 

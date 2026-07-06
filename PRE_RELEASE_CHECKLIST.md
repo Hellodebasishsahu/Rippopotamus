@@ -2,6 +2,17 @@
 
 Use this before cutting any local test build or sharing a macOS/Windows app package.
 
+## Current Run Status - 2026-07-06
+
+- Automated gate: passed with `npm test` (72 Python tests, desktop build, 41 Node tests).
+- Version bumped to `0.2.0` across root/desktop/website `package.json` and `pyproject.toml`; `CHANGELOG.md` added.
+- Open-source prep landed: MIT LICENSE, public README (now documents both `rippo` and `rippo-engine` surfaces), CONTRIBUTING.md, test CI workflow, `docs/gtm/` untracked.
+- Packaging hygiene fixed: `after-pack.cjs` prunes `__pycache__`/`.pyc`/`.pyo` from the packaged engine, `verify-package-artifact.mjs` fails on any compiled Python in the bundle, and the desktop `extraResources` entry filters bytecode at copy time.
+- Dead-feature cleanup: sheet-link strings removed from intake status, unused `BrandIcon.tsx` deleted.
+- Thumbnail scoring comment in `pageProbePolicy.ts` synced with behavior (thumbnails kept at score 10, not rejected).
+- App updates now ship via GitHub Releases: the app checks `releases/latest` on this repo and offers the platform asset (`.dmg` / `.exe`) in the browser. Cutting a release = tag `vX.Y.Z` + `gh release create` with the DMG attached. `RIPPO_APP_UPDATE_MANIFEST_URL` remains a dev override.
+- Remaining external release blockers (unchanged): Python/yt-dlp/gallery-dl runtime is not frozen into the package (`build-engine.sh`/PyInstaller path exists but is not wired into `package:mac`/`package:win`), no signing/notarization/installer, and no GUI smoke on real Windows hardware.
+
 ## Current Run Status - 2026-05-09
 
 - Automated gate: passed with `npm test`.
