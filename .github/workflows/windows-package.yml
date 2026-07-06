@@ -31,7 +31,12 @@ jobs:
         with:
           python-version: "3.13"
 
-      - run: python -m pip install -e .
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: apps/desktop/src-tauri
+
+      - run: python -m pip install -e ".[engine-build]"
       - run: npm ci
       - run: npm test
 
@@ -51,15 +56,28 @@ jobs:
           & $exe.FullName --version
           "RIPPO_ARIA2C_SOURCE=$($exe.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append
 
-      - run: npm run package:win:ci
-      - run: npm run verify:package:win:engine
+      # Tauri packaging: frozen engine (--onedir) + ffmpeg + aria2c staged as
+      # Tauri resources, then the real NSIS installer. No update signing here
+      # — that only happens in release.yml, which has the secrets.
+      - run: npm run package:tauri:win
+        shell: bash
+
+      # The NSIS build output is just the installer; resources only exist
+      # once installed. Install silently, then point the health check at
+      # wherever the installer actually put rippo-engine.exe.
+      - name: Silent-install and locate resources
+        shell: pwsh
+        run: |
+          $installer = Get-ChildItem apps/desktop/src-tauri/target/release/bundle/nsis -Filter "*-setup.exe" | Select-Object -First 1
+          Start-Process -FilePath $installer.FullName -ArgumentList "/S" -Wait
+          $engine = Get-ChildItem "$env:LOCALAPPDATA","$env:ProgramFiles","${env:ProgramFiles(x86)}" -Recurse -Filter "rippo-engine.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
+          if (-not $engine) { throw "Could not locate installed rippo-engine.exe after silent install." }
+          $resources = Split-Path (Split-Path $engine.FullName -Parent) -Parent
+          "RIPPO_VERIFY_RESOURCES=$resources" | Out-File -FilePath $env:GITHUB_ENV -Append
+
+      - run: node scripts/verify-packaged-engine-health.mjs win-tauri
 
       - uses: actions/upload-artifact@v4
         with:
-          name: rippopotamus-win-unpacked
-          path: release/win-unpacked
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: rippopotamus-win-installer
-          path: release/Rippopotamus-Setup-*.exe
+          name: rippopotamus-win-nsis
+          path: apps/desktop/src-tauri/target/release/bundle/nsis/*-setup.exe

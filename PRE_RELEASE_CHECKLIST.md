@@ -2,6 +2,50 @@
 
 Use this before cutting any local test build or sharing a macOS/Windows app package.
 
+## Release ritual (Tauri, P3) - 2026-07-06
+
+The desktop shell is migrating Electron -> Tauri v2 (`docs/tauri-migration-lld.md`).
+As of P3, packaging + signed auto-update are wired through Tauri; Electron is
+still present for now (deleted in the P4 teardown) but is no longer what ships.
+
+**Cutting a real release:**
+
+1. Bump `version` in `apps/desktop/src-tauri/tauri.conf.json` (and
+   `package.json` files) to match.
+2. Commit, then push a `vX.Y.Z` tag. This triggers `.github/workflows/release.yml`,
+   which:
+   - builds the frozen engine (`--onedir`), ffmpeg, aria2c as Tauri resources
+     on both `macos-latest` and `windows-latest`;
+   - builds the signed bundles (`.dmg`/`.app.tar.gz` on macOS,
+     NSIS `.exe`/`.nsis.zip` on Windows) using the
+     `TAURI_SIGNING_PRIVATE_KEY` / `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` repo
+     secrets (`tauri signer generate` keypair; public half is committed in
+     `tauri.conf.json`'s `plugins.updater.pubkey`);
+   - assembles `latest.json` from both platforms' `.sig` files and publishes
+     a GitHub Release with all artifacts + the manifest attached.
+3. `tauri-plugin-updater` on running apps reads
+   `releases/latest/download/latest.json` and offers an in-place
+   download-and-install (Settings -> "Install update"), no browser/DMG
+   re-drag needed. The legacy `check_app_update` Rust command stays as a
+   lightweight version-display fallback only.
+4. A true in-place update (vOLD -> vNEW) can only be validated once two real
+   releases exist — cut the next tag and confirm a vOLD install offers and
+   installs vNEW.
+
+**Local test packaging** (no signing, mirrors the CI package workflows):
+
+```bash
+npm run package:tauri:mac   # -> apps/desktop/src-tauri/target/release/bundle/{macos,dmg}
+npm run package:tauri:win   # -> apps/desktop/src-tauri/target/release/bundle/nsis
+node scripts/verify-packaged-engine-health.mjs mac-tauri
+```
+
+Signing secrets were set once via `gh secret set TAURI_SIGNING_PRIVATE_KEY` /
+`TAURI_SIGNING_PRIVATE_KEY_PASSWORD` (private key never committed). `.github/workflows/macos-package.yml`
+and `windows-package.yml` build unsigned Tauri bundles on every PR as a
+packaging smoke gate; `release.yml` is the only workflow with access to the
+signing secrets.
+
 ## Current Run Status - 2026-07-06
 
 - Automated gate: passed with `npm test` (72 Python tests, desktop build, 41 Node tests).
