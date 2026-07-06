@@ -4,7 +4,6 @@ import type { BrowserInfo, CookieSource, PresetOption, ProviderOption } from "..
 import { queueItemCanRefetch, queueItemCanRemove } from "../app/downloadQueueModel";
 import { presetsForProvider } from "../app/downloadQueuePrefs";
 import {
-  itemSupportsBrowserAccess,
   presetsForItem,
   providerForItem,
   queueItemProgress,
@@ -26,7 +25,6 @@ export type ProjectIntakeViewProps = {
   input: string;
   detectedCount: number;
   pageProbeError: string | null;
-  pageProbeNotice: string | null;
   items: QueueItem[];
   totals: { ready: number; downloading: number; done: number; interrupted: number; failed: number; canceled: number };
   busy: boolean;
@@ -54,17 +52,13 @@ export function ProjectIntakeView({
   input,
   detectedCount,
   pageProbeError,
-  pageProbeNotice,
   items,
   totals,
   busy,
-  browsers,
   presetOptions,
   providerOptions,
   downloadReady,
-  openSource,
   setItemPreset,
-  setItemCookieSource,
   refetch,
   removeItem,
   cancelDownload,
@@ -157,9 +151,8 @@ export function ProjectIntakeView({
     input,
     detectedCount,
     pageProbeError,
-    pageProbeNotice,
     formatError: consumerErrorMessage,
-  }), [input, detectedCount, pageProbeError, pageProbeNotice, consumerErrorMessage]);
+  }), [input, detectedCount, pageProbeError, consumerErrorMessage]);
 
   return (
     <section className={`intake${anySelected ? " intake-has-selection" : ""}`}>
@@ -187,18 +180,28 @@ export function ProjectIntakeView({
             </p>
           </div>
         </div>
-      ) : (pageProbeError || pageProbeNotice) ? (
+      ) : pageProbeError ? (
         <IntakeStatusBar status={intakeStatus} />
       ) : null}
 
       {items.length > 0 ? (
         <div className="queue-section">
           <div className="queue-scroll">
-            <div className="queue-grid">
+            <div className="queue-table">
+              <div className="queue-table-head" aria-hidden>
+                <span className="queue-col queue-col-check" />
+                <span className="queue-col queue-col-name">Name</span>
+                <span className="queue-col queue-col-size">Size</span>
+                <span className="queue-col queue-col-progress">Progress</span>
+                <span className="queue-col queue-col-speed">Speed</span>
+                <span className="queue-col queue-col-eta">Left</span>
+                <span className="queue-col queue-col-status">Status</span>
+                <span className="queue-col queue-col-actions" />
+              </div>
+              <div className="queue-list">
               {items.map((item, index) => {
                 const itemPresets = presetsForItem(item, presetOptions, providerOptions);
                 const progress = queueItemProgress(item);
-                const showBrowserAccess = browsers.length > 0 && itemSupportsBrowserAccess(item, presetOptions, providerOptions);
                 const visibleNotices = item.error ? [] : (item.notices || []).flatMap((notice) => {
                   const message = consumerNoticeMessage(notice.message);
                   return message ? [{ ...notice, message }] : [];
@@ -209,23 +212,21 @@ export function ProjectIntakeView({
                     item={item}
                     itemPresets={itemPresets}
                     presetOptions={presetOptions}
-                    browsers={browsers}
+                    desktop={desktop}
+                    outputRoot={activeOutputRoot}
                     progress={progress}
-                    showBrowserAccess={showBrowserAccess}
                     visibleNotices={visibleNotices}
                     selected={selectedIds.has(item.localId)}
                     showSelectCheckbox={showCheckboxes}
                     onSelectClick={(event) => handleSelectClick(event, item.localId, index)}
-                    openSource={openSource}
                     setItemPreset={setItemPreset}
-                    setItemCookieSource={setItemCookieSource}
-                    refetch={refetch}
                     removeItem={removeItem}
                     cancelDownload={cancelDownload}
                     resumeDownload={resumeDownload}
                   />
                 );
               })}
+              </div>
             </div>
           </div>
 

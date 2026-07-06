@@ -3,12 +3,10 @@ import { randomUUID } from "node:crypto";
 import fs from "node:fs";
 import { runEngine } from "./engineProcess";
 import {
-  currentNetworkProxy,
   currentOutputRoot,
   currentTransferSettings,
   transferEnv,
   writeTransferSettings,
-  writeNetworkProxy,
 } from "./settingsStore";
 import {
   cookieSourceArgs,
@@ -34,17 +32,14 @@ export function createEngineIpc() {
   async function engineHealthPayload(): Promise<Record<string, unknown>> {
     const browsers = detectBrowsers();
     const source = defaultCookieSource(browsers);
-    const proxy = currentNetworkProxy();
     const transfer = currentTransferSettings();
-    const health = (await runEngine(["health", ...cookieSourceArgs(source)], undefined, { ...(proxy ? { RIPPO_NETWORK_PROXY: proxy } : {}), ...transferEnv(transfer) })) as Record<string, unknown>;
+    const health = (await runEngine(["health", ...cookieSourceArgs(source)], undefined, transferEnv(transfer))) as Record<string, unknown>;
     return {
       ...health,
       cookiesSupported: cookiesSupported(),
       cookiesBrowsers: browsers,
       cookiesBrowser: cookieSourceBrowserId(source),
       cookieSource: source,
-      networkProxy: proxy,
-      networkProxyEnabled: Boolean(proxy),
       transfer,
       outputRoot: currentOutputRoot(),
       packaged: app.isPackaged,
@@ -53,24 +48,6 @@ export function createEngineIpc() {
 
   function registerEngineIpcHandlers() {
     ipcMain.handle("engine:health", async () => engineHealthPayload());
-
-    ipcMain.handle("network:set-proxy", async (_event, proxy?: string) => {
-      const networkProxy = writeNetworkProxy(typeof proxy === "string" ? proxy : "");
-      return {
-        networkProxy,
-        health: await engineHealthPayload(),
-      };
-    });
-
-    ipcMain.handle("network:check-proxy", async (_event, proxy?: string) => {
-      const candidate = typeof proxy === "string" ? proxy.trim().slice(0, 400) : "";
-      try {
-        return await runEngine(["proxy-check", "--proxy", candidate]);
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        return { ok: false, proxy: candidate, error: message || "Proxy test failed." };
-      }
-    });
 
     ipcMain.handle("transfer:set-settings", async (_event, payload?: { aria2MaxConnections?: number; aria2DownloadLimit?: string }) => {
       const transfer = writeTransferSettings(payload || {});
@@ -82,13 +59,12 @@ export function createEngineIpc() {
 
     ipcMain.handle("engine:fetch", async (_event, url: string, provider?: string, cookieSourceInput?: unknown) => {
       const cookieSource = cookieSourceFromInput(cookieSourceInput);
-      const proxy = currentNetworkProxy();
       const transfer = currentTransferSettings();
       const args = ["fetch", "--url", url];
       if (provider) args.push("--provider", provider);
       args.push(...cookieSourceArgs(cookieSource));
       try {
-        return await runEngine(args, undefined, { ...(proxy ? { RIPPO_NETWORK_PROXY: proxy } : {}), ...transferEnv(transfer) });
+        return await runEngine(args, undefined, transferEnv(transfer));
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         return {
@@ -101,13 +77,12 @@ export function createEngineIpc() {
 
     ipcMain.handle("engine:fetch-full", async (_event, url: string, provider?: string, cookieSourceInput?: unknown) => {
       const cookieSource = cookieSourceFromInput(cookieSourceInput);
-      const proxy = currentNetworkProxy();
       const transfer = currentTransferSettings();
       const args = ["fetch", "--full", "--url", url];
       if (provider) args.push("--provider", provider);
       args.push(...cookieSourceArgs(cookieSource));
       try {
-        return await runEngine(args, undefined, { ...(proxy ? { RIPPO_NETWORK_PROXY: proxy } : {}), ...transferEnv(transfer) });
+        return await runEngine(args, undefined, transferEnv(transfer));
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         return {
@@ -120,7 +95,6 @@ export function createEngineIpc() {
 
     ipcMain.handle("engine:download", async (event, payload: { url: string; preset: string; outputRoot?: string; itemId?: string; title?: string; cookieSource?: unknown }) => {
       const cookieSource = cookieSourceFromInput(payload.cookieSource);
-      const proxy = currentNetworkProxy();
       const transfer = currentTransferSettings();
       const jobId = payload.itemId || randomUUID();
       const outputRoot = payload.outputRoot || currentOutputRoot();
@@ -150,7 +124,7 @@ export function createEngineIpc() {
         });
         const result = await runEngine(args, (engineEvent) => {
           event.sender.send("engine:download-event", { jobId, ...engineEvent as Record<string, unknown> });
-        }, { ...(proxy ? { RIPPO_NETWORK_PROXY: proxy } : {}), ...transferEnv(transfer) }, (cancel) => {
+        }, transferEnv(transfer), (cancel) => {
           cancelRun = cancel;
           if (cancelRequested) cancel();
           activeDownloads.set(jobId, { cancel });

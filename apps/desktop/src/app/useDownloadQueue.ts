@@ -154,13 +154,48 @@ export function useDownloadQueue({
         }
         if (event.type === "progress") {
           if (item.finalizing) return item;
-          return { ...item, progress: event.percent ?? item.progress, stage: event.speed ? `${event.speed}${event.eta ? `, ${event.eta} left` : ""}` : item.stage };
+          return {
+            ...item,
+            progress: event.percent ?? item.progress,
+            speed: event.speed ?? null,
+            eta: event.eta ?? null,
+            stage: event.speed ? `${event.speed}${event.eta ? `, ${event.eta} left` : ""}` : item.stage,
+          };
         }
         if (event.type === "stage") {
-          return { ...item, stage: event.message, finalizing: event.finalizing ? true : item.finalizing, progress: event.finalizing ? 100 : item.progress };
+          return {
+            ...item,
+            stage: event.message,
+            speed: null,
+            eta: null,
+            finalizing: event.finalizing ? true : item.finalizing,
+            progress: event.finalizing ? 100 : item.progress,
+          };
         }
-        if (event.type === "success") return { ...item, status: QUEUE_STATUS.done, progress: 100, files: event.files, stage: "Saved", finalizing: false };
-        if (event.type === "canceled") return { ...item, status: QUEUE_STATUS.canceled, progress: undefined, stage: "Canceled", finalizing: false, notices: [] };
+        if (event.type === "success") {
+          return {
+            ...item,
+            status: QUEUE_STATUS.done,
+            progress: 100,
+            files: event.files,
+            stage: "Saved",
+            speed: null,
+            eta: null,
+            finalizing: false,
+          };
+        }
+        if (event.type === "canceled") {
+          return {
+            ...item,
+            status: QUEUE_STATUS.canceled,
+            progress: undefined,
+            stage: "Canceled",
+            speed: null,
+            eta: null,
+            finalizing: false,
+            notices: [],
+          };
+        }
         if (event.type === "error") return { ...item, status: QUEUE_STATUS.failed, error: fetchErrorMessage(event.error || "", consumerErrorMessage, item.url), finalizing: false, notices: [] };
         return item;
       }));
@@ -175,6 +210,31 @@ export function useDownloadQueue({
     failed: items.filter((item) => item.status === QUEUE_STATUS.failed).length,
     canceled: items.filter((item) => item.status === QUEUE_STATUS.canceled).length,
   }), [items]);
+
+  function startSniff(url: string): string {
+    const localId = crypto.randomUUID().slice(0, 10);
+    setItems((current) => [{
+      localId,
+      url,
+      status: QUEUE_STATUS.resolving,
+      stage: "Sniffing page...",
+      preset: "",
+      cookieSource,
+    }, ...current]);
+    return localId;
+  }
+
+  function completeSniff(localId: string) {
+    setItems((current) => current.filter((item) => item.localId !== localId));
+  }
+
+  function failSniff(localId: string, error: string) {
+    setItems((current) => current.map((item) => (
+      item.localId === localId
+        ? { ...item, status: QUEUE_STATUS.failed, error, stage: undefined }
+        : item
+    )));
+  }
 
   async function queueUrls(urls: string[], providerOverride: ProviderId | "auto" = FETCH_PROVIDER) {
     if (!urls.length || !desktop) return;
@@ -225,8 +285,21 @@ export function useDownloadQueue({
     setBusy(false);
   }
 
+  // Resolve a usable preset. Items that never fetched successfully (e.g. a
+  // provider that errored) keep preset: "" — sending that to the engine throws
+  // `Unknown preset \`\``. Fall back to the provider's default preset, then the
+  // first preset available for that provider.
+  function effectivePreset(item: QueueItem): string {
+    if (item.preset) return item.preset;
+    const provider = providerForItem(item, presetOptions, providerOptions);
+    const providerDefault = providerOptions.find((p) => p.id === provider)?.defaultPreset;
+    if (providerDefault) return providerDefault;
+    return presetsForItem(item, presetOptions, providerOptions)[0]?.id || presetOptions[0]?.id || "";
+  }
+
   async function startDownload(item: QueueItem) {
     if (!desktop) return;
+    const preset = effectivePreset(item);
     const jobId = item.localId;
     setItems((current) => current.map((candidate) => candidate.localId === item.localId ? {
       ...candidate,
@@ -243,7 +316,7 @@ export function useDownloadQueue({
     try {
       const response = await desktop.download({
         url: item.url,
-        preset: item.preset,
+        preset,
         outputRoot,
         itemId: item.localId,
         title: item.metadata?.title || item.localId,
@@ -334,6 +407,9 @@ export function useDownloadQueue({
     items,
     busy,
     totals,
+    startSniff,
+    completeSniff,
+    failSniff,
     queueUrls,
     downloadReady,
     refetch,

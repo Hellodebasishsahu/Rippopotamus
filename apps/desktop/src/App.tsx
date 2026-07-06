@@ -1,6 +1,6 @@
-import { Check, Cookie, ExternalLink, FolderOpen, FolderSearch, Globe2, Loader2, RefreshCcw, RotateCcw, X } from "lucide-react";
+import { Check, Cookie, ExternalLink, FolderOpen, FolderSearch, Loader2, RefreshCcw, RotateCcw, X } from "lucide-react";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import type { AppUpdateInfo, BrowserInfo, CookieSource, EngineHealth, GalleryDlUpdateInfo, PageProbeCandidate, PresetOption, ProviderId, ProviderOption, YtDlpUpdateInfo } from "../electron/types";
+import type { AppUpdateInfo, BrowserInfo, CookieSource, EngineHealth, HelperCheckResult, HelperUpdateResult, PageProbeCandidate, PresetOption, ProviderId, ProviderOption } from "../electron/types";
 import { sourceUrl, useDownloadQueue } from "./app/useDownloadQueue";
 import type { QueueItem } from "./app/useDownloadQueue";
 import type { LibraryItem } from "../electron/types";
@@ -39,14 +39,6 @@ const NETWORK_ACCESS_OPTIONS = [
     url: "https://www.torproject.org/download/",
   },
 ] as const;
-
-function updaterErrorMessage(error: unknown, tool: "yt-dlp" | "gallery-dl"): string {
-  const message = error instanceof Error ? error.message : String(error);
-  if (message.includes("No handler registered") || message.includes("is not a function")) {
-    return `Restart Rippopotamus to load the ${tool} updater.`;
-  }
-  return message;
-}
 
 function cookieSourceValue(source: CookieSource | null | undefined): string {
   return source?.mode === "browser" ? `browser:${source.browserId}` : "off";
@@ -108,27 +100,21 @@ function siteAccessStatus(source: CookieSource, browsers: BrowserInfo[], health:
   };
 }
 
-function ytDlpStatusText(health: EngineHealth | null, healthError: string | null): string {
-  if (health?.ytDlp) return "Ready";
-  if (healthError) return "Unavailable";
-  return "Checking...";
-}
-
-function ytDlpPathText(update: YtDlpUpdateInfo | null, health: EngineHealth | null): string {
-  if (update?.binaryPath || health?.ytDlpPath || health?.ytDlp) return "Ready to save videos and audio.";
-  return "Install video support from here.";
-}
-
-function galleryDlStatusText(health: EngineHealth | null, healthError: string | null): string {
-  if (health?.galleryDl) return "Ready";
-  if (health?.galleryDlOk === false) return "Missing";
-  if (healthError) return "Unavailable";
-  return "Checking...";
-}
-
-function galleryDlPathText(update: GalleryDlUpdateInfo | null, health: EngineHealth | null): string {
-  if (update?.binaryPath || health?.galleryDlPath || health?.galleryDl) return "Ready to save image galleries.";
-  return "Install image support from here.";
+function helperOutcomeText(
+  name: string,
+  checks: HelperCheckResult[],
+  updateResults: Record<string, HelperUpdateResult>,
+): string | null {
+  const result = updateResults[name];
+  if (result) {
+    return result.ok
+      ? `Updated ${result.from || "?"} → ${result.to || "?"}`
+      : `Update failed: ${consumerErrorMessage(result.error || "Unknown error")}`;
+  }
+  const check = checks.find((candidate) => candidate.name === name);
+  if (!check || !check.updatable) return null;
+  if (check.error) return `Check failed: ${consumerErrorMessage(check.error)}`;
+  return check.updateAvailable ? "Update available" : "Up to date";
 }
 
 function engineInstallDesc(
@@ -177,6 +163,39 @@ function uniqueUrls(urls: string[]): string[] {
     output.push(url);
   }
   return output;
+}
+
+const SNIFF_STRONG_SCORE = 40;
+const SNIFF_STRONG_KINDS = new Set(["playlist", "video", "audio", "torrent", "pdf"]);
+
+function chooseSniffQueueUrls(
+  result: {
+    url: string;
+    finalUrl?: string;
+    candidates: Array<{ url: string; kind: string; score: number }>;
+    pageLinks?: Array<{ url: string }>;
+    crawledLinks?: number;
+  },
+  inputUrl: string,
+): string[] | null {
+  const pageLinkUrls = uniqueUrls((result.pageLinks || []).map((link) => link.url));
+  const sourcePageUrl = uniqueUrls(
+    [result.finalUrl, result.url, inputUrl].filter((value): value is string => Boolean(value)),
+  ).find(isLikelyMediaPageUrl);
+  const pageUrls = uniqueUrls([...(sourcePageUrl ? [sourcePageUrl] : []), ...pageLinkUrls]);
+
+  const strong = result.candidates.filter(
+    (candidate) => SNIFF_STRONG_KINDS.has(candidate.kind) && candidate.score >= SNIFF_STRONG_SCORE,
+  );
+  const decent = result.candidates.filter((candidate) => candidate.score >= 20);
+  const streamUrls = uniqueUrls(strong.map((candidate) => candidate.url));
+
+  // Sniff the page: queue every media page URL found on it (watch page + related links).
+  if (pageUrls.length > 0) return pageUrls;
+  if (result.crawledLinks && decent.length > 0) return uniqueUrls(decent.map((candidate) => candidate.url));
+  if (streamUrls.length > 0) return streamUrls;
+  if (decent.length > 0) return uniqueUrls(decent.map((candidate) => candidate.url));
+  return null;
 }
 
 function resolveComposerAction({
@@ -236,32 +255,22 @@ export function App() {
   const [outputRoot, setOutputRoot] = useState("");
   const [browsers, setBrowsers] = useState<BrowserInfo[]>([]);
   const [cookieSource, setCookieSource] = useState<CookieSource>(COOKIE_OFF);
-  const [networkProxyDraft, setNetworkProxyDraft] = useState("");
-  const [networkProxyStatus, setNetworkProxyStatus] = useState<"idle" | "saving" | "testing">("idle");
-  const [networkProxyError, setNetworkProxyError] = useState<string | null>(null);
-  const [networkProxyResult, setNetworkProxyResult] = useState<string | null>(null);
   const [aria2MaxConnectionsDraft, setAria2MaxConnectionsDraft] = useState(8);
   const [aria2DownloadLimitDraft, setAria2DownloadLimitDraft] = useState("");
   const [transferStatus, setTransferStatus] = useState<"idle" | "saving">("idle");
   const [transferError, setTransferError] = useState<string | null>(null);
-  const [ytDlpUpdate, setYtDlpUpdate] = useState<YtDlpUpdateInfo | null>(null);
-  const [ytDlpStatus, setYtDlpStatus] = useState<"idle" | "checking" | "updating">("idle");
-  const [ytDlpError, setYtDlpError] = useState<string | null>(null);
-  const [galleryDlUpdate, setGalleryDlUpdate] = useState<GalleryDlUpdateInfo | null>(null);
-  const [galleryDlStatus, setGalleryDlStatus] = useState<"idle" | "checking" | "updating">("idle");
-  const [galleryDlError, setGalleryDlError] = useState<string | null>(null);
+  const [helperChecks, setHelperChecks] = useState<HelperCheckResult[]>([]);
+  const [helperUpdateResults, setHelperUpdateResults] = useState<Record<string, HelperUpdateResult>>({});
+  const [helpersStatus, setHelpersStatus] = useState<"idle" | "checking" | "updating">("idle");
+  const [helpersError, setHelpersError] = useState<string | null>(null);
   const [appUpdate, setAppUpdate] = useState<AppUpdateInfo | null>(null);
   const [appUpdateStatus, setAppUpdateStatus] = useState<"idle" | "checking">("idle");
   const [appUpdateError, setAppUpdateError] = useState<string | null>(null);
-  const [aria2cStatus, setAria2cStatus] = useState<"idle" | "checking">("idle");
-  const [ffmpegStatus, setFfmpegStatus] = useState<"idle" | "checking" | "updating">("idle");
   const [toolAutoUpdateNote, setToolAutoUpdateNote] = useState<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsSection, setSettingsSection] = useState<SettingsSectionId>("general");
   const [fontSmoothing, setFontSmoothing] = useState(() => localStorage.getItem("rippo:appearance:fontSmoothing") !== "false");
-  const [pageProbeBusy, setPageProbeBusy] = useState(false);
   const [pageProbeError, setPageProbeError] = useState<string | null>(null);
-  const [pageProbeNotice, setPageProbeNotice] = useState<string | null>(null);
   const [pageProbeIncognito, setPageProbeIncognito] = useState(() => localStorage.getItem("rippo:sniff:incognito") === "true");
   const [fetchWorkerCount, setFetchWorkerCount] = useState(() => readWorkerSetting("rippo:queue:fetchWorkers", FETCH_WORKER_DEFAULT, FETCH_WORKER_MIN, FETCH_WORKER_MAX));
   const [downloadWorkerCount, setDownloadWorkerCount] = useState(() => readWorkerSetting("rippo:queue:downloadWorkers", DOWNLOAD_WORKER_DEFAULT, DOWNLOAD_WORKER_MIN, DOWNLOAD_WORKER_MAX));
@@ -309,7 +318,6 @@ export function App() {
       const nextHealth = await desktop.health();
       setHealth(nextHealth);
       if (nextHealth.outputRoot) setOutputRoot(nextHealth.outputRoot);
-      setNetworkProxyDraft(nextHealth.networkProxy || "");
       setAria2MaxConnectionsDraft(nextHealth.transfer?.aria2MaxConnections || nextHealth.aria2MaxConnections || 8);
       setAria2DownloadLimitDraft(nextHealth.transfer?.aria2DownloadLimit || nextHealth.aria2DownloadLimit || "");
       setHealthError(null);
@@ -328,39 +336,6 @@ export function App() {
       : await desktop.setCookiesBrowser(next.mode === "browser" ? next.browserId : null);
     setCookieSource(cookieSourceFromResponse(result.source, result.selected));
     await refreshHealth();
-  }
-
-  async function saveNetworkProxy() {
-    if (!desktop || typeof desktop.setNetworkProxy !== "function" || networkProxyStatus !== "idle") return;
-    setNetworkProxyStatus("saving");
-    setNetworkProxyError(null);
-    setNetworkProxyResult(null);
-    try {
-      const result = await desktop.setNetworkProxy(networkProxyDraft);
-      setNetworkProxyDraft(result.networkProxy);
-      setHealth(result.health);
-      if (result.health.outputRoot) setOutputRoot(result.health.outputRoot);
-    } catch (error) {
-      setNetworkProxyError(error instanceof Error ? error.message : String(error));
-    } finally {
-      setNetworkProxyStatus("idle");
-    }
-  }
-
-  async function testNetworkProxy() {
-    if (!desktop || typeof desktop.checkNetworkProxy !== "function" || networkProxyStatus !== "idle") return;
-    setNetworkProxyStatus("testing");
-    setNetworkProxyError(null);
-    setNetworkProxyResult(null);
-    try {
-      const result = await desktop.checkNetworkProxy(networkProxyDraft);
-      if (result.ok) setNetworkProxyResult(result.ip ? `Proxy works. Exit IP: ${result.ip}` : "Proxy works.");
-      else setNetworkProxyError(result.error || "Proxy test failed.");
-    } catch (error) {
-      setNetworkProxyError(error instanceof Error ? error.message : String(error));
-    } finally {
-      setNetworkProxyStatus("idle");
-    }
   }
 
   async function saveTransferSettings(overrides?: { aria2MaxConnections?: number; aria2DownloadLimit?: string }) {
@@ -388,7 +363,7 @@ export function App() {
   async function setPrivateMode(enabled: boolean) {
     setPageProbeIncognito(enabled);
     setPageProbeError(null);
-    setPageProbeNotice(enabled ? "Private mode: sniff cache cleared, downloads go to hidden .rippo-private." : "Private mode closed: sniff cache cleared.");
+    setToolAutoUpdateNote(enabled ? "Private mode: sniff cache cleared, downloads go to hidden .rippo-private." : "Private mode closed: sniff cache cleared.");
     if (desktop && typeof desktop.clearSniffCache === "function") {
       await desktop.clearSniffCache().catch(() => undefined);
     }
@@ -414,77 +389,31 @@ export function App() {
     }
   }
 
-  async function checkYtDlpUpdate() {
-    if (!desktop || ytDlpStatus !== "idle") return;
-    if (typeof desktop.checkYtDlpUpdate !== "function") {
-      setYtDlpError("Restart Rippopotamus to load the yt-dlp updater.");
+  async function updateHelpers() {
+    if (!desktop || helpersStatus !== "idle") return;
+    if (typeof desktop.checkHelpers !== "function" || typeof desktop.updateHelpers !== "function") {
+      setHelpersError("Restart Rippopotamus to load the helper updater.");
       return;
     }
-    setYtDlpStatus("checking");
-    setYtDlpError(null);
+    setHelpersStatus("checking");
+    setHelpersError(null);
+    setHelperUpdateResults({});
     try {
-      const result = await desktop.checkYtDlpUpdate();
-      setYtDlpUpdate(result);
+      const checks = await desktop.checkHelpers();
+      setHelperChecks(checks);
+      const hasUpdates = checks.some((check) => check.updatable && check.updateAvailable);
+      if (hasUpdates) {
+        setHelpersStatus("updating");
+        const results = await desktop.updateHelpers();
+        const map: Record<string, HelperUpdateResult> = {};
+        for (const result of results) map[result.name] = result;
+        setHelperUpdateResults(map);
+        await refreshHealth();
+      }
     } catch (error) {
-      setYtDlpError(updaterErrorMessage(error, "yt-dlp"));
+      setHelpersError(error instanceof Error ? error.message : String(error));
     } finally {
-      setYtDlpStatus("idle");
-    }
-  }
-
-  async function updateYtDlp() {
-    if (!desktop || ytDlpStatus !== "idle") return;
-    if (typeof desktop.updateYtDlp !== "function") {
-      setYtDlpError("Restart Rippopotamus to load the yt-dlp updater.");
-      return;
-    }
-    setYtDlpStatus("updating");
-    setYtDlpError(null);
-    try {
-      const result = await desktop.updateYtDlp();
-      setYtDlpUpdate(result);
-      setHealth(result.health);
-    } catch (error) {
-      setYtDlpError(updaterErrorMessage(error, "yt-dlp"));
-    } finally {
-      setYtDlpStatus("idle");
-    }
-  }
-
-  async function checkGalleryDlUpdate() {
-    if (!desktop || galleryDlStatus !== "idle") return;
-    if (typeof desktop.checkGalleryDlUpdate !== "function") {
-      setGalleryDlError("Restart Rippopotamus to load the gallery-dl updater.");
-      return;
-    }
-    setGalleryDlStatus("checking");
-    setGalleryDlError(null);
-    try {
-      const result = await desktop.checkGalleryDlUpdate();
-      setGalleryDlUpdate(result);
-    } catch (error) {
-      setGalleryDlError(updaterErrorMessage(error, "gallery-dl"));
-    } finally {
-      setGalleryDlStatus("idle");
-    }
-  }
-
-  async function updateGalleryDl() {
-    if (!desktop || galleryDlStatus !== "idle") return;
-    if (typeof desktop.updateGalleryDl !== "function") {
-      setGalleryDlError("Restart Rippopotamus to load the gallery-dl updater.");
-      return;
-    }
-    setGalleryDlStatus("updating");
-    setGalleryDlError(null);
-    try {
-      const result = await desktop.updateGalleryDl();
-      setGalleryDlUpdate(result);
-      setHealth(result.health);
-    } catch (error) {
-      setGalleryDlError(updaterErrorMessage(error, "gallery-dl"));
-    } finally {
-      setGalleryDlStatus("idle");
+      setHelpersStatus("idle");
     }
   }
 
@@ -512,32 +441,12 @@ export function App() {
     await desktop.openExternal(appUpdate.dmgUrl);
   }
 
-  async function checkAria2cUpdate() {
-    if (!desktop || aria2cStatus !== "idle") return;
-    setAria2cStatus("checking");
-    try {
-      await refreshHealth();
-    } finally {
-      setAria2cStatus("idle");
-    }
-  }
-
-  async function checkFfmpegUpdate() {
-    if (!desktop || ffmpegStatus !== "idle") return;
-    setFfmpegStatus("checking");
-    try {
-      await refreshHealth();
-    } finally {
-      setFfmpegStatus("idle");
-    }
-  }
-
   // Keep the fast-moving tools (yt-dlp, gallery-dl) current on their own. yt-dlp
   // breaks often as sites change, so a stale binary silently breaks downloads.
   // Check at most once per ~20h (persisted across launches), update in the
   // background, and surface only a brief note on success — no prompts, no noise.
   useEffect(() => {
-    if (!desktop || typeof desktop.checkYtDlpUpdate !== "function") return;
+    if (!desktop || typeof desktop.checkHelpers !== "function") return;
     const THROTTLE_KEY = "rippo:tools:lastAutoUpdate";
     const THROTTLE_MS = 20 * 60 * 60 * 1000;
     const last = Number(localStorage.getItem(THROTTLE_KEY) || 0);
@@ -546,36 +455,23 @@ export function App() {
 
     let cancelled = false;
     void (async () => {
-      const updated: string[] = [];
       try {
-        const info = await desktop.checkYtDlpUpdate();
-        if (!cancelled && info.updateAvailable && typeof desktop.updateYtDlp === "function") {
-          const result = await desktop.updateYtDlp();
-          if (!cancelled) {
-            setYtDlpUpdate(result);
-            if (result.health) setHealth(result.health);
-            updated.push(`yt-dlp${result.currentVersion ? ` ${result.currentVersion}` : ""}`);
-          }
-        }
+        const checks = await desktop.checkHelpers();
+        if (cancelled) return;
+        setHelperChecks(checks);
+        if (typeof desktop.updateHelpers !== "function") return;
+        if (!checks.some((check) => check.updatable && check.updateAvailable)) return;
+        const results = await desktop.updateHelpers();
+        if (cancelled) return;
+        const map: Record<string, HelperUpdateResult> = {};
+        for (const result of results) map[result.name] = result;
+        setHelperUpdateResults((prev) => ({ ...prev, ...map }));
+        await refreshHealth();
+        const updated = results.filter((result) => result.ok).map((result) => `${result.name}${result.to ? ` ${result.to}` : ""}`);
+        if (updated.length) setToolAutoUpdateNote(`Updated ${updated.join(" · ")}`);
       } catch {
         // Background update — stay silent on failure; the manual button still works.
       }
-      try {
-        if (typeof desktop.checkGalleryDlUpdate === "function") {
-          const info = await desktop.checkGalleryDlUpdate();
-          if (!cancelled && info.updateAvailable && typeof desktop.updateGalleryDl === "function") {
-            const result = await desktop.updateGalleryDl();
-            if (!cancelled) {
-              setGalleryDlUpdate(result);
-              if (result.health) setHealth(result.health);
-              updated.push(`gallery-dl${result.currentVersion ? ` ${result.currentVersion}` : ""}`);
-            }
-          }
-        }
-      } catch {
-        // Background update — stay silent on failure.
-      }
-      if (!cancelled && updated.length) setToolAutoUpdateNote(`Updated ${updated.join(" · ")}`);
     })();
 
     return () => {
@@ -612,6 +508,9 @@ export function App() {
     items,
     busy,
     totals,
+    startSniff,
+    completeSniff,
+    failSniff,
     queueUrls,
     downloadReady,
     refetch,
@@ -666,70 +565,27 @@ export function App() {
 
   async function sniffPage() {
     const url = inputUrls[0];
-    if (!url || !desktop || typeof desktop.probePage !== "function" || pageProbeBusy) return;
-    setPageProbeBusy(true);
+    if (!url || !desktop || typeof desktop.probePage !== "function") return;
+    setInput("");
     setPageProbeError(null);
-    setPageProbeNotice(null);
+    const sniffId = startSniff(url);
     try {
       const result = await desktop.probePage(url, { incognito: pageProbeIncognito });
       if (!result.ok) {
-        setPageProbeError(result.error || "Could not sniff this page.");
+        failSniff(sniffId, result.error || "Could not sniff this page.");
         return;
       }
 
-      // --- Candidate selection with sane priorities ---
-      // The policy layer already rejects noise (segments, ads, thumbnails,
-      // blob/data) and scores survivors on a 0-100 tier scale. We just need
-      // to pick the right bucket to queue.
-
-      const STRONG_SCORE = 40;
-      const strongKinds = new Set(["playlist", "video", "audio", "torrent", "pdf"]);
-      const strong = result.candidates.filter((c) => strongKinds.has(c.kind) && c.score >= STRONG_SCORE);
-      const decent = result.candidates.filter((c) => c.score >= 20);
-      const pageLinkUrls = uniqueUrls((result.pageLinks || []).map((l) => l.url));
-      const sourcePageUrl = uniqueUrls([result.finalUrl, result.url, url]).find(isLikelyMediaPageUrl);
-
-      // Priority 1: Strong direct media found → use it
-      // Priority 2: Crawled links found media → use all decent candidates (they include crawl results)
-      // Priority 3: Source page is itself a media page → send that URL to the fetcher
-      // Priority 4: Page links to other media pages → send those
-      // Priority 5: Any surviving candidates at all → use them
-      let chosen: string[];
-      let chosenType: string;
-
-      if (strong.length > 0) {
-        chosen = uniqueUrls(strong.map((c) => c.url));
-        chosenType = "media";
-      } else if (result.crawledLinks && decent.length > 0) {
-        chosen = uniqueUrls(decent.map((c) => c.url));
-        chosenType = "media";
-      } else if (sourcePageUrl) {
-        chosen = [sourcePageUrl];
-        chosenType = "page";
-      } else if (pageLinkUrls.length > 0) {
-        chosen = pageLinkUrls;
-        chosenType = "page";
-      } else if (decent.length > 0) {
-        chosen = uniqueUrls(decent.map((c) => c.url));
-        chosenType = "candidate";
-      } else {
-        setPageProbeError("No downloadable media or result pages found on that page.");
+      const chosen = chooseSniffQueueUrls(result, url);
+      if (!chosen?.length) {
+        failSniff(sniffId, "No downloadable media or result pages found on that page.");
         return;
       }
 
-      setInput("");
-      await queueUrls(chosen.slice(0, 40));
-
-      const countLabel = `${chosen.length} ${chosenType}${chosen.length === 1 ? "" : "s"}`;
-      const crawlLabel = result.crawledLinks ? `, crawled ${result.crawledLinks} link${result.crawledLinks === 1 ? "" : "s"}` : "";
-      if (result.cached) setPageProbeNotice(`Used cached sniff: ${countLabel}${crawlLabel}.`);
-      else if (pageProbeIncognito) setPageProbeNotice(`Private sniff: ${countLabel}${crawlLabel}, not cached.`);
-      else if (result.elapsedMs) setPageProbeNotice(`Sniff done: ${countLabel}${crawlLabel} in ${(result.elapsedMs / 1000).toFixed(1)}s.`);
-      else setPageProbeNotice(null);
+      completeSniff(sniffId);
+      void queueUrls(chosen.slice(0, 40));
     } catch (error) {
-      setPageProbeError(error instanceof Error ? error.message : String(error));
-    } finally {
-      setPageProbeBusy(false);
+      failSniff(sniffId, error instanceof Error ? error.message : String(error));
     }
   }
 
@@ -769,7 +625,6 @@ export function App() {
           textareaRef={textareaRef}
           detectedCount={detectedCount}
           composerAction={composerAction}
-          pageProbeBusy={pageProbeBusy}
           setInput={setInput}
           runComposerAction={runComposerAction}
           sniffPage={sniffPage}
@@ -803,7 +658,6 @@ export function App() {
             input={input}
             detectedCount={detectedCount}
             pageProbeError={pageProbeError}
-            pageProbeNotice={pageProbeNotice}
             items={items}
             totals={totals}
             busy={busy}
@@ -923,38 +777,6 @@ export function App() {
                 <p className="settings-warning">Could not read that browser session. Try Chrome, close the browser, or grant access.</p>
               ) : null}
             </section>
-            <section className="settings-section">
-              <div className="settings-row-head">
-                <Globe2 size={14} strokeWidth={2} aria-hidden />
-                <h3 className="settings-row-title">Network proxy</h3>
-                <span className="settings-version">{health?.networkProxyEnabled ? "On" : "Off"}</span>
-              </div>
-              <p className="settings-hint">HTTP or SOCKS proxy for video, image, and Drive downloads. Torrent routing is unchanged.</p>
-              <div className="settings-inline-control">
-                <input
-                  type="text"
-                  className="settings-text-input"
-                  value={networkProxyDraft}
-                  onChange={(event) => setNetworkProxyDraft(event.target.value)}
-                  onKeyDown={(event) => { if (event.key === "Enter") void saveNetworkProxy(); }}
-                  placeholder="socks5://127.0.0.1:9050"
-                  aria-label="Network proxy URL"
-                  disabled={!desktop || networkProxyStatus !== "idle"}
-                />
-                <button type="button" className="btn btn-primary btn-footer" onClick={saveNetworkProxy} disabled={!desktop || networkProxyStatus !== "idle"}>
-                  {networkProxyStatus === "saving" ? <Loader2 className="spin" size={14} strokeWidth={2} aria-hidden /> : null}
-                  Save
-                </button>
-                <button type="button" className="btn btn-ghost btn-footer" onClick={testNetworkProxy} disabled={!desktop || networkProxyStatus !== "idle" || !networkProxyDraft.trim()}>
-                  {networkProxyStatus === "testing" ? <Loader2 className="spin" size={14} strokeWidth={2} aria-hidden /> : null}
-                  Test
-                </button>
-              </div>
-              {networkProxyDraft ? <p className="settings-hint">Active after save: {networkProxyDraft}</p> : <p className="settings-hint">Leave blank for direct connection.</p>}
-              {networkProxyResult ? <p className="settings-ok">{networkProxyResult}</p> : null}
-              {networkProxyError ? <p className="settings-warning">{consumerErrorMessage(networkProxyError, "Could not save network proxy.")}</p> : null}
-            </section>
-
             </>
             )}
 
@@ -964,6 +786,13 @@ export function App() {
               title="Installed helpers"
               hint="Binaries Rippo calls on this Mac."
             >
+              <div className="tool-panel-actions">
+                <button type="button" className="tool-btn tool-btn-primary" onClick={updateHelpers} disabled={!desktop || helpersStatus !== "idle"}>
+                  {helpersStatus !== "idle" ? <Loader2 className="spin" size={12} strokeWidth={2} aria-hidden /> : <RefreshCcw size={12} strokeWidth={2} aria-hidden />}
+                  {helpersStatus === "checking" ? "Checking…" : helpersStatus === "updating" ? "Updating…" : "Update helpers"}
+                </button>
+                {helpersError ? <span className="tool-error">{consumerErrorMessage(helpersError)}</span> : null}
+              </div>
               <ul className="tool-list" role="list">
 
                 <li className="tool-row">
@@ -995,7 +824,7 @@ export function App() {
                   </div>
                 </li>
 
-                <li className="tool-row" title={enginePathHint(ytDlpUpdate?.binaryPath, health?.ytDlpPath)}>
+                <li className="tool-row" title={enginePathHint(health?.ytDlpPath)}>
                   <span className={`tool-dot ${health?.ytDlp ? "tool-dot-ok" : "tool-dot-dim"}`} aria-hidden />
                   <div className="tool-body">
                     <span className="tool-name">yt-dlp</span>
@@ -1006,24 +835,13 @@ export function App() {
                         "Not installed. Required for video.",
                       )}
                     </span>
-                    {ytDlpError ? <span className="tool-error">{consumerErrorMessage(ytDlpError)}</span> : null}
-                  </div>
-                  <div className="tool-actions">
-                    {ytDlpUpdate?.updateAvailable ? (
-                      <button type="button" className="tool-btn tool-btn-primary" onClick={updateYtDlp} disabled={!desktop || ytDlpStatus !== "idle"}>
-                        {ytDlpStatus === "updating" ? <Loader2 className="spin" size={12} strokeWidth={2} aria-hidden /> : null}
-                        {ytDlpUpdate.currentVersion ? "Update" : "Install"}
-                      </button>
-                    ) : (
-                      <button type="button" className="tool-btn tool-btn-ghost" onClick={checkYtDlpUpdate} disabled={!desktop || ytDlpStatus !== "idle"}>
-                        {ytDlpStatus === "checking" ? <Loader2 className="spin" size={12} strokeWidth={2} aria-hidden /> : <RefreshCcw size={12} strokeWidth={2} aria-hidden />}
-                        Check
-                      </button>
-                    )}
+                    {helperOutcomeText("yt-dlp", helperChecks, helperUpdateResults) ? (
+                      <span className="tool-desc">{helperOutcomeText("yt-dlp", helperChecks, helperUpdateResults)}</span>
+                    ) : null}
                   </div>
                 </li>
 
-                <li className="tool-row" title={enginePathHint(galleryDlUpdate?.binaryPath, health?.galleryDlPath)}>
+                <li className="tool-row" title={enginePathHint(health?.galleryDlPath)}>
                   <span className={`tool-dot ${health?.galleryDl ? "tool-dot-ok" : "tool-dot-dim"}`} aria-hidden />
                   <div className="tool-body">
                     <span className="tool-name">gallery-dl</span>
@@ -1034,20 +852,9 @@ export function App() {
                         "Not installed. Optional for images.",
                       )}
                     </span>
-                    {galleryDlError ? <span className="tool-error">{consumerErrorMessage(galleryDlError)}</span> : null}
-                  </div>
-                  <div className="tool-actions">
-                    {galleryDlUpdate?.updateAvailable || !health?.galleryDl ? (
-                      <button type="button" className="tool-btn tool-btn-primary" onClick={updateGalleryDl} disabled={!desktop || galleryDlStatus !== "idle"}>
-                        {galleryDlStatus === "updating" ? <Loader2 className="spin" size={12} strokeWidth={2} aria-hidden /> : null}
-                        {galleryDlUpdate?.currentVersion ? "Update" : "Install"}
-                      </button>
-                    ) : (
-                      <button type="button" className="tool-btn tool-btn-ghost" onClick={checkGalleryDlUpdate} disabled={!desktop || galleryDlStatus !== "idle"}>
-                        {galleryDlStatus === "checking" ? <Loader2 className="spin" size={12} strokeWidth={2} aria-hidden /> : <RefreshCcw size={12} strokeWidth={2} aria-hidden />}
-                        Check
-                      </button>
-                    )}
+                    {helperOutcomeText("gallery-dl", helperChecks, helperUpdateResults) ? (
+                      <span className="tool-desc">{helperOutcomeText("gallery-dl", helperChecks, helperUpdateResults)}</span>
+                    ) : null}
                   </div>
                 </li>
 
@@ -1065,12 +872,6 @@ export function App() {
                       )}
                     </span>
                   </div>
-                  <div className="tool-actions">
-                    <button type="button" className="tool-btn tool-btn-ghost" onClick={checkAria2cUpdate} disabled={!desktop || aria2cStatus !== "idle"}>
-                      {aria2cStatus === "checking" ? <Loader2 className="spin" size={12} strokeWidth={2} aria-hidden /> : <RefreshCcw size={12} strokeWidth={2} aria-hidden />}
-                      Check
-                    </button>
-                  </div>
                 </li>
 
                 <li className="tool-row" title={enginePathHint(health?.ffmpeg)}>
@@ -1084,12 +885,6 @@ export function App() {
                         "Not available.",
                       )}
                     </span>
-                  </div>
-                  <div className="tool-actions">
-                    <button type="button" className="tool-btn tool-btn-ghost" onClick={checkFfmpegUpdate} disabled={!desktop || ffmpegStatus !== "idle"}>
-                      {ffmpegStatus === "checking" ? <Loader2 className="spin" size={12} strokeWidth={2} aria-hidden /> : <RefreshCcw size={12} strokeWidth={2} aria-hidden />}
-                      Check
-                    </button>
                   </div>
                 </li>
 

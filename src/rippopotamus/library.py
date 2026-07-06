@@ -14,6 +14,23 @@ def download_ledger_path(root: Path) -> Path:
     return root / ".rippo-downloads.json"
 
 
+def failure_ledger_path(root: Path) -> Path:
+    return root / ".rippo-failures.json"
+
+
+def load_failure_ledger(root: Path) -> dict[str, Any]:
+    # Unlike the success ledger, a corrupt/unreadable failure log must never
+    # block a download — it is diagnostic only. Fall back to empty.
+    path = failure_ledger_path(root)
+    if not path.exists():
+        return {}
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    return payload if isinstance(payload, dict) else {}
+
+
 class LedgerLoadError(Exception):
     """Raised when the download ledger exists but cannot be read as a dict."""
 

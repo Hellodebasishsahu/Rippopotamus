@@ -6,8 +6,6 @@ declare global {
       health: () => Promise<EngineHealth>;
       probePage: (url: string, options?: PageProbeOptions) => Promise<PageProbeResponse>;
       clearSniffCache: () => Promise<{ ok: boolean }>;
-      setNetworkProxy: (proxy: string) => Promise<{ networkProxy: string; health: EngineHealth }>;
-      checkNetworkProxy: (proxy: string) => Promise<NetworkProxyCheckResponse>;
       setTransferSettings: (payload: Partial<TransferSettings>) => Promise<{ transfer: TransferSettings; health: EngineHealth }>;
       fetch: (url: string, provider?: ProviderId | "auto", cookieSource?: CookieSource) => Promise<FetchResponse>;
       fetchFull: (url: string, provider?: ProviderId | "auto", cookieSource?: CookieSource) => Promise<FetchResponse>;
@@ -19,10 +17,8 @@ declare global {
       listBrowsers: () => Promise<CookiesBrowserResponse>;
       setDefaultCookieSource: (source: CookieSource) => Promise<CookiesBrowserResponse>;
       setCookiesBrowser: (browserId: string | null) => Promise<CookiesBrowserResponse>;
-      checkYtDlpUpdate: () => Promise<YtDlpUpdateInfo>;
-      updateYtDlp: () => Promise<YtDlpUpdateResult>;
-      checkGalleryDlUpdate: () => Promise<GalleryDlUpdateInfo>;
-      updateGalleryDl: () => Promise<GalleryDlUpdateResult>;
+      checkHelpers: () => Promise<HelperCheckResult[]>;
+      updateHelpers: () => Promise<HelperUpdateResult[]>;
       checkAppUpdate: () => Promise<AppUpdateInfo>;
       chooseOutputRoot: () => Promise<{ outputRoot: string; canceled: boolean }>;
       resetOutputRoot: () => Promise<{ outputRoot: string }>;
@@ -62,8 +58,6 @@ export type EngineHealth = {
   providers?: ProviderOption[];
   presets?: PresetOption[];
   outputRoot: string;
-  networkProxy?: string;
-  networkProxyEnabled?: boolean;
   transfer?: TransferSettings;
   aria2MaxConnections?: number;
   aria2DownloadLimit?: string;
@@ -89,13 +83,6 @@ export type AppUpdateInfo = {
 };
 
 export type BrowserInfo = { id: string; label: string; appPath: string };
-
-export type NetworkProxyCheckResponse = {
-  ok: boolean;
-  proxy: string;
-  ip?: string | null;
-  error?: string;
-};
 
 export type CookieSource = {
   mode: "off";
@@ -188,24 +175,21 @@ export type PageProbeResponse = {
   cachedAt?: number;
 };
 
-export type YtDlpUpdateInfo = {
+export type HelperCheckResult = {
+  name: string;
   currentVersion: string | null;
   latestVersion: string | null;
+  updatable: boolean;
   updateAvailable: boolean;
-  binaryPath: string;
-  managedBinaryExists: boolean;
-  downloadUrl?: string;
   error?: string;
 };
 
-export type YtDlpUpdateResult = YtDlpUpdateInfo & {
-  health: EngineHealth;
-};
-
-export type GalleryDlUpdateInfo = YtDlpUpdateInfo;
-
-export type GalleryDlUpdateResult = GalleryDlUpdateInfo & {
-  health: EngineHealth;
+export type HelperUpdateResult = {
+  name: string;
+  from: string | null;
+  to: string | null;
+  ok: boolean;
+  error?: string;
 };
 
 export type FetchResponse = {

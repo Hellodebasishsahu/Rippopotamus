@@ -7,6 +7,7 @@ import ffmpegPath from "ffmpeg-static";
 import { currentOutputRoot } from "./settingsStore";
 import { runEngine } from "./engineProcess";
 import { loadThumbnail } from "./thumbnails";
+import { engineLogPath } from "./engineLog";
 import { resolveWithinRoots, assertWithinRoots } from "./pathGuard";
 import type { LibraryThumbnailResult } from "./types";
 
@@ -185,6 +186,20 @@ export function registerLibraryIpcHandlers() {
   ipcMain.handle("thumbnail:load", async (_event, urls: unknown) => {
     return loadThumbnail(urls);
   });
+
+  ipcMain.handle("logs:open", async () => {
+    const file = engineLogPath();
+    try {
+      if (!fs.existsSync(file)) fs.writeFileSync(file, "");
+    } catch {
+      // best effort
+    }
+    const error = await shell.openPath(file);
+    if (error) throw new Error(error);
+    return { ok: true, path: file };
+  });
+
+  ipcMain.handle("logs:path", async () => engineLogPath());
 
   ipcMain.handle("library:list", async (_event, payload?: { outputRoot?: string }) => {
     const root = currentOutputRoot();

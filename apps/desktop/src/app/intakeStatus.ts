@@ -9,13 +9,11 @@ export function resolveIntakeStatus({
   input,
   detectedCount,
   pageProbeError,
-  pageProbeNotice,
   formatError,
 }: {
   input: string;
   detectedCount: number;
   pageProbeError: string | null;
-  pageProbeNotice: string | null;
   formatError: (message: string, fallback?: string) => string;
 }): IntakeStatus {
   if (pageProbeError) {
@@ -25,15 +23,11 @@ export function resolveIntakeStatus({
     };
   }
 
-  if (pageProbeNotice) {
-    return { message: pageProbeNotice, tone: "success" };
-  }
-
   const hasText = input.trim().length > 0;
 
   if (hasText && detectedCount === 0) {
     return {
-      message: "That doesn't look like a link. Paste a URL, magnet, or sheet link.",
+      message: "That doesn't look like a link. Paste a URL, magnet, or torrent link.",
       tone: "warning",
     };
   }
@@ -47,7 +41,7 @@ export function resolveIntakeStatus({
   }
 
   return {
-    message: "Paste a link above — video, gallery, torrent, or sheet.",
+    message: "Paste a link above — video, gallery, or torrent.",
     tone: "idle",
   };
 }

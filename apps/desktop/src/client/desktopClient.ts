@@ -6,14 +6,12 @@ import type {
   DownloadResponse,
   EngineHealth,
   AppUpdateInfo,
-  GalleryDlUpdateInfo,
-  GalleryDlUpdateResult,
+  HelperCheckResult,
+  HelperUpdateResult,
   LibraryListRequest,
   LibraryListResponse,
   LibraryThumbnailResult,
   ThumbnailLoadResult,
-  YtDlpUpdateInfo,
-  YtDlpUpdateResult,
 } from "../../electron/types";
 
 type RippoBridge = Window["rippo"];
@@ -22,8 +20,6 @@ export type DesktopClient = {
   health: () => Promise<EngineHealth>;
   probePage: RippoBridge["probePage"];
   clearSniffCache: RippoBridge["clearSniffCache"];
-  setNetworkProxy: RippoBridge["setNetworkProxy"];
-  checkNetworkProxy: RippoBridge["checkNetworkProxy"];
   setTransferSettings: RippoBridge["setTransferSettings"];
   fetch: RippoBridge["fetch"];
   fetchFull: RippoBridge["fetchFull"];
@@ -35,10 +31,8 @@ export type DesktopClient = {
   listBrowsers: RippoBridge["listBrowsers"];
   setDefaultCookieSource: (source: CookieSource) => ReturnType<RippoBridge["setDefaultCookieSource"]>;
   setCookiesBrowser: RippoBridge["setCookiesBrowser"];
-  checkYtDlpUpdate: () => Promise<YtDlpUpdateInfo>;
-  updateYtDlp: () => Promise<YtDlpUpdateResult>;
-  checkGalleryDlUpdate: () => Promise<GalleryDlUpdateInfo>;
-  updateGalleryDl: () => Promise<GalleryDlUpdateResult>;
+  checkHelpers: () => Promise<HelperCheckResult[]>;
+  updateHelpers: () => Promise<HelperUpdateResult[]>;
   checkAppUpdate: () => Promise<AppUpdateInfo>;
   chooseOutputRoot: RippoBridge["chooseOutputRoot"];
   resetOutputRoot: RippoBridge["resetOutputRoot"];
@@ -55,8 +49,6 @@ export function createDesktopClient(bridge?: RippoBridge): DesktopClient | null 
     health: bridge.health,
     probePage: bridge.probePage,
     clearSniffCache: bridge.clearSniffCache,
-    setNetworkProxy: bridge.setNetworkProxy,
-    checkNetworkProxy: bridge.checkNetworkProxy,
     setTransferSettings: bridge.setTransferSettings,
     fetch: bridge.fetch,
     fetchFull: bridge.fetchFull,
@@ -68,10 +60,8 @@ export function createDesktopClient(bridge?: RippoBridge): DesktopClient | null 
     listBrowsers: bridge.listBrowsers,
     setDefaultCookieSource: bridge.setDefaultCookieSource,
     setCookiesBrowser: bridge.setCookiesBrowser,
-    checkYtDlpUpdate: bridge.checkYtDlpUpdate,
-    updateYtDlp: bridge.updateYtDlp,
-    checkGalleryDlUpdate: bridge.checkGalleryDlUpdate,
-    updateGalleryDl: bridge.updateGalleryDl,
+    checkHelpers: bridge.checkHelpers,
+    updateHelpers: bridge.updateHelpers,
     checkAppUpdate: bridge.checkAppUpdate,
     chooseOutputRoot: bridge.chooseOutputRoot,
     resetOutputRoot: bridge.resetOutputRoot,

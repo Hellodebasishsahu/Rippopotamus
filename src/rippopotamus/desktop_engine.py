@@ -7,11 +7,13 @@ import re
 import subprocess
 import sys
 import uuid
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
 from rippopotamus.cli import slugify
 from rippopotamus.providers import (
+    DEFAULT_PRESET,
     DEFAULT_PROVIDER,
     PRESETS,
     PROVIDERS,
@@ -28,7 +30,6 @@ from rippopotamus.desktop_runtime import (
     ffmpeg_path,
     gallery_dl_status,
     is_torrent_input,
-    network_proxy,
     provider_context,
     run_text,
     torrent_engine_status,
@@ -42,9 +43,11 @@ from rippopotamus.library import (
     command_library_list,
     download_ledger_path,
     emit,
+    failure_ledger_path,
     file_result,
     library_entry_from_record,
     load_download_ledger,
+    load_failure_ledger,
     media_kind_for_path,
     title_from_relative_path,
 )
@@ -96,6 +99,37 @@ def remember_download(root: Path, key: str, files: list[dict[str, Any]], *, url:
         "files": [item["path"] for item in files if isinstance(item.get("path"), str)],
     }
     write_download_ledger(root, ledger)
+    # A URL that finally succeeded is no longer a failure.
+    clear_failure(root, key)
+
+
+def write_failure_ledger(root: Path, ledger: dict[str, Any]) -> None:
+    try:
+        failure_ledger_path(root).write_text(json.dumps(ledger, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    except OSError:
+        # Diagnostic only — never let it break a download.
+        pass
+
+
+def remember_failure(root: Path, key: str, *, url: str, preset: str, error: str) -> None:
+    ledger = load_failure_ledger(root)
+    previous = ledger.get(key) if isinstance(ledger.get(key), dict) else {}
+    attempts = previous.get("attempts", 0) if isinstance(previous.get("attempts"), int) else 0
+    ledger[key] = {
+        "url": url,
+        "preset": preset,
+        "error": (error or "Download failed.").strip()[:1000],
+        "attempts": attempts + 1,
+        "lastFailedAt": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+    }
+    write_failure_ledger(root, ledger)
+
+
+def clear_failure(root: Path, key: str) -> None:
+    ledger = load_failure_ledger(root)
+    if key in ledger:
+        del ledger[key]
+        write_failure_ledger(root, ledger)
 
 
 def emit_duplicate_download(root: Path, files: list[dict[str, Any]], *, url: str, preset: str) -> None:
@@ -107,7 +141,6 @@ def emit_duplicate_download(root: Path, files: list[dict[str, Any]], *, url: str
 def command_health(args: argparse.Namespace) -> int:
     base = yt_dlp_base()
     cookies_browser = arg_cookies_browser(args)
-    proxy = network_proxy()
     ffmpeg = ffmpeg_path()
     yt_dlp_version = "unknown"
     try:
@@ -153,8 +186,6 @@ def command_health(args: argparse.Namespace) -> int:
         "ffmpegVersion": ffmpeg_version,
         "cookiesBrowser": cookies_browser,
         "cookies": verify_cookies_browser(base, cookies_browser),
-        "networkProxy": proxy,
-        "networkProxyEnabled": bool(proxy),
         "aria2MaxConnections": context.aria2_max_connections,
         "aria2DownloadLimit": context.aria2_download_limit or "",
         "providers": catalog["providers"],
@@ -173,11 +204,11 @@ def command_fetch(args: argparse.Namespace) -> int:
             output = ""
         elif is_drive_file_url(args.url):
             provider = "google-drive"
-            metadata = drive_metadata(args.url, cookies_browser, yt_dlp_base=yt_dlp_base(), network_proxy=network_proxy())
+            metadata = drive_metadata(args.url, cookies_browser, yt_dlp_base=yt_dlp_base())
             emit({"ok": True, "url": args.url, "metadata": metadata})
             return 0
         else:
-            metadata = None if full else preview_metadata(args.url, network_proxy())
+            metadata = None if full else preview_metadata(args.url)
             if metadata:
                 emit({"ok": True, "url": args.url, "metadata": metadata})
                 return 0
@@ -192,58 +223,18 @@ def command_fetch(args: argparse.Namespace) -> int:
     elif provider == "torrent":
         output = ""
     elif provider == "google-drive":
-        metadata = drive_metadata(args.url, cookies_browser, yt_dlp_base=yt_dlp_base(), network_proxy=network_proxy())
+        metadata = drive_metadata(args.url, cookies_browser, yt_dlp_base=yt_dlp_base())
         emit({"ok": True, "url": args.url, "metadata": metadata})
         return 0
     else:
         if provider == "yt-dlp" and not full:
-            metadata = preview_metadata(args.url, network_proxy(), provider=provider)
+            metadata = preview_metadata(args.url, provider=provider)
             if metadata:
                 emit({"ok": True, "url": args.url, "metadata": metadata})
                 return 0
         output = run_text(metadata_command(provider, args.url, provider_context(cookies_browser)))
     metadata = parse_metadata_output(provider, args.url, output)
     emit({"ok": True, "url": args.url, "metadata": metadata})
-    return 0
-
-
-def command_proxy_check(args: argparse.Namespace) -> int:
-    proxy = (args.proxy or "").strip()
-    if not proxy:
-        emit({"ok": False, "proxy": "", "error": "Paste a proxy URL first."})
-        return 1
-    command = [
-        "curl",
-        "--silent",
-        "--show-error",
-        "--max-time",
-        "12",
-        "--proxy",
-        proxy,
-        "https://api.ipify.org?format=json",
-    ]
-    try:
-        result = subprocess.run(command, capture_output=True, text=True, timeout=15)
-    except FileNotFoundError:
-        emit({"ok": False, "proxy": proxy, "error": "curl is not available to test this proxy."})
-        return 1
-    except subprocess.TimeoutExpired:
-        emit({"ok": False, "proxy": proxy, "error": "Proxy test timed out."})
-        return 1
-
-    output = (result.stdout or "").strip()
-    if result.returncode != 0:
-        detail = (result.stderr or output or "Proxy test failed.").strip()
-        emit({"ok": False, "proxy": proxy, "error": friendly_error(detail)})
-        return 1
-
-    try:
-        payload = json.loads(output)
-    except json.JSONDecodeError:
-        emit({"ok": True, "proxy": proxy, "ip": output[:120]})
-        return 0
-
-    emit({"ok": True, "proxy": proxy, "ip": payload.get("ip")})
     return 0
 
 
@@ -314,8 +305,12 @@ def run_ytdlp_download_command(cmd: list[str], root: Path, before: set[Path]) ->
 
 
 def command_download(args: argparse.Namespace) -> int:
+    # An empty preset reaches here when a queue item is resumed before it ever
+    # fetched successfully; fall back to the default rather than crashing.
+    if not args.preset:
+        args.preset = DEFAULT_PRESET
     if args.preset not in PRESETS:
-        raise SystemExit(f"Unknown preset `{args.preset}`.")
+        raise SystemExit(f"Unknown preset `{args.preset}`. Choose one of: {', '.join(PRESETS)}")
 
     root = Path(args.output_root).expanduser().resolve()
     for folder in ["Source", "Audio", "Images", "Files", "Thumbnails", "Clips", "Exports"]:
@@ -347,6 +342,8 @@ def command_download(args: argparse.Namespace) -> int:
             after = snapshot_files(root)
             files = sorted((file_result(root, path) for path in after - before), key=lambda item: item["path"])
             remember_download(root, dedupe_key, files, url=args.url, preset=args.preset)
+        else:
+            remember_failure(root, dedupe_key, url=args.url, preset=args.preset, error=f"Torrent download exited with code {code}.")
         return code
 
     if spec["provider"] == "google-drive":
@@ -357,11 +354,12 @@ def command_download(args: argparse.Namespace) -> int:
                 root / spec["folder"],
                 cookie_browser=cookies_browser,
                 yt_dlp_base=yt_dlp_base(),
-                network_proxy=network_proxy(),
                 emit=emit,
             )
         except SystemExit as exc:
-            emit({"type": "error", "error": cookie_error_message(str(exc))})
+            message = cookie_error_message(str(exc))
+            remember_failure(root, dedupe_key, url=args.url, preset=args.preset, error=message)
+            emit({"type": "error", "error": message})
             return 1
         relative = sorted((file_result(root, Path(path).resolve()) for path in files), key=lambda item: item["path"])
         remember_download(root, dedupe_key, relative, url=args.url, preset=args.preset)
@@ -386,7 +384,9 @@ def command_download(args: argparse.Namespace) -> int:
     detail = next((n for n in notices if n.startswith("ERROR:")), last_line)
 
     if code != 0:
-        emit({"type": "error", "error": cookie_error_message(detail)})
+        message = cookie_error_message(detail)
+        remember_failure(root, dedupe_key, url=args.url, preset=args.preset, error=message)
+        emit({"type": "error", "error": message})
         return code
 
     after = snapshot_files(root)
@@ -428,13 +428,31 @@ def command_gallery_download(args: argparse.Namespace, root: Path, cmd: list[str
     code = process.wait()
     if code != 0:
         detail = next((n for n in notices if n.startswith("ERROR:")), last_line)
-        emit({"type": "error", "error": friendly_error(detail)})
+        message = friendly_error(detail)
+        remember_failure(root, download_key(args.url, args.preset), url=args.url, preset=args.preset, error=message)
+        emit({"type": "error", "error": message})
         return code
 
     after = snapshot_files(root)
     files = sorted((file_result(root, path) for path in after - before), key=lambda item: item["path"])
     remember_download(root, download_key(args.url, args.preset), files, url=args.url, preset=args.preset)
     emit({"type": "success", "files": files, "outputRoot": str(root), "warnings": [n for n in notices if n.startswith("WARNING:")]})
+    return 0
+
+
+def command_failures_list(args: argparse.Namespace) -> int:
+    root = Path(args.output_root).expanduser().resolve()
+    ledger = load_failure_ledger(root)
+    failures = sorted(
+        (
+            {"key": key, **record}
+            for key, record in ledger.items()
+            if isinstance(record, dict)
+        ),
+        key=lambda item: item.get("lastFailedAt", ""),
+        reverse=True,
+    )
+    emit({"type": "failures", "failures": failures, "outputRoot": str(root)})
     return 0
 
 
@@ -462,9 +480,9 @@ def build_parser() -> argparse.ArgumentParser:
     download.add_argument("--cookies-browser", default="")
     download.set_defaults(func=command_download)
 
-    proxy_check = sub.add_parser("proxy-check")
-    proxy_check.add_argument("--proxy", required=True)
-    proxy_check.set_defaults(func=command_proxy_check)
+    failures_list = sub.add_parser("failures-list")
+    failures_list.add_argument("--output-root", required=True)
+    failures_list.set_defaults(func=command_failures_list)
 
     library_list = sub.add_parser("library-list")
     library_list.add_argument("--output-root", required=True)

@@ -11,10 +11,12 @@ from pathlib import Path
 from typing import Any
 
 from rippopotamus.providers import (
+    NETWORK_BLOCKED_MESSAGE,
     ProviderContext,
     aria2c_base,
     friendly_error,
     gallery_dl_base,
+    looks_network_blocked,
     yt_dlp_cookie_check_command,
     yt_dlp_run as provider_yt_dlp_run,
 )
@@ -47,6 +49,8 @@ def cookies_browser_args() -> list[str]:
 
 def cookie_error_message(message: str) -> str:
     lower = message.lower()
+    if looks_network_blocked(message):
+        return NETWORK_BLOCKED_MESSAGE
     if "requested format is not available" in lower:
         return "Selected format is not available for this link."
     if "cookies" not in lower and "cookie" not in lower:
@@ -121,16 +125,11 @@ def provider_context(cookies_browser: str | None = None) -> ProviderContext:
         aria2c_path=aria["path"] if aria["ok"] else None,
         aria2_max_connections=aria2_max_connections(),
         aria2_download_limit=aria2_download_limit(),
-        network_proxy=network_proxy(),
     )
 
 
 def arg_cookies_browser(args: argparse.Namespace) -> str | None:
     return (getattr(args, "cookies_browser", "") or "").strip() or None
-
-
-def network_proxy() -> str | None:
-    return os.environ.get("RIPPO_NETWORK_PROXY", "").strip() or None
 
 
 def aria2_max_connections() -> int:

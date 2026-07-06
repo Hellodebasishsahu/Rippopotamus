@@ -24,7 +24,6 @@ export function AppHeader({
   textareaRef,
   detectedCount,
   composerAction,
-  pageProbeBusy,
   setInput,
   runComposerAction,
   sniffPage,
@@ -42,7 +41,6 @@ export function AppHeader({
   textareaRef: RefObject<HTMLTextAreaElement | null>;
   detectedCount: number;
   composerAction: ComposerAction;
-  pageProbeBusy: boolean;
   setInput: (value: string) => void;
   runComposerAction: () => void;
   sniffPage: () => void;
@@ -119,8 +117,8 @@ export function AppHeader({
               ) : (
                 <>
                   {detectedCount === 1 ? (
-                    <button type="button" className="btn btn-ghost btn-fetch" onClick={sniffPage} disabled={pageProbeBusy}>
-                      {pageProbeBusy ? <Loader2 className="spin" size={14} strokeWidth={2} aria-hidden /> : "Sniff"}
+                    <button type="button" className="btn btn-ghost btn-fetch" onClick={sniffPage}>
+                      Sniff
                     </button>
                   ) : null}
                   <button type="button" className="btn btn-primary btn-fetch" onClick={runComposerAction} disabled={composerAction.disabled}>

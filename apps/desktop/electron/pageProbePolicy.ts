@@ -5,7 +5,7 @@ export type PageProbeCandidate = {
   kind: PageProbeCandidateKind;
   type: PageProbeCandidateKind;
   label: string;
-  source: "network" | "dom" | "meta";
+  source: "network" | "dom" | "meta" | "embed";
   method: string;
   score: number;
   contentType?: string;
@@ -269,8 +269,8 @@ export function candidateLabel(kind: PageProbeCandidateKind, url: string, conten
 // Tier 2 (70-89):  Direct video/audio from network with content-type
 // Tier 3 (50-69):  Video/audio by extension, or from DOM/meta with type
 // Tier 4 (30-49):  PDF, torrent, document
-// Tier 5 (10-29):  Images (non-thumbnail)
-// Rejected (≤0):   Segments, ads, thumbnails, blob/data, non-media
+// Tier 5 (10-29):  Images — thumbnails kept but ranked lowest (10), other images 20
+// Rejected (≤0):   Segments, ads, blob/data, non-media
 // ---------------------------------------------------------------------------
 
 export function candidateScore(kind: PageProbeCandidateKind, source: PageProbeCandidate["source"], url: string, contentType?: string): number {
@@ -284,7 +284,10 @@ export function candidateScore(kind: PageProbeCandidateKind, source: PageProbeCa
       break;
     case "video":
     case "audio":
-      if (source === "network" && contentType) score = 80;
+      // Embeds resolved through the engine (yt-dlp/gallery-dl) are confirmed,
+      // directly downloadable media — rank them just under master playlists.
+      if (source === "embed") score = 88;
+      else if (source === "network" && contentType) score = 80;
       else if (source === "meta") score = 75;
       else if (contentType) score = 65;
       else score = 55;
@@ -297,7 +300,9 @@ export function candidateScore(kind: PageProbeCandidateKind, source: PageProbeCa
       score = 30;
       break;
     case "image":
-      score = isLikelyThumbnailUrl(url) ? 5 : 20;
+      // Previews/thumbnails are kept (the user asked for "media under preview")
+      // but ranked below real video/audio so they never crowd out strong media.
+      score = isLikelyThumbnailUrl(url) ? 10 : 20;
       break;
     default:
       score = 10;
@@ -316,6 +321,7 @@ export function addProbeCandidate(
   method: string,
   contentType?: string,
   label?: string,
+  kindOverride?: PageProbeCandidateKind,
 ): void {
   let parsed: URL;
   try {
@@ -327,7 +333,7 @@ export function addProbeCandidate(
   if ((parsed.protocol === "http:" || parsed.protocol === "https:") && !isAllowedProbePageUrl(parsed)) return;
 
   const url = parsed.toString();
-  const kind = candidateKind(url, contentType) || (parsed.protocol === "magnet:" ? "torrent" : null);
+  const kind = kindOverride || candidateKind(url, contentType) || (parsed.protocol === "magnet:" ? "torrent" : null);
   if (!kind) return;
 
   const score = candidateScore(kind, source, url, contentType);
