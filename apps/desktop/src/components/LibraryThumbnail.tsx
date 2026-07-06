@@ -1,6 +1,6 @@
 import { File, FileAudio2, FileImage, FileText, FileVideo2, ImageOff } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import type { LibraryItem } from "../../electron/types";
+import type { LibraryItem } from "../types/desktop";
 import type { DesktopClient } from "../client/desktopClient";
 
 export function libraryKindIcon(kind: LibraryItem["kind"]) {

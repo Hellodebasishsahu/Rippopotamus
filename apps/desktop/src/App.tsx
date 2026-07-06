@@ -1,9 +1,9 @@
 import { Check, Cookie, ExternalLink, FolderOpen, FolderSearch, Loader2, RefreshCcw, RotateCcw, X } from "lucide-react";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import type { AppUpdateInfo, BrowserInfo, CookieSource, EngineHealth, HelperCheckResult, HelperUpdateResult, PageProbeCandidate, PresetOption, ProviderId, ProviderOption } from "../electron/types";
+import type { AppUpdateInfo, BrowserInfo, CookieSource, EngineHealth, HelperCheckResult, HelperUpdateResult, PageProbeCandidate, PresetOption, ProviderId, ProviderOption } from "./types/desktop";
 import { sourceUrl, useDownloadQueue } from "./app/useDownloadQueue";
 import type { QueueItem } from "./app/useDownloadQueue";
-import type { LibraryItem } from "../electron/types";
+import type { LibraryItem } from "./types/desktop";
 import { getDesktopClient } from "./client/desktopClient";
 import { AppHeader, type AppView, type ComposerAction } from "./components/AppHeader";
 import { ProjectIntakeView } from "./views/ProjectIntakeView";

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import type { LibraryItem, PresetOption } from "../../electron/types";
+import type { LibraryItem, PresetOption } from "../types/desktop";
 import type { DesktopClient } from "../client/desktopClient";
 
 export function presetLabel(presetId: string, presetOptions: PresetOption[]): string {

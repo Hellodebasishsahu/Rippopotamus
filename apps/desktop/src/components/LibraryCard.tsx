@@ -1,5 +1,5 @@
 import { ExternalLink, FolderOpen, Link2 } from "lucide-react";
-import type { LibraryItem, PresetOption } from "../../electron/types";
+import type { LibraryItem, PresetOption } from "../types/desktop";
 import { absoluteLibraryPath, formatBytes, formatSavedAt, presetLabel } from "../app/useLibrary";
 import type { DesktopClient } from "../client/desktopClient";
 import { LibraryThumbnail } from "./LibraryThumbnail";

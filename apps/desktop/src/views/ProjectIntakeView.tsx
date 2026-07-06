@@ -1,6 +1,6 @@
 import { Download, FolderOpen, Loader2, X, Link2, AlertCircle, CheckCircle2 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { BrowserInfo, CookieSource, PresetOption, ProviderOption } from "../../electron/types";
+import type { BrowserInfo, CookieSource, PresetOption, ProviderOption } from "../types/desktop";
 import { queueItemCanRefetch, queueItemCanRemove } from "../app/downloadQueueModel";
 import { presetsForProvider } from "../app/downloadQueuePrefs";
 import {

@@ -1,5 +1,5 @@
 import { FolderOpen, Play, Square, Trash2 } from "lucide-react";
-import type { PresetOption } from "../../electron/types";
+import type { PresetOption } from "../types/desktop";
 import {
   QUEUE_STATUS,
   queueItemCanChangeOutput,

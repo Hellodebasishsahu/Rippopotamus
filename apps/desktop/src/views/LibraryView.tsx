@@ -1,6 +1,6 @@
 import { AlertTriangle, Inbox, Search } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { LibraryItem, PresetOption } from "../../electron/types";
+import type { LibraryItem, PresetOption } from "../types/desktop";
 import { useLibrary } from "../app/useLibrary";
 import type { DesktopClient } from "../client/desktopClient";
 import { LibraryCard } from "../components/LibraryCard";

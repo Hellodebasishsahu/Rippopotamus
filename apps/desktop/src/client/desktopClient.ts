@@ -20,7 +20,7 @@ import type {
   PageProbeResponse,
   ProviderId,
   ThumbnailLoadResult,
-} from "../../electron/types";
+} from "../types/desktop";
 
 type RippoBridge = Window["rippo"];
 
