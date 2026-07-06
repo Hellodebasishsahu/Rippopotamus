@@ -11,7 +11,7 @@
     "build:ui": "tsc -p tsconfig.json --noEmit && vite build",
     "build:electron": "tsc -p tsconfig.electron.json",
     "package:mac": "electron-builder --mac dmg",
-    "package:win": "electron-builder --win dir --x64"
+    "package:win": "electron-builder --win dir nsis --x64"
   },
   "dependencies": {
     "@ghostery/adblocker-electron": "^2.17.0",
@@ -80,8 +80,13 @@
     "win": {
       "icon": "public/brand-logo.ico",
       "target": [
-        "dir"
+        "dir",
+        "nsis"
       ]
+    },
+    "nsis": {
+      "oneClick": true,
+      "artifactName": "Rippopotamus-Setup-${version}.exe"
     }
   }
 }
