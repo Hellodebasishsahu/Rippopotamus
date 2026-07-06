@@ -15,7 +15,8 @@ apps/desktop/dist/
 apps/desktop/dist-electron/
 release/
 build/
-apps/desktop/src-tauri/resources/bin/
+apps/desktop/src-tauri/resources/bin/*
+!apps/desktop/src-tauri/resources/bin/.gitkeep
 downloads/
 scratch/
 coverage/
