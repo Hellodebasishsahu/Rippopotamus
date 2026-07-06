@@ -4,7 +4,7 @@ import type { AppUpdateInfo, BrowserInfo, CookieSource, EngineHealth, HelperChec
 import { sourceUrl, useDownloadQueue } from "./app/useDownloadQueue";
 import type { QueueItem } from "./app/useDownloadQueue";
 import type { LibraryItem } from "../electron/types";
-import { createDesktopClient } from "./client/desktopClient";
+import { getDesktopClient } from "./client/desktopClient";
 import { AppHeader, type AppView, type ComposerAction } from "./components/AppHeader";
 import { ProjectIntakeView } from "./views/ProjectIntakeView";
 import { LibraryView } from "./views/LibraryView";
@@ -248,7 +248,7 @@ function readWorkerSetting(key: string, fallback: number, min: number, max: numb
 }
 
 export function App() {
-  const desktop = useMemo(() => createDesktopClient(window.rippo), []);
+  const desktop = useMemo(() => getDesktopClient(), []);
   const [health, setHealth] = useState<EngineHealth | null>(null);
   const [healthError, setHealthError] = useState<string | null>(null);
   const [input, setInput] = useState("");
