@@ -72,7 +72,7 @@ def command_aria2_download(args: argparse.Namespace, root: Path, cmd: list[str])
         return code
 
     after = snapshot_files(root)
-    files = sorted(str(path.relative_to(root)) for path in after - before)
+    files = sorted(path.relative_to(root).as_posix() for path in after - before)
     emit({"type": "success", "files": files, "outputRoot": str(root), "warnings": []})
     return 0
 

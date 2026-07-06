@@ -49,7 +49,8 @@ def load_download_ledger(root: Path) -> dict[str, Any]:
 
 
 def file_result(root: Path, path: Path) -> dict[str, Any]:
-    relative = str(path.relative_to(root))
+    # Ledger paths are always POSIX-style so the renderer and tests see one shape on every OS.
+    relative = path.relative_to(root).as_posix()
     try:
         size = path.stat().st_size
     except OSError:
