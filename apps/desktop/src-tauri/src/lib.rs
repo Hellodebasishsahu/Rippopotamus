@@ -8,11 +8,13 @@ mod path_guard;
 mod selftest;
 mod settings;
 mod shell;
+pub mod thumbnails;
 mod version;
 
 use commands::AppState;
 use std::collections::HashMap;
 use std::sync::Arc;
+use thumbnails::ThumbnailCache;
 use tokio::sync::Mutex;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -25,6 +27,7 @@ pub fn run() {
     .manage(AppState {
       jobs: Arc::new(Mutex::new(HashMap::new())),
     })
+    .manage(ThumbnailCache::default())
     .invoke_handler(tauri::generate_handler![
       commands::health,
       commands::set_transfer_settings,
@@ -48,6 +51,8 @@ pub fn run() {
       shell::open_external,
       shell::open_path,
       shell::show_item_in_folder,
+      thumbnails::load_thumbnail,
+      thumbnails::load_library_thumbnail,
     ])
     .setup(|app| {
       if cfg!(debug_assertions) {
@@ -73,6 +78,13 @@ pub fn run() {
         let handle = app.handle().clone();
         tauri::async_runtime::spawn(async move {
           selftest::run_p2(handle).await;
+        });
+      }
+      #[cfg(debug_assertions)]
+      if std::env::var("RIPPO_THUMBNAILS_SELFTEST").is_ok() {
+        let handle = app.handle().clone();
+        tauri::async_runtime::spawn(async move {
+          selftest::run_thumbnails(handle).await;
         });
       }
 

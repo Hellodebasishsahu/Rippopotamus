@@ -83,7 +83,7 @@ fn candidate_pythons() -> Vec<String> {
     out
 }
 
-fn ffmpeg_path(app: &AppHandle) -> Option<String> {
+pub fn ffmpeg_path(app: &AppHandle) -> Option<String> {
     if let Ok(configured) = std::env::var("RIPPO_FFMPEG_PATH") {
         if !configured.trim().is_empty() {
             return Some(configured);

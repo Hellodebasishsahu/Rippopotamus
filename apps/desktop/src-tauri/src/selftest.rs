@@ -154,3 +154,88 @@ pub async fn run_p2(app: AppHandle) {
     let _ = std::fs::remove_dir_all(&custom_root);
     log::info!("[selftest-p2] P2 gate self-test complete");
 }
+
+// Thumbnail parity gate. Gated behind RIPPO_THUMBNAILS_SELFTEST=1. Exercises
+// the real `load_library_thumbnail` / `load_thumbnail` commands (path guard,
+// ffmpeg resolution, and mtime-keyed cache all included) against:
+//   (a) a real video file placed at RIPPO_THUMBNAILS_SELFTEST_VIDEO (or a
+//       synthetic ffmpeg-generated clip if unset) inside a temp output root
+//   (b) a real public image URL at RIPPO_THUMBNAILS_SELFTEST_IMAGE_URL
+pub async fn run_thumbnails(app: AppHandle) {
+    log::info!("[selftest-thumbs] starting thumbnails gate self-test");
+
+    let root = std::env::temp_dir().join(format!("rippo-thumbs-selftest-{}", std::process::id()));
+    let _ = std::fs::create_dir_all(&root);
+    let mut settings = crate::settings::read_settings(&app);
+    settings.output_root = Some(root.to_string_lossy().to_string());
+    if let Err(e) = crate::settings::write_settings(&app, &settings) {
+        log::error!("[selftest-thumbs] write_settings FAILED: {e}");
+        return;
+    }
+
+    let video_path = match std::env::var("RIPPO_THUMBNAILS_SELFTEST_VIDEO") {
+        Ok(p) if !p.trim().is_empty() => std::path::PathBuf::from(p),
+        _ => {
+            let generated = root.join("selftest-clip.mp4");
+            let ffmpeg = crate::engine::ffmpeg_path(&app).unwrap_or_else(|| "ffmpeg".to_string());
+            let status = std::process::Command::new(&ffmpeg)
+                .args([
+                    "-y",
+                    "-f",
+                    "lavfi",
+                    "-i",
+                    "testsrc=duration=2:size=320x240:rate=5",
+                    "-pix_fmt",
+                    "yuv420p",
+                    generated.to_string_lossy().as_ref(),
+                ])
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .status();
+            match status {
+                Ok(s) if s.success() => generated,
+                other => {
+                    log::error!("[selftest-thumbs] (a) could not generate a sample clip: {other:?}");
+                    return;
+                }
+            }
+        }
+    };
+    // Copy into the guarded output root if it isn't already there.
+    let target = root.join(video_path.file_name().unwrap_or_default());
+    if video_path != target {
+        if let Err(e) = std::fs::copy(&video_path, &target) {
+            log::error!("[selftest-thumbs] (a) copying sample clip into output root FAILED: {e}");
+            return;
+        }
+    }
+
+    let cache: tauri::State<crate::thumbnails::ThumbnailCache> = app.state();
+    match crate::thumbnails::load_library_thumbnail(app.clone(), cache, target.to_string_lossy().to_string()).await {
+        Ok(result) if result.ok => {
+            let len = result.data_url.as_deref().map(str::len).unwrap_or(0);
+            let prefix = result.data_url.as_deref().map(|s| &s[..s.find(',').unwrap_or(30).min(30)]).unwrap_or("");
+            log::info!("[selftest-thumbs] (a) load_library_thumbnail OK: prefix={prefix} total_len={len}");
+        }
+        Ok(result) => log::error!("[selftest-thumbs] (a) load_library_thumbnail returned ok=false: {:?}", result.error),
+        Err(e) => log::error!("[selftest-thumbs] (a) load_library_thumbnail FAILED: {e:?}"),
+    }
+
+    let image_url = std::env::var("RIPPO_THUMBNAILS_SELFTEST_IMAGE_URL")
+        .unwrap_or_else(|_| "https://placehold.co/64x64.png".to_string());
+    let result = crate::thumbnails::load_thumbnail(vec![image_url.clone()]).await;
+    match &result.src {
+        Some(src) => {
+            let prefix = &src[..src.find(',').unwrap_or(30).min(30)];
+            log::info!(
+                "[selftest-thumbs] (b) load_thumbnail OK: url={:?} prefix={prefix} total_len={}",
+                result.url,
+                src.len()
+            );
+        }
+        None => log::error!("[selftest-thumbs] (b) load_thumbnail FAILED to fetch {image_url}"),
+    }
+
+    let _ = std::fs::remove_dir_all(&root);
+    log::info!("[selftest-thumbs] thumbnails gate self-test complete");
+}

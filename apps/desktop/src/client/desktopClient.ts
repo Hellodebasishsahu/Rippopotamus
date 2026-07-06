@@ -166,7 +166,8 @@ const tauriDesktopClient: DesktopClient = {
   openPath: (target: string) => invoke("open_path", { target }),
   showItemInFolder: (target: string) => invoke("show_item_in_folder", { target }),
 
-  // Not in P2 scope — page probe/sniff and native thumbnails.
+  // Not in P2 scope — page probe/sniff. Native thumbnails (loadThumbnail /
+  // loadLibraryThumbnail) are wired below to the Rust commands.
   probePage: notImplemented<PageProbeResponse>("probePage", {
     ok: false,
     url: "",
@@ -174,8 +175,8 @@ const tauriDesktopClient: DesktopClient = {
     candidates: [],
   }),
   clearSniffCache: notImplemented("clearSniffCache", { ok: true }),
-  loadThumbnail: notImplemented("loadThumbnail", { src: null, url: null }),
-  loadLibraryThumbnail: notImplemented("loadLibraryThumbnail", { ok: false, error: "Not implemented yet." }),
+  loadThumbnail: (urls: string[]) => invoke<ThumbnailLoadResult>("load_thumbnail", { urls }),
+  loadLibraryThumbnail: (target: string) => invoke<LibraryThumbnailResult>("load_library_thumbnail", { target }),
 };
 
 export function getDesktopClient(): DesktopClient | null {
