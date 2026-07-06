@@ -98,25 +98,6 @@ function pythonCandidates() {
   ];
 }
 
-// A truly fresh install has no yt-dlp yet (the helper registry fetches it
-// standalone from GitHub releases at runtime — see helpers.rs). Mirror that
-// here with a real download so the bundled-only health check reflects what a
-// first-run user would see once helpers are installed, not an empty-PATH
-// failure that has nothing to do with packaging.
-function fetchStandaloneYtDlp(platformName) {
-  const assetName = platformName === "win32" ? "yt-dlp.exe" : "yt-dlp_macos";
-  const cacheDir = path.join(root, ".build", "verify-cache");
-  fs.mkdirSync(cacheDir, { recursive: true });
-  const dest = path.join(cacheDir, assetName);
-  if (!fs.existsSync(dest)) {
-    const url = `https://github.com/yt-dlp/yt-dlp/releases/latest/download/${assetName}`;
-    const result = spawnSync("curl", ["-fsSL", "-o", dest, url], { stdio: "inherit" });
-    if (result.status !== 0) fail(`Could not fetch standalone yt-dlp from ${url} for verification.`);
-    if (platformName !== "win32") fs.chmodSync(dest, 0o755);
-  }
-  return dest;
-}
-
 const paths = packagePaths(target);
 if (process.platform !== paths.platform) {
   fail(`Packaged ${target} engine health must run on ${paths.platform}; current platform is ${process.platform}.`);
@@ -129,12 +110,16 @@ if (!paths.bundledOnly) {
 requireFile(paths.ffmpeg, "packaged ffmpeg binary");
 requireFile(paths.aria2c, "packaged aria2c binary");
 
+// Deliberately no RIPPO_YTDLP_PATH: a genuinely fresh install has no
+// external yt-dlp/gallery-dl anywhere yet. The bundled-only targets must
+// prove the frozen engine resolves both standalone, in a stripped
+// environment, exactly like a first-run user with no helpers installed.
 const env = {
-  ...process.env,
+  ...(paths.bundledOnly ? { HOME: process.env.HOME, PATH: paths.platform === "win32" ? process.env.PATH : "/usr/bin:/bin" } : process.env),
   PYTHONPATH: [paths.engine, process.env.PYTHONPATH].filter(Boolean).join(path.delimiter),
   RIPPO_FFMPEG_PATH: paths.ffmpeg,
   RIPPO_ARIA2C_PATH: paths.aria2c,
-  RIPPO_YTDLP_PATH: paths.bundledOnly ? fetchStandaloneYtDlp(paths.platform) : "",
+  RIPPO_YTDLP_PATH: "",
 };
 
 // PyInstaller --onedir layout: bin/rippo-engine/rippo-engine(.exe) plus an
@@ -159,7 +144,11 @@ if (fs.existsSync(bundledEngine)) {
     }
     const actualAria2c = path.resolve(String(payload.aria2cPath || ""));
     const expectedAria2c = path.resolve(paths.aria2c);
-    if (payload.ok && payload.ffmpegOk && payload.aria2cOk && actualAria2c === expectedAria2c) {
+    // Bundled-only targets must prove the frozen engine self-resolves BOTH
+    // yt-dlp and gallery-dl with no external help (see packaging/engine_entry.py's
+    // `-m yt_dlp`/`-m gallery_dl` dispatch shim) — not just ffmpeg/aria2c.
+    const toolsOk = paths.bundledOnly ? Boolean(payload.ytDlp) && Boolean(payload.galleryDlOk) : true;
+    if (payload.ok && payload.ffmpegOk && payload.aria2cOk && toolsOk && actualAria2c === expectedAria2c) {
       console.log(`Packaged ${target} rippo-engine binary health is valid on ${os.platform()}.`);
       process.exit(0);
     }
