@@ -96,7 +96,7 @@ fn ffmpeg_path() -> Option<String> {
     None
 }
 
-fn app_managed_ytdlp_path(app: &AppHandle) -> PathBuf {
+pub fn app_managed_ytdlp_path(app: &AppHandle) -> PathBuf {
     let name = if cfg!(windows) { "yt-dlp.exe" } else { "yt-dlp" };
     app.path()
         .app_data_dir()
@@ -105,7 +105,7 @@ fn app_managed_ytdlp_path(app: &AppHandle) -> PathBuf {
         .join(name)
 }
 
-fn app_managed_gallerydl_root(app: &AppHandle) -> PathBuf {
+pub fn app_managed_gallerydl_root(app: &AppHandle) -> PathBuf {
     app.path()
         .app_data_dir()
         .unwrap_or_else(|_| std::env::temp_dir())
@@ -166,6 +166,11 @@ pub fn engine_env(app: &AppHandle) -> HashMap<String, String> {
     if let Some(aria2c) = bundled_aria2c_path(app) {
         env.entry("RIPPO_ARIA2C_PATH".into())
             .or_insert_with(|| aria2c.to_string_lossy().to_string());
+    }
+
+    let transfer = crate::settings::current_transfer_settings(app);
+    for (key, value) in crate::settings::transfer_env(&transfer) {
+        env.insert(key, value);
     }
 
     env

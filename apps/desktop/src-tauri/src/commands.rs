@@ -1,40 +1,57 @@
-// Tauri commands mirroring apps/desktop/electron/engineIpc.ts + libraryIpc.ts
-// (P1 scope only: health, fetch, download + progress events, library_list,
-// failures_list). Settings, path-guard, cookies, and helper-registry parity
-// land in P2 — for now the output root defaults to `~/Downloads/Rippo` and
-// cookies are always off, matching the LLD's phase boundaries.
+// Tauri commands mirroring apps/desktop/electron/engineIpc.ts + libraryIpc.ts.
+// P1 landed health/fetch/download/library_list/failures_list against a
+// hardcoded `~/Downloads/Rippo` root and no cookies. P2 wires the real
+// settings-backed output root + cookie source (see settings.rs / cookies.rs)
+// into all of these.
 
+use crate::cookies::{cookie_source_args, cookies_supported, detect_browsers};
 use crate::engine::{run_engine, ActiveJobs};
+use crate::settings::{current_output_root, current_transfer_settings, default_cookie_source};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use tauri::{AppHandle, Emitter, Manager, State};
+use tauri::{AppHandle, Emitter, State};
 use uuid::Uuid;
 
 pub struct AppState {
     pub jobs: ActiveJobs,
 }
 
-fn default_output_root(app: &AppHandle) -> std::path::PathBuf {
-    app.path()
-        .download_dir()
-        .unwrap_or_else(|_| std::env::temp_dir())
-        .join("Rippo")
+pub(crate) fn default_output_root(app: &AppHandle) -> std::path::PathBuf {
+    std::path::PathBuf::from(current_output_root(app))
 }
 
 #[tauri::command]
 pub async fn health(app: AppHandle) -> Result<Value, String> {
     let output_root = default_output_root(&app);
-    let args = vec!["health".to_string(), "--cookies-browser".to_string(), String::new()];
+    let browsers = detect_browsers(&app);
+    let cookie_source = default_cookie_source(&app, &browsers);
+    let transfer = current_transfer_settings(&app);
+
+    let mut args = vec!["health".to_string()];
+    args.extend(cookie_source_args(&cookie_source));
     let mut payload = run_engine(&app, args, |_| {}, None).await?;
     if let Value::Object(ref mut map) = payload {
         map.insert("outputRoot".into(), json!(output_root.to_string_lossy()));
         map.insert("packaged".into(), json!(!cfg!(debug_assertions)));
-        map.entry("cookiesSupported").or_insert(json!(false));
-        map.entry("cookiesBrowsers").or_insert(json!([]));
-        map.entry("cookieSource").or_insert(json!({ "mode": "off" }));
-        map.entry("transfer").or_insert(json!({ "aria2MaxConnections": 8, "aria2DownloadLimit": "" }));
+        map.insert("cookiesSupported".into(), json!(cookies_supported()));
+        map.insert("cookiesBrowsers".into(), json!(browsers));
+        map.insert("cookieSource".into(), json!(cookie_source));
+        map.insert("transfer".into(), json!(transfer));
     }
     Ok(payload)
+}
+
+#[tauri::command]
+pub async fn set_transfer_settings(
+    app: AppHandle,
+    aria2_max_connections: Option<f64>,
+    aria2_download_limit: Option<String>,
+) -> Result<Value, String> {
+    let transfer = crate::settings::write_transfer_settings(&app, aria2_max_connections, aria2_download_limit.as_deref())?;
+    Ok(json!({
+        "transfer": transfer,
+        "health": health(app).await?,
+    }))
 }
 
 #[derive(Deserialize)]
@@ -54,8 +71,8 @@ async fn fetch_impl(app: AppHandle, args: FetchArgs, full: bool) -> Result<Value
         cli_args.push("--provider".to_string());
         cli_args.push(provider);
     }
-    cli_args.push("--cookies-browser".to_string());
-    cli_args.push(String::new());
+    let browsers = detect_browsers(&app);
+    cli_args.extend(cookie_source_args(&default_cookie_source(&app, &browsers)));
 
     match run_engine(&app, cli_args, |_| {}, None).await {
         Ok(payload) => Ok(payload),
@@ -121,10 +138,7 @@ pub async fn download(
         .item_id
         .clone()
         .unwrap_or_else(|| Uuid::new_v4().to_string());
-    let output_root = payload
-        .output_root
-        .clone()
-        .unwrap_or_else(|| default_output_root(&app).to_string_lossy().to_string());
+    let output_root = guarded_output_root(&app, payload.output_root.clone());
     std::fs::create_dir_all(&output_root).map_err(|e| e.to_string())?;
 
     let item_id_arg = payload
@@ -132,7 +146,7 @@ pub async fn download(
         .clone()
         .unwrap_or_else(|| job_id.chars().take(10).collect());
 
-    let args = vec![
+    let mut args = vec![
         "download".to_string(),
         "--url".to_string(),
         payload.url.clone(),
@@ -144,9 +158,9 @@ pub async fn download(
         item_id_arg,
         "--title".to_string(),
         payload.title.clone().unwrap_or_default(),
-        "--cookies-browser".to_string(),
-        String::new(),
     ];
+    let browsers = detect_browsers(&app);
+    args.extend(cookie_source_args(&default_cookie_source(&app, &browsers)));
 
     let emit_app = app.clone();
     let emit_job_id = job_id.clone();
@@ -200,9 +214,22 @@ pub async fn cancel_download(state: State<'_, AppState>, job_id: String) -> Resu
     }
 }
 
+/// Clamps a requested output-root override to the real configured root: an
+/// override outside the root is silently ignored rather than erroring,
+/// mirroring electron/libraryIpc.ts's `library:list` handler.
+fn guarded_output_root(app: &AppHandle, requested: Option<String>) -> String {
+    let root = current_output_root(app);
+    match requested.map(|r| r.trim().to_string()).filter(|r| !r.is_empty()) {
+        Some(requested) => crate::path_guard::resolve_within_roots(&requested, &[root.clone()])
+            .map(|p| p.to_string_lossy().to_string())
+            .unwrap_or(root),
+        None => root,
+    }
+}
+
 #[tauri::command]
 pub async fn library_list(app: AppHandle, output_root: Option<String>) -> Result<Value, String> {
-    let root = output_root.unwrap_or_else(|| default_output_root(&app).to_string_lossy().to_string());
+    let root = guarded_output_root(&app, output_root);
     run_engine(
         &app,
         vec!["library-list".to_string(), "--output-root".to_string(), root],
@@ -214,7 +241,7 @@ pub async fn library_list(app: AppHandle, output_root: Option<String>) -> Result
 
 #[tauri::command]
 pub async fn failures_list(app: AppHandle, output_root: Option<String>) -> Result<Value, String> {
-    let root = output_root.unwrap_or_else(|| default_output_root(&app).to_string_lossy().to_string());
+    let root = guarded_output_root(&app, output_root);
     run_engine(
         &app,
         vec!["failures-list".to_string(), "--output-root".to_string(), root],
