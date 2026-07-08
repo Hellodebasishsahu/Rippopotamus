@@ -311,6 +311,7 @@ main.main-content {
 .install-cmd {
   display: flex;
   align-items: stretch;
+  width: 100%;
   max-width: 540px;
   border-radius: 14px;
   border: 1px solid rgba(255, 255, 255, 0.14);
@@ -328,9 +329,11 @@ main.main-content {
   font-size: 0.82rem;
   line-height: 1.5;
   color: #eafff2;
-  /* Wrap so the whole command + URL is always visible, never truncated. */
+  /* Wrap so the whole command + URL is always visible, never truncated.
+     overflow-wrap:anywhere (not break-word) so the long URL also shrinks the
+     box's min-content width — otherwise it forces horizontal overflow on phones. */
   white-space: pre-wrap;
-  word-break: break-word;
+  overflow-wrap: anywhere;
   text-align: left;
 }
 .install-cmd code::before {
