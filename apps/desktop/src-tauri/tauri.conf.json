@@ -1,7 +1,7 @@
 {
   "$schema": "../../../node_modules/@tauri-apps/cli/config.schema.json",
-  "productName": "Rippopotamus",
-  "version": "0.3.1",
+  "productName": "Rippo",
+  "version": "0.3.2",
   "identifier": "app.rippopotamus.desktop",
   "build": {
     "frontendDist": "../dist/renderer",
@@ -10,7 +10,7 @@
   "app": {
     "windows": [
       {
-        "title": "Rippopotamus",
+        "title": "Rippo",
         "width": 800,
         "height": 600,
         "resizable": true,
@@ -23,7 +23,11 @@
   },
   "bundle": {
     "active": true,
-    "targets": ["app", "dmg", "nsis"],
+    "targets": [
+      "app",
+      "dmg",
+      "nsis"
+    ],
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
@@ -38,9 +42,18 @@
     "macOS": {
       "dmg": {
         "background": "dmg/background.png",
-        "windowSize": { "width": 660, "height": 420 },
-        "appPosition": { "x": 165, "y": 170 },
-        "applicationFolderPosition": { "x": 495, "y": 170 }
+        "windowSize": {
+          "width": 660,
+          "height": 420
+        },
+        "appPosition": {
+          "x": 165,
+          "y": 170
+        },
+        "applicationFolderPosition": {
+          "x": 495,
+          "y": 170
+        }
       }
     },
     "android": {

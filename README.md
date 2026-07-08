@@ -1,8 +1,15 @@
 # Rippopotamus
 
-Feed it links. It spits out assets.
+**Feed it links. It spits out assets.**
 
-Rippopotamus is a local-first desktop media ingest tool for editors, designers, and creative teams. It batch-ingests media links, downloads source assets, extracts audio/thumbnails/clips, and organizes everything into editor-ready project folders. Everything runs on your machine — no accounts, no cloud upload.
+[![Latest release](https://img.shields.io/github/v/release/Hellodebasishsahu/Rippopotamus?label=download)](https://github.com/Hellodebasishsahu/Rippopotamus/releases/latest)
+[![License](https://img.shields.io/github/license/Hellodebasishsahu/Rippopotamus)](LICENSE)
+[![Website](https://img.shields.io/badge/website-rippopotamus.vercel.app-0a1210)](https://rippopotamus.vercel.app)
+[![Platforms](https://img.shields.io/badge/platforms-macOS%20%7C%20Windows-blue)](https://github.com/Hellodebasishsahu/Rippopotamus/releases/latest)
+
+Rippopotamus (Rippo) is a **free, open-source, local-first desktop media downloader** for editors, designers, and creative teams. It batch-ingests media links, downloads video/audio/images/thumbnails via `yt-dlp`, `gallery-dl`, `aria2c`, and `ffmpeg`, and organizes everything into editor-ready project folders. Everything runs on your machine — no accounts, no cloud upload.
+
+**[Download for macOS & Windows](https://github.com/Hellodebasishsahu/Rippopotamus/releases/latest)** · **[Website](https://rippopotamus.vercel.app)**
 
 <!-- ![Rippopotamus screenshot](docs/screenshot.png) -->
 

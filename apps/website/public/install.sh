@@ -14,7 +14,8 @@ set -euo pipefail
 REPO="Hellodebasishsahu/Rippopotamus"
 DL_BASE="https://github.com/${REPO}/releases/latest/download"
 ASSET="Rippopotamus-mac-arm64.dmg"
-APP="Rippopotamus.app"
+# APP is resolved from the mounted DMG below (works across the
+# Rippopotamus.app -> Rippo.app rename without breaking either side).
 
 if [ "$(uname -s)" != "Darwin" ]; then
   echo "This installer is for macOS. See https://rippopotamus.vercel.app for other platforms." >&2
@@ -52,19 +53,24 @@ curl -fsSL --retry 3 "${DL_BASE}/SHA256SUMS" -o "${TMP}/SHA256SUMS"
 }
 
 # Detach any leftover Rippopotamus volume so we mount at a predictable path.
-for vol in /Volumes/Rippopotamus*; do
+for vol in /Volumes/Rippo*; do
   [ -d "${vol}" ] && hdiutil detach "${vol}" -force 2>/dev/null || true
 done
 
 echo "-> Mounting the disk image..."
 MNT="$(hdiutil attach "${TMP}/${ASSET}" -nobrowse -noautoopen | grep -Eo '/Volumes/.*' | tail -1)"
-if [ -z "${MNT}" ] || [ ! -d "${MNT}/${APP}" ]; then
-  echo "Could not find ${APP} in the downloaded image." >&2
+APP=""
+if [ -n "${MNT}" ]; then
+  APP="$(cd "${MNT}" && ls -d *.app 2>/dev/null | head -1)"
+fi
+if [ -z "${MNT}" ] || [ -z "${APP}" ]; then
+  echo "Could not find an app bundle in the downloaded image." >&2
   exit 1
 fi
 
 echo "-> Installing to ${DEST} ..."
-rm -rf "${DEST}/${APP}"
+# Remove both names so a rename doesn't leave a stale copy behind.
+rm -rf "${DEST}/Rippo.app" "${DEST}/Rippopotamus.app"
 cp -R "${MNT}/${APP}" "${DEST}/"
 
 echo "-> Clearing Gatekeeper quarantine..."

@@ -3,10 +3,72 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="description" content="Rippo — the clean, lightning-fast media downloader built for editors and designers. Drop links, get assets, create." />
+    <meta name="description" content="Rippopotamus (Rippo) is a free, local-first desktop media downloader for editors and designers. Batch-download video, audio, images and thumbnails from links — powered by yt-dlp, gallery-dl, aria2c and ffmpeg. No accounts, no cloud upload." />
     <meta name="theme-color" content="#0a1210" />
-    <title>Rippo</title>
+    <title>Rippopotamus — Free Local-First Batch Media Downloader for Editors</title>
+    <link rel="canonical" href="https://rippopotamus.vercel.app/" />
+    <meta name="robots" content="index, follow, max-image-preview:large" />
+    <meta name="author" content="Debasish Sahu" />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Rippopotamus" />
+    <meta property="og:title" content="Rippopotamus — Free Local-First Batch Media Downloader for Editors" />
+    <meta property="og:description" content="Feed it links. It spits out assets. Batch-download video, audio, images and thumbnails into editor-ready project folders. Free, open source, runs entirely on your machine." />
+    <meta property="og:url" content="https://rippopotamus.vercel.app/" />
+    <meta property="og:image" content="https://rippopotamus.vercel.app/og-image.png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Rippopotamus — Free Local-First Batch Media Downloader" />
+    <meta name="twitter:description" content="Feed it links. It spits out assets. Free, open source, local-first media downloader for editors and creative teams." />
+    <meta name="twitter:image" content="https://rippopotamus.vercel.app/og-image.png" />
     <link rel="icon" type="image/png" href="/favicon.ico" />
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@graph": [
+        {
+          "@type": "SoftwareApplication",
+          "name": "Rippopotamus",
+          "alternateName": "Rippo",
+          "applicationCategory": "MultimediaApplication",
+          "operatingSystem": "macOS, Windows",
+          "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
+          "description": "Local-first desktop media downloader for editors, designers, and creative teams. Batch-downloads video, audio, images, and thumbnails from links using yt-dlp, gallery-dl, aria2c, and ffmpeg, then organizes everything into editor-ready project folders. No accounts, no cloud upload.",
+          "url": "https://rippopotamus.vercel.app/",
+          "downloadUrl": "https://github.com/Hellodebasishsahu/Rippopotamus/releases/latest",
+          "softwareVersion": "0.3.1",
+          "license": "https://github.com/Hellodebasishsahu/Rippopotamus/blob/main/LICENSE",
+          "author": { "@type": "Person", "name": "Debasish Sahu", "url": "https://github.com/Hellodebasishsahu" },
+          "sameAs": ["https://github.com/Hellodebasishsahu/Rippopotamus"]
+        },
+        {
+          "@type": "FAQPage",
+          "mainEntity": [
+            {
+              "@type": "Question",
+              "name": "What is Rippopotamus?",
+              "acceptedAnswer": { "@type": "Answer", "text": "Rippopotamus (Rippo) is a free, open-source desktop app that batch-downloads media from links — video, audio, images, thumbnails — and organizes them into editor-ready project folders. It runs entirely on your machine with no accounts or cloud upload." }
+            },
+            {
+              "@type": "Question",
+              "name": "Is Rippopotamus free?",
+              "acceptedAnswer": { "@type": "Answer", "text": "Yes. Rippopotamus is free and open source, available for macOS and Windows from GitHub releases." }
+            },
+            {
+              "@type": "Question",
+              "name": "How is Rippopotamus different from yt-dlp?",
+              "acceptedAnswer": { "@type": "Answer", "text": "Rippopotamus uses yt-dlp, gallery-dl, aria2c, and ffmpeg under the hood, but adds the creative workflow layer: batch link intake, metadata and thumbnail preview, editor-friendly presets, clean file naming, project folder organization, and retryable failed links — all in a desktop GUI." }
+            },
+            {
+              "@type": "Question",
+              "name": "Does Rippopotamus upload my files anywhere?",
+              "acceptedAnswer": { "@type": "Answer", "text": "No. Rippopotamus is local-first: downloads, ledgers, and manifests are plain files on your disk. There are no accounts and no cloud upload." }
+            }
+          ]
+        }
+      ]
+    }
+    </script>
     <link rel="preload" as="image" href="/brand-logo.webp" type="image/webp" fetchpriority="high" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -16,6 +78,11 @@
     />
   </head>
   <body>
+    <noscript>
+      <h1>Rippopotamus — free local-first batch media downloader for editors</h1>
+      <p>Feed it links. It spits out assets. Rippopotamus (Rippo) batch-downloads video, audio, images, and thumbnails via yt-dlp, gallery-dl, aria2c, and ffmpeg, organizing everything into editor-ready project folders. Free and open source for macOS and Windows. No accounts, no cloud upload.</p>
+      <p><a href="https://github.com/Hellodebasishsahu/Rippopotamus/releases/latest">Download Rippopotamus</a> · <a href="https://github.com/Hellodebasishsahu/Rippopotamus">Source on GitHub</a></p>
+    </noscript>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>

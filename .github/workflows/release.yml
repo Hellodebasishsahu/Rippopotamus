@@ -58,8 +58,8 @@ jobs:
           cp apps/desktop/src-tauri/target/release/bundle/dmg/*.dmg release/updater/
           # Stable, version-less name so the website can link releases/latest/download/<name>.
           cp apps/desktop/src-tauri/target/release/bundle/dmg/*.dmg release/updater/Rippopotamus-mac-arm64.dmg
-          cp apps/desktop/src-tauri/target/release/bundle/macos/Rippopotamus.app.tar.gz release/updater/
-          cp apps/desktop/src-tauri/target/release/bundle/macos/Rippopotamus.app.tar.gz.sig release/updater/
+          cp apps/desktop/src-tauri/target/release/bundle/macos/Rippo.app.tar.gz release/updater/
+          cp apps/desktop/src-tauri/target/release/bundle/macos/Rippo.app.tar.gz.sig release/updater/
 
       - uses: actions/upload-artifact@v4
         with:
@@ -165,7 +165,7 @@ jobs:
 
       - name: Build latest.json
         run: |
-          MAC_ASSET=$(basename release/macos/Rippopotamus.app.tar.gz)
+          MAC_ASSET=$(basename release/macos/Rippo.app.tar.gz)
           # Derive from the (unique) .sig so we pick the signed, versioned exe,
           # not the stable-named copy that has no signature.
           WIN_ASSET=$(basename release/windows/*-setup.exe.sig .sig)
@@ -173,7 +173,7 @@ jobs:
             --version "${{ steps.meta.outputs.version }}" \
             --repo "${{ github.repository }}" \
             --tag "${{ steps.meta.outputs.tag }}" \
-            --mac-sig release/macos/Rippopotamus.app.tar.gz.sig \
+            --mac-sig release/macos/Rippo.app.tar.gz.sig \
             --mac-asset "$MAC_ASSET" \
             --win-sig release/windows/*-setup.exe.sig \
             --win-asset "$WIN_ASSET" \
@@ -182,7 +182,7 @@ jobs:
       - name: Build SHA256SUMS
         run: |
           # Checksums for everything we publish; installers verify against this.
-          (cd release/macos && sha256sum *.dmg Rippopotamus.app.tar.gz) > release/SHA256SUMS
+          (cd release/macos && sha256sum *.dmg Rippo.app.tar.gz) > release/SHA256SUMS
           (cd release/windows && sha256sum *-setup.exe) >> release/SHA256SUMS
           cat release/SHA256SUMS
 
@@ -191,11 +191,11 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           gh release create "${{ steps.meta.outputs.tag }}" \
-            --title "Rippopotamus ${{ steps.meta.outputs.tag }}" \
+            --title "Rippo ${{ steps.meta.outputs.tag }}" \
             --generate-notes \
             release/macos/*.dmg \
-            release/macos/Rippopotamus.app.tar.gz \
-            release/macos/Rippopotamus.app.tar.gz.sig \
+            release/macos/Rippo.app.tar.gz \
+            release/macos/Rippo.app.tar.gz.sig \
             release/windows/*-setup.exe \
             release/windows/*-setup.exe.sig \
             release/SHA256SUMS \

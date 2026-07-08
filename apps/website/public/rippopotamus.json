@@ -12,7 +12,7 @@
         "github": "https://github.com/Hellodebasishsahu/Rippopotamus"
     },
     "autoupdate": {
-        "url": "https://github.com/Hellodebasishsahu/Rippopotamus/releases/download/v$version/Rippopotamus_$version_x64-setup.exe"
+        "url": "https://github.com/Hellodebasishsahu/Rippopotamus/releases/download/v$version/Rippo_$version_x64-setup.exe"
     },
     "notes": "Rippopotamus installs like a normal app (NSIS) and updates itself in-app."
 }

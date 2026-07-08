@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://rippopotamus.vercel.app/sitemap.xml

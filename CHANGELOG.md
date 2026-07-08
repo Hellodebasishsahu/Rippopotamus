@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.3.2 — 2026-07-08
+
+- The app is now **Rippo** (dock, window title, `Rippo.app`); Rippopotamus stays as the full brand.
+- Real app icon: the hippo brand mark replaces the default Tauri icon.
+- One-line installers (`curl … | bash` / `irm … | iex`) that verify SHA256 and clear Gatekeeper/SmartScreen; the website hero now leads with them.
+- CI publishes `SHA256SUMS` with every release; Scoop manifest available at `/rippopotamus.json`.
+- Updater signing key rotated — 0.3.1 and older cannot auto-update to this version; reinstall once via the installer.
+- Website: SEO/meta overhaul (OG tags, JSON-LD, sitemap, robots).
+
 ## 0.3.1 — 2026-07-07
 
 - Branded macOS DMG install window (background art + drag-to-Applications arrow).

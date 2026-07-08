@@ -52,7 +52,7 @@ function packagePaths(packageTarget) {
   if (packageTarget === "mac-tauri") {
     const resources = path.join(
       root,
-      "apps/desktop/src-tauri/target/release/bundle/macos/Rippopotamus.app/Contents/Resources",
+      "apps/desktop/src-tauri/target/release/bundle/macos/Rippo.app/Contents/Resources",
     );
     return {
       platform: "darwin",

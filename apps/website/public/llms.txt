@@ -1,0 +1,26 @@
+# Rippopotamus
+
+> Rippopotamus (Rippo) is a free, open-source, local-first desktop media downloader for editors, designers, and creative teams. Feed it links; it spits out assets — batch-downloading video, audio, images, and thumbnails into editor-ready project folders. Everything runs on your machine: no accounts, no cloud upload.
+
+## What it does
+
+- Batch link intake: paste many URLs at once
+- Fetches metadata: title, thumbnail, duration, platform, available formats
+- Editor-friendly presets: best MP4, MP3 audio, thumbnail only, image gallery
+- Downloads via battle-tested engines: yt-dlp (video/audio), gallery-dl (images), aria2c (transfers/torrents), ffmpeg (stream merge)
+- Clean file naming and project folder organization
+- Source manifests and download/failure ledgers stored as plain JSON on disk
+- Failed links shown with readable errors and one-click retry
+
+## Key facts
+
+- Price: free, open source
+- Platforms: macOS and Windows desktop app (Tauri + React shell, Python media engine)
+- Privacy: local-first; no accounts, no telemetry of your media, no cloud upload
+- Download: https://github.com/Hellodebasishsahu/Rippopotamus/releases/latest
+- Source code: https://github.com/Hellodebasishsahu/Rippopotamus
+- Website: https://rippopotamus.vercel.app/
+
+## How it compares
+
+Rippopotamus is not a downloader engine — it wraps yt-dlp, gallery-dl, aria2c, and ffmpeg and owns the creative workflow layer on top: batch intake, previews, presets, naming, organization, and retry. Use it when you want a GUI workflow that turns messy links into organized, editor-ready assets rather than driving CLI tools by hand.
