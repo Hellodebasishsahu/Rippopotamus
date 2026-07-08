@@ -1,0 +1,30 @@
+[project]
+name = "rippopotamus"
+version = "0.2.0"
+description = "Local media ingest workstation for editors and designers"
+license = "MIT"
+requires-python = ">=3.11"
+dependencies = [
+  "gallery-dl>=1.32.1",
+  "google-genai>=1.0",
+  "imageio-ffmpeg>=0.5",
+  "yt-dlp>=2025.10.14",
+]
+
+[project.optional-dependencies]
+browser-serp = [
+  "crawl4ai>=0.8.0",
+]
+engine-build = [
+  "pyinstaller>=6.0",
+]
+
+[project.scripts]
+rippo = "rippopotamus.cli:main"
+
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]

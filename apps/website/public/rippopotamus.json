@@ -1,0 +1,18 @@
+{
+    "version": "0.3.1",
+    "description": "Local-first desktop media downloader for editors and designers",
+    "homepage": "https://rippopotamus.vercel.app",
+    "license": "MIT",
+    "url": "https://github.com/Hellodebasishsahu/Rippopotamus/releases/download/v0.3.1/Rippopotamus_0.3.1_x64-setup.exe",
+    "hash": "ad6f60a95157097d9f966179f6745b77df4a4c7e26c213b7698ad3fd5fdf3ee7",
+    "installer": {
+        "args": [ "/S" ]
+    },
+    "checkver": {
+        "github": "https://github.com/Hellodebasishsahu/Rippopotamus"
+    },
+    "autoupdate": {
+        "url": "https://github.com/Hellodebasishsahu/Rippopotamus/releases/download/v$version/Rippopotamus_$version_x64-setup.exe"
+    },
+    "notes": "Rippopotamus installs like a normal app (NSIS) and updates itself in-app."
+}

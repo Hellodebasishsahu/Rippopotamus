@@ -1,0 +1,86 @@
+name: Windows Package
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - dev/windows-native-support
+  pull_request:
+    paths:
+      - "apps/desktop/**"
+      - "src/rippopotamus/**"
+      - "tests/**"
+      - "scripts/**"
+      - "package.json"
+      - "package-lock.json"
+      - "pyproject.toml"
+      - ".github/workflows/windows-package.yml"
+
+jobs:
+  package-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: apps/desktop/src-tauri
+
+      - run: python -m pip install -e ".[engine-build]"
+      - run: npm ci
+      - run: npm test
+
+      # The runner's PATH aria2c.exe is a Chocolatey shim that breaks when copied
+      # out of place — fetch the real static binary from the official release.
+      - name: Fetch aria2c static binary
+        shell: pwsh
+        run: |
+          $url = "https://github.com/aria2/aria2/releases/download/release-1.37.0/aria2-1.37.0-win-64bit-build1.zip"
+          Invoke-WebRequest -Uri $url -OutFile aria2.zip
+          $hash = (Get-FileHash aria2.zip -Algorithm SHA256).Hash.ToLower()
+          if ($hash -ne "67d015301eef0b612191212d564c5bb0a14b5b9c4796b76454276a4d28d9b288") {
+            throw "aria2 download hash mismatch: $hash"
+          }
+          Expand-Archive aria2.zip -DestinationPath aria2-tmp
+          $exe = Get-ChildItem aria2-tmp -Recurse -Filter aria2c.exe | Select-Object -First 1
+          & $exe.FullName --version
+          "RIPPO_ARIA2C_SOURCE=$($exe.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append
+
+      # Tauri packaging: frozen engine (--onedir) + ffmpeg + aria2c staged as
+      # Tauri resources, then the real NSIS installer. No update signing here
+      # — that only happens in release.yml, which has the secrets.
+      - run: npm run package:tauri:win
+        shell: bash
+
+      # The NSIS build output is just the installer; resources only exist
+      # once installed. Install silently, then point the health check at
+      # wherever the installer actually put rippo-engine.exe.
+      - name: Silent-install and locate resources
+        shell: pwsh
+        run: |
+          $installer = Get-ChildItem apps/desktop/src-tauri/target/release/bundle/nsis -Filter "*-setup.exe" | Select-Object -First 1
+          Start-Process -FilePath $installer.FullName -ArgumentList "/S" -Wait
+          $engine = Get-ChildItem "$env:LOCALAPPDATA","$env:ProgramFiles","${env:ProgramFiles(x86)}" -Recurse -Filter "rippo-engine.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
+          if (-not $engine) { throw "Could not locate installed rippo-engine.exe after silent install." }
+          # Engine is at <root>\bin\rippo-engine\rippo-engine.exe. The verifier
+          # wants the resource ROOT (it appends bin\ itself), so climb three
+          # parents: rippo-engine.exe -> rippo-engine -> bin -> <root>.
+          $resources = Split-Path (Split-Path (Split-Path $engine.FullName -Parent) -Parent) -Parent
+          "RIPPO_VERIFY_RESOURCES=$resources" | Out-File -FilePath $env:GITHUB_ENV -Append
+
+      - run: node scripts/verify-packaged-engine-health.mjs win-tauri
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: rippopotamus-win-nsis
+          path: apps/desktop/src-tauri/target/release/bundle/nsis/*-setup.exe

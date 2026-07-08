@@ -1,0 +1,11 @@
+apps/desktop/dist/
+apps/desktop/dist-electron/
+release/
+build/
+src/rippopotamus/
+downloads/
+scratch/
+experiments/
+.venv/
+.build-venv/
+*.dmg

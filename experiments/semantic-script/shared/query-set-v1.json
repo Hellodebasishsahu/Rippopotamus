@@ -1,0 +1,107 @@
+{
+  "id": "editor-search-v1",
+  "created": "2026-05-12",
+  "scoring": {
+    "2": "good timestamp, useful result",
+    "1": "related clip but timestamp weak",
+    "0": "wrong or junk"
+  },
+  "queries": [
+    {
+      "id": "literal-kitchen-wave",
+      "query": "woman waving kitchen",
+      "type": "literal",
+      "expected_assets": ["shorts"],
+      "expected_window_seconds": [0.0, 1.0]
+    },
+    {
+      "id": "literal-viral-text",
+      "query": "viral reel red text",
+      "type": "literal",
+      "expected_assets": ["shorts"],
+      "expected_window_seconds": [3.0, 5.0]
+    },
+    {
+      "id": "literal-food-flag",
+      "query": "burger India flag",
+      "type": "literal",
+      "expected_assets": ["shorts"],
+      "expected_window_seconds": [9.5, 10.0]
+    },
+    {
+      "id": "literal-wolf-den",
+      "query": "wolf pups den",
+      "type": "literal",
+      "expected_assets": ["long"],
+      "expected_window_seconds": [10.0, 11.0]
+    },
+    {
+      "id": "literal-neon",
+      "query": "neon city night synthwave",
+      "type": "literal",
+      "expected_assets": ["mix"],
+      "expected_window_seconds": [0.0, 7.0]
+    },
+    {
+      "id": "literal-gaming-text",
+      "query": "next gen gaming text",
+      "type": "literal",
+      "expected_assets": ["mix"],
+      "expected_window_seconds": [0.0, 14.0]
+    },
+    {
+      "id": "intent-cooking-intro",
+      "query": "good cooking intro",
+      "type": "intent",
+      "expected_assets": ["shorts"]
+    },
+    {
+      "id": "intent-country-food",
+      "query": "food from different countries",
+      "type": "intent",
+      "expected_assets": ["shorts"]
+    },
+    {
+      "id": "intent-animal-family",
+      "query": "cute animal family moment",
+      "type": "intent",
+      "expected_assets": ["long"]
+    },
+    {
+      "id": "intent-parent-care",
+      "query": "wolf parent caring for babies",
+      "type": "intent",
+      "expected_assets": ["long"]
+    },
+    {
+      "id": "intent-gaming-background",
+      "query": "cyberpunk background for gaming stream",
+      "type": "intent",
+      "expected_assets": ["mix"]
+    },
+    {
+      "id": "intent-social-hook",
+      "query": "social media recipe hook",
+      "type": "intent",
+      "expected_assets": ["shorts"]
+    },
+    {
+      "id": "negative-traffic-park",
+      "query": "traffic street park",
+      "type": "hard-negative",
+      "expected_assets": []
+    },
+    {
+      "id": "negative-office",
+      "query": "office meeting presentation",
+      "type": "hard-negative",
+      "expected_assets": []
+    },
+    {
+      "id": "negative-stadium",
+      "query": "sports crowd stadium",
+      "type": "hard-negative",
+      "expected_assets": []
+    }
+  ]
+}
