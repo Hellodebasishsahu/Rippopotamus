@@ -1,0 +1,105 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Semantic Script Experiment Run",
+  "type": "object",
+  "required": [
+    "id",
+    "lane",
+    "status",
+    "created",
+    "hypothesis",
+    "inputs",
+    "query_set",
+    "outputs",
+    "embedding",
+    "results",
+    "verdict"
+  ],
+  "properties": {
+    "id": { "type": "string" },
+    "lane": { "type": "string" },
+    "status": { "enum": ["planned", "running", "complete", "blocked", "failed"] },
+    "created": { "type": "string" },
+    "hypothesis": { "type": "string" },
+    "prompt_version": { "type": "string" },
+    "schema_version": { "type": "string" },
+    "inputs": {
+      "type": "object",
+      "required": ["fixture", "samples"],
+      "properties": {
+        "fixture": { "type": "string" },
+        "samples": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["id", "path"],
+            "properties": {
+              "id": { "type": "string" },
+              "path": { "type": "string" }
+            }
+          }
+        }
+      }
+    },
+    "query_set": {
+      "type": "object",
+      "required": ["fixture"],
+      "properties": {
+        "fixture": { "type": "string" },
+        "count": { "type": "integer" }
+      }
+    },
+    "outputs": {
+      "type": "object",
+      "properties": {
+        "jsonl": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "index": { "type": "string" },
+        "comparison": { "type": "string" }
+      }
+    },
+    "embedding": {
+      "type": "object",
+      "properties": {
+        "provider": { "type": "string" },
+        "model": { "type": "string" },
+        "dimensions": { "type": "integer" }
+      }
+    },
+    "cost": {
+      "type": "object",
+      "properties": {
+        "estimated": { "type": ["string", "number", "null"] },
+        "actual": { "type": ["string", "number", "null"] },
+        "currency": { "type": ["string", "null"] },
+        "notes": { "type": "string" }
+      }
+    },
+    "results": {
+      "type": "object",
+      "properties": {
+        "path": { "type": ["string", "null"] },
+        "summary": { "type": "string" },
+        "scores": {
+          "type": "object",
+          "properties": {
+            "literal": { "type": ["number", "null"] },
+            "intent": { "type": ["number", "null"] },
+            "hard_negative": { "type": ["number", "null"] },
+            "total": { "type": ["number", "null"] }
+          }
+        }
+      }
+    },
+    "verdict": {
+      "type": "object",
+      "required": ["path", "decision"],
+      "properties": {
+        "path": { "type": "string" },
+        "decision": { "type": "string" }
+      }
+    }
+  }
+}

@@ -1,0 +1,37 @@
+{
+  "id": "yt-batch-v1",
+  "created": "2026-05-12",
+  "description": "Small mixed YouTube validation set: short cooking clip, longer nature slice, and long music/mix slice.",
+  "samples": [
+    {
+      "id": "shorts",
+      "label": "Short cooking/social clip",
+      "kind": "short-ish",
+      "source_query": "ytsearch1:youtube shorts street food cooking",
+      "download_section": "00:00-00:18",
+      "path": "experiments/out/yt-samples/shorts.mp4",
+      "duration_seconds": 18.0,
+      "expected_content": ["woman host", "kitchen", "recipe", "visible text", "country flags"]
+    },
+    {
+      "id": "long",
+      "label": "Long nature video slice",
+      "kind": "long-video-slice",
+      "source_query": "ytsearch1:nature documentary forest animals 4k",
+      "download_section": "00:30-00:50",
+      "path": "experiments/out/yt-samples/long.mp4",
+      "duration_seconds": 20.053,
+      "expected_content": ["wolf", "pups", "den", "animal family", "nature"]
+    },
+    {
+      "id": "mix",
+      "label": "Long music/mix slice",
+      "kind": "music-mix-slice",
+      "source_query": "ytsearch1:lofi beats animated city night",
+      "download_section": "00:15-00:30",
+      "path": "experiments/out/yt-samples/mix.mp4",
+      "duration_seconds": 15.0,
+      "expected_content": ["neon", "city", "pixel art", "gaming text", "synthwave audio"]
+    }
+  ]
+}

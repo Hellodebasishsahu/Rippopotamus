@@ -1,0 +1,55 @@
+name: macOS Package
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "apps/desktop/**"
+      - "src/rippopotamus/**"
+      - "tests/**"
+      - "scripts/**"
+      - "package.json"
+      - "package-lock.json"
+      - "pyproject.toml"
+      - ".github/workflows/macos-package.yml"
+
+jobs:
+  package-macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: apps/desktop/src-tauri
+
+      - run: python -m pip install -e ".[engine-build]"
+      - run: npm ci
+      - run: npm test
+
+      # Tauri packaging: frozen engine (--onedir) + ffmpeg + aria2c staged as
+      # Tauri resources, then the real `.app`/`.dmg` bundle. No update signing
+      # here — that only happens in release.yml, which has the secrets.
+      - run: npm run package:tauri:mac
+
+      - run: node scripts/verify-packaged-engine-health.mjs mac-tauri
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: rippopotamus-mac-app
+          path: apps/desktop/src-tauri/target/release/bundle/macos/Rippopotamus.app
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: rippopotamus-mac-dmg
+          path: apps/desktop/src-tauri/target/release/bundle/dmg/*.dmg

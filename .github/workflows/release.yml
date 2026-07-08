@@ -1,0 +1,194 @@
+name: Release
+
+# Cuts a signed, auto-updatable release. Push a `vX.Y.Z` tag to trigger.
+# See PRE_RELEASE_CHECKLIST.md for the full release ritual.
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to release (must already exist), e.g. v0.3.0"
+        required: true
+
+jobs:
+  build-macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: apps/desktop/src-tauri
+
+      - run: python -m pip install -e ".[engine-build]"
+      - run: npm ci
+      - run: npm test
+
+      - run: npm run build:engine
+      - run: npm run prepare:ffmpeg:mac
+      - run: npm run prepare:aria2:mac
+      - run: npm run stage:tauri-resources:mac
+      - run: npm run build:ui
+
+      - name: Build signed macOS bundle (app + dmg + updater artifact)
+        working-directory: apps/desktop
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          npx tauri build --bundles app,dmg --config '{"bundle":{"createUpdaterArtifacts":true}}'
+
+      - run: node scripts/verify-packaged-engine-health.mjs mac-tauri
+
+      - name: Collect release assets
+        run: |
+          mkdir -p release/updater
+          cp apps/desktop/src-tauri/target/release/bundle/dmg/*.dmg release/updater/
+          # Stable, version-less name so the website can link releases/latest/download/<name>.
+          cp apps/desktop/src-tauri/target/release/bundle/dmg/*.dmg release/updater/Rippopotamus-mac-arm64.dmg
+          cp apps/desktop/src-tauri/target/release/bundle/macos/Rippopotamus.app.tar.gz release/updater/
+          cp apps/desktop/src-tauri/target/release/bundle/macos/Rippopotamus.app.tar.gz.sig release/updater/
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-macos
+          path: release/updater
+
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: apps/desktop/src-tauri
+
+      - run: python -m pip install -e ".[engine-build]"
+      - run: npm ci
+      - run: npm test
+
+      - name: Fetch aria2c static binary
+        shell: pwsh
+        run: |
+          $url = "https://github.com/aria2/aria2/releases/download/release-1.37.0/aria2-1.37.0-win-64bit-build1.zip"
+          Invoke-WebRequest -Uri $url -OutFile aria2.zip
+          $hash = (Get-FileHash aria2.zip -Algorithm SHA256).Hash.ToLower()
+          if ($hash -ne "67d015301eef0b612191212d564c5bb0a14b5b9c4796b76454276a4d28d9b288") {
+            throw "aria2 download hash mismatch: $hash"
+          }
+          Expand-Archive aria2.zip -DestinationPath aria2-tmp
+          $exe = Get-ChildItem aria2-tmp -Recurse -Filter aria2c.exe | Select-Object -First 1
+          "RIPPO_ARIA2C_SOURCE=$($exe.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append
+
+      - run: npm run build:engine
+        shell: bash
+      - run: npm run prepare:ffmpeg:win
+        shell: bash
+      - run: npm run prepare:aria2:win
+        shell: bash
+      - run: npm run stage:tauri-resources:win
+        shell: bash
+      - run: npm run build:ui
+        shell: bash
+
+      - name: Build signed Windows bundle (nsis + updater artifact)
+        working-directory: apps/desktop
+        shell: bash
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          npx tauri build --bundles nsis --config '{"bundle":{"createUpdaterArtifacts":true}}'
+
+      - name: Collect release assets
+        shell: bash
+        run: |
+          mkdir -p release/updater
+          # Tauri v2 NSIS updater artifact is the -setup.exe itself + .sig (no .nsis.zip).
+          cp apps/desktop/src-tauri/target/release/bundle/nsis/*-setup.exe release/updater/
+          cp apps/desktop/src-tauri/target/release/bundle/nsis/*-setup.exe.sig release/updater/
+          # Stable, version-less name for the website download link.
+          cp apps/desktop/src-tauri/target/release/bundle/nsis/*-setup.exe release/updater/Rippopotamus-windows-x64-setup.exe
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-windows
+          path: release/updater
+
+  publish:
+    needs: [build-macos, build-windows]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # gh release create needs write on repo contents
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-macos
+          path: release/macos
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-windows
+          path: release/windows
+
+      - name: Resolve tag and version
+        id: meta
+        run: |
+          TAG="${{ github.event.inputs.tag || github.ref_name }}"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Build latest.json
+        run: |
+          MAC_ASSET=$(basename release/macos/Rippopotamus.app.tar.gz)
+          # Derive from the (unique) .sig so we pick the signed, versioned exe,
+          # not the stable-named copy that has no signature.
+          WIN_ASSET=$(basename release/windows/*-setup.exe.sig .sig)
+          node scripts/build-latest-json.mjs \
+            --version "${{ steps.meta.outputs.version }}" \
+            --repo "${{ github.repository }}" \
+            --tag "${{ steps.meta.outputs.tag }}" \
+            --mac-sig release/macos/Rippopotamus.app.tar.gz.sig \
+            --mac-asset "$MAC_ASSET" \
+            --win-sig release/windows/*-setup.exe.sig \
+            --win-asset "$WIN_ASSET" \
+            --out release/latest.json
+
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "${{ steps.meta.outputs.tag }}" \
+            --title "Rippopotamus ${{ steps.meta.outputs.tag }}" \
+            --generate-notes \
+            release/macos/*.dmg \
+            release/macos/Rippopotamus.app.tar.gz \
+            release/macos/Rippopotamus.app.tar.gz.sig \
+            release/windows/*-setup.exe \
+            release/windows/*-setup.exe.sig \
+            release/latest.json

@@ -1,0 +1,32 @@
+{
+  "name": "rippopotamus",
+  "version": "0.3.1",
+  "private": true,
+  "description": "Feed it links. It spits out assets.",
+  "workspaces": [
+    "apps/desktop",
+    "apps/website"
+  ],
+  "scripts": {
+    "dev": "node scripts/run-workspace.mjs @rippopotamus/desktop dev",
+    "dev:desktop": "node scripts/run-workspace.mjs @rippopotamus/desktop dev",
+    "dev:website": "node scripts/run-workspace.mjs @rippopotamus/website dev",
+    "build": "node scripts/run-workspace.mjs @rippopotamus/desktop build",
+    "build:desktop": "node scripts/run-workspace.mjs @rippopotamus/desktop build",
+    "build:website": "node scripts/run-workspace.mjs @rippopotamus/website build",
+    "build:ui": "node scripts/run-workspace.mjs @rippopotamus/desktop build:ui",
+    "prepare:ffmpeg:mac": "node scripts/install-ffmpeg-static-target.mjs darwin arm64",
+    "prepare:aria2:mac": "node scripts/install-aria2c-resource.mjs darwin",
+    "prepare:ffmpeg:win": "node scripts/install-ffmpeg-static-target.mjs win32 x64",
+    "prepare:aria2:win": "node scripts/install-aria2c-resource.mjs win32",
+    "build:engine": "bash scripts/build-engine.sh",
+    "stage:tauri-resources:mac": "node scripts/stage-tauri-resources.mjs darwin",
+    "stage:tauri-resources:win": "node scripts/stage-tauri-resources.mjs win32",
+    "package:tauri:mac": "npm run build:engine && npm run prepare:ffmpeg:mac && npm run prepare:aria2:mac && npm run stage:tauri-resources:mac && npm run build:ui && node scripts/run-workspace.mjs @rippopotamus/desktop package:tauri:mac",
+    "package:tauri:win": "npm run build:engine && npm run prepare:ffmpeg:win && npm run prepare:aria2:win && npm run stage:tauri-resources:win && npm run build:ui && node scripts/run-workspace.mjs @rippopotamus/desktop package:tauri:win",
+    "test": "node scripts/run-tests.mjs"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "MIT"
+}
