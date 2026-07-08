@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.4.0 — 2026-07-08
+
+- **Playlist & channel expansion:** paste a YouTube playlist or channel URL and Rippo fans it out into individual queue items (capped at 150, with a heads-up when a channel is larger).
+- **Per-item quality picker:** each video shows its *real* available resolutions (Best / 1080p / 720p / … / Audio) pulled from the source, and downloads exactly the one you pick.
+- Engine: `fetch --expand` for playlist resolution, `download --max-height` for resolution capping, and available resolutions surfaced in metadata.
+
 ## 0.3.2 — 2026-07-08
 
 - The app is now **Rippo** (dock, window title, `Rippo.app`); Rippopotamus stays as the full brand.

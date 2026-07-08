@@ -24,7 +24,7 @@ pub async fn run(app: AppHandle) {
     let url = std::env::var("RIPPO_P1_SELFTEST_URL")
         .unwrap_or_else(|_| "https://archive.org/details/SampleVideo1280x7205mb".to_string());
 
-    let fetch_result = match commands::fetch(app.clone(), url.clone(), None).await {
+    let fetch_result = match commands::fetch(app.clone(), url.clone(), None, None).await {
         Ok(result) => {
             log::info!("[selftest] fetch ok: {result}");
             result

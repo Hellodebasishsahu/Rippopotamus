@@ -73,6 +73,30 @@ export function normalizeUrlCandidate(value: string): string | null {
   }
 }
 
+// Should this URL be probed for playlist/channel expansion? Conservative on
+// purpose — a false positive just costs one cheap flat-playlist call that the
+// engine falls through when it isn't actually a container. YouTube is the
+// dominant case; other platforms use the generic path keywords.
+// ponytail: YouTube-first heuristic; widen per-platform when users ask.
+export function isPlaylistUrl(value: string): boolean {
+  let u: URL;
+  try {
+    u = new URL(value);
+  } catch {
+    return false;
+  }
+  const host = u.hostname.replace(/^www\./, "");
+  const path = u.pathname;
+  if (host.endsWith("youtube.com") || host === "youtu.be") {
+    if (path.startsWith("/playlist")) return true;
+    if (/^\/(@[^/]+|channel\/|c\/|user\/)/.test(path)) return true;
+    // watch?v=X&list=Y is a video that happens to sit in a list -> single item.
+    // A bare ?list=... (no v) is the playlist itself.
+    return u.searchParams.has("list") && !u.searchParams.has("v");
+  }
+  return /\/(playlist|playlists|sets|album)\b/i.test(path);
+}
+
 export function extractUrls(value: string): string[] {
   const urls: string[] = [];
   const seen = new Set<string>();

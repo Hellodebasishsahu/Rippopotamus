@@ -210,12 +210,34 @@ export type FetchResponse = {
     filesize?: number | null;
     filesize_approx?: number | null;
     provisional?: boolean;
+    // Distinct video resolutions the source offers (tallest first); powers the
+    // per-item quality picker. Only present after a full yt-dlp fetch.
+    heights?: number[];
   };
 } | {
   ok: false;
   url: string;
   error: string;
 };
+
+export type PlaylistEntry = {
+  url: string;
+  title?: string | null;
+  duration?: number | null;
+  thumbnail?: string | null;
+};
+
+// Result of expanding a playlist/channel URL into its child videos.
+export type PlaylistResponse = {
+  ok: true;
+  url: string;
+  type: "playlist";
+  title?: string | null;
+  entries: PlaylistEntry[];
+  truncated?: boolean;
+};
+
+export type ExpandResponse = PlaylistResponse | FetchResponse;
 
 export type DownloadRequest = {
   url: string;
@@ -224,6 +246,8 @@ export type DownloadRequest = {
   itemId?: string;
   title?: string;
   cookieSource?: CookieSource;
+  // Cap video resolution to the user's picked quality (e.g. 1080).
+  maxHeight?: number;
 };
 
 export type DownloadResponse = {

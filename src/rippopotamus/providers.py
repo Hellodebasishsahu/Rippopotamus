@@ -255,6 +255,50 @@ def metadata_command(provider: str, url: str, context: ProviderContext | None = 
     raise SystemExit(f"Unknown provider `{provider}`.")
 
 
+# A whole channel can be thousands of videos; cap the expansion so we never
+# flood the queue (or hang on a 50k-video channel). Truncation is surfaced.
+MAX_PLAYLIST_ENTRIES = 150
+
+
+def flat_playlist_command(url: str, context: ProviderContext | None = None, limit: int = MAX_PLAYLIST_ENTRIES) -> list[str]:
+    # No --no-playlist here: we WANT yt-dlp to expand the container. --flat-playlist
+    # keeps it cheap (one entry per child, no per-video extraction).
+    return [
+        *yt_dlp_run(context), "--flat-playlist", "--dump-single-json",
+        "--playlist-end", str(limit + 1), "--ignore-no-formats-error", url,
+    ]
+
+
+def playlist_entries_from_raw(raw: dict[str, Any]) -> list[dict[str, Any]]:
+    entries = []
+    for item in raw.get("entries") or []:
+        if not isinstance(item, dict):
+            continue
+        url = item.get("url") or item.get("webpage_url")
+        if not url:
+            continue
+        thumbs = thumbnail_candidates(item)
+        entries.append({
+            "url": url,
+            "title": item.get("title") or item.get("id"),
+            "duration": item.get("duration"),
+            "thumbnail": thumbs[0] if thumbs else None,
+        })
+    return entries
+
+
+def height_capped_format(max_height: int) -> str:
+    # Prefer mp4/m4a so the merge stays in an editor-friendly container, but
+    # fall back to any codec at/under the cap, then best available.
+    h = int(max_height)
+    return (
+        f"bv*[height<={h}][ext=mp4]+ba[ext=m4a]/"
+        f"b[height<={h}][ext=mp4]/"
+        f"bv*[height<={h}]+ba/"
+        f"b[height<={h}]/best"
+    )
+
+
 def download_command(
     url: str,
     preset: str,
@@ -262,6 +306,7 @@ def download_command(
     output_template: str | None = None,
     output_dir: str | Path | None = None,
     context: ProviderContext | None = None,
+    max_height: int | None = None,
 ) -> list[str]:
     if preset not in PRESETS:
         raise SystemExit(f"Unknown preset `{preset}`.")
@@ -310,8 +355,13 @@ def download_command(
             "--downloader-args",
             f"aria2c:{' '.join(aria2_transfer_args(context))}",
         ]
-    if spec["format"]:
-        command += ["-f", spec["format"]]
+    # A per-item resolution pick overrides the preset's format selector, but only
+    # for real video presets (not audio/thumbnail, which have no video track).
+    fmt = spec["format"]
+    if max_height and fmt and "--extract-audio" not in spec["extra"] and "--skip-download" not in spec["extra"]:
+        fmt = height_capped_format(max_height)
+    if fmt:
+        command += ["-f", fmt]
     command += spec["extra"]
     command.append(url)
     return command
@@ -324,8 +374,9 @@ def desktop_download_command(
     output_template: str | None = None,
     output_dir: str | Path | None = None,
     context: ProviderContext | None = None,
+    max_height: int | None = None,
 ) -> list[str]:
-    command = download_command(url, preset, output_template=output_template, output_dir=output_dir, context=context)
+    command = download_command(url, preset, output_template=output_template, output_dir=output_dir, context=context, max_height=max_height)
     if PRESETS[preset]["provider"] == "yt-dlp":
         base_length = len(yt_dlp_run(context))
         return [*command[:base_length], "--newline", *command[base_length:]]
@@ -461,6 +512,24 @@ def format_size_fields(raw: dict[str, Any]) -> tuple[int | None, int | None]:
     return None, approx
 
 
+def available_heights(raw: dict[str, Any]) -> list[int]:
+    # Distinct video resolutions the source actually offers, tallest first.
+    # Feeds the per-item quality picker; empty for audio-only/non-yt-dlp sources.
+    formats = raw.get("formats")
+    if not isinstance(formats, list):
+        return []
+    heights: set[int] = set()
+    for item in formats:
+        if not isinstance(item, dict):
+            continue
+        if item.get("vcodec") in (None, "none"):
+            continue
+        h = item.get("height")
+        if isinstance(h, (int, float)) and h > 0:
+            heights.add(int(h))
+    return sorted(heights, reverse=True)
+
+
 def metadata_from_media_raw(raw: dict[str, Any], url: str, provider: str = "yt-dlp") -> dict[str, Any]:
     thumbnails = thumbnail_candidates(raw)
     uploader = raw.get("uploader") or raw.get("username") or raw.get("author") or raw.get("artist")
@@ -469,6 +538,7 @@ def metadata_from_media_raw(raw: dict[str, Any], url: str, provider: str = "yt-d
     filesize, filesize_approx = format_size_fields(raw)
     return {
         "id": raw.get("id") or raw.get("post_id") or raw.get("filename"),
+        "heights": available_heights(raw),
         "title": raw.get("title") or raw.get("filename") or raw.get("id"),
         "extractor": raw.get("extractor_key") or raw.get("extractor") or raw.get("category") or provider,
         "webpage_url": raw.get("webpage_url") or raw.get("source") or raw.get("url") or url,

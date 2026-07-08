@@ -536,6 +536,7 @@ export function App() {
     resumeDownload,
     resumeInterrupted,
     setItemPreset,
+    setItemQuality,
     setItemCookieSource,
     bulkSetPreset,
   } = useDownloadQueue({
@@ -684,6 +685,7 @@ export function App() {
             startDownload={startDownload}
             openSource={openSource}
             setItemPreset={setItemPreset}
+            setItemQuality={setItemQuality}
             setItemCookieSource={setItemCookieSource}
             refetch={refetch}
             removeItem={removeItem}

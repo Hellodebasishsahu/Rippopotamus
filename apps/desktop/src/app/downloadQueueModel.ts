@@ -29,6 +29,10 @@ export type QueueItem = {
   fetchProvider?: ProviderId | "auto";
   /** True after user (or bulk) picks a quality; fetch/refetch must not overwrite preset. */
   presetUserSet?: boolean;
+  /** Chosen video resolution cap (e.g. 1080). Undefined = preset default (best). */
+  maxHeight?: number;
+  /** Playlist this item was expanded from, for grouping/labeling. */
+  playlistTitle?: string;
   metadata?: Extract<FetchResponse, { ok: true }>["metadata"];
   error?: string;
   progress?: number;

@@ -23,6 +23,31 @@ function shortUrl(url: string) {
   }
 }
 
+// Real, resolution-aware quality options built from the source's actual formats
+// (item.metadata.heights). Best + each available height + Audio. Each maps to a
+// (preset, maxHeight) pair the download understands.
+type QualityChoice = { id: string; label: string; detail?: string; preset: string; maxHeight?: number };
+
+function qualityChoices(item: QueueItem, itemPresets: PresetOption[]): QualityChoice[] {
+  const heights = item.metadata?.heights ?? [];
+  if (!heights.length) return [];
+  const hasMp4 = itemPresets.some((p) => p.id === "mp4-best");
+  const hasAudio = itemPresets.some((p) => p.id === "audio-mp3");
+  if (!hasMp4) return [];
+  const choices: QualityChoice[] = [{ id: "best", label: "Best", detail: heights[0] ? `up to ${heights[0]}p` : "Best MP4", preset: "mp4-best" }];
+  for (const h of heights) {
+    choices.push({ id: `h${h}`, label: `${h}p`, detail: "MP4", preset: "mp4-best", maxHeight: h });
+  }
+  if (hasAudio) choices.push({ id: "audio", label: "Audio", detail: "MP3", preset: "audio-mp3" });
+  return choices;
+}
+
+function currentQualityId(item: QueueItem): string {
+  if (item.preset === "audio-mp3") return "audio";
+  if (item.maxHeight) return `h${item.maxHeight}`;
+  return "best";
+}
+
 function formatDuration(seconds?: number): string | null {
   if (!seconds || seconds <= 0) return null;
   const s = Math.round(seconds);
@@ -120,6 +145,7 @@ export function QueueCard({
   showSelectCheckbox,
   onSelectClick,
   setItemPreset,
+  setItemQuality,
   startDownload,
   removeItem,
   cancelDownload,
@@ -136,6 +162,7 @@ export function QueueCard({
   showSelectCheckbox: boolean;
   onSelectClick: (event: React.MouseEvent) => void;
   setItemPreset: (id: string, preset: string) => void;
+  setItemQuality: (id: string, preset: string, maxHeight?: number) => void;
   startDownload: (item: QueueItem) => Promise<void>;
   removeItem: (id: string) => void;
   cancelDownload: (item: QueueItem) => void;
@@ -165,6 +192,7 @@ export function QueueCard({
     : (item.metadata?.title || host);
 
   const ytDlpSegments = item.metadata?.provider === "yt-dlp" && itemPresets.length > 0 && itemPresets.length <= 4;
+  const choices = qualityChoices(item, itemPresets);
   const errorText = isFailed && item.error
     ? consumerErrorMessage(item.error)
     : isCanceled
@@ -239,7 +267,20 @@ export function QueueCard({
       )}
 
       <div className="queue-card-right">
-        {isReady && canEdit && itemPresets.length > 0 ? (
+        {isReady && canEdit && choices.length > 0 ? (
+          <QueueMenu
+            value={currentQualityId(item)}
+            options={choices.map((c) => ({ id: c.id, label: c.label, detail: c.detail }))}
+            onChange={(id) => {
+              const choice = choices.find((c) => c.id === id);
+              if (choice) setItemQuality(item.localId, choice.preset, choice.maxHeight);
+            }}
+            disabled={!canEdit}
+            ariaLabel="Quality"
+            triggerText={choices.find((c) => c.id === currentQualityId(item))?.label ?? "Best"}
+            className="queue-control-menu"
+          />
+        ) : isReady && canEdit && itemPresets.length > 0 ? (
           ytDlpSegments ? (
             <div className="quality-segments quality-segments-compact" role="group" aria-label="Quality">
               {itemPresets.map((p) => (

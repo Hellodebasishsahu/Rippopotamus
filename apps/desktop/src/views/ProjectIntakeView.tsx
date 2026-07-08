@@ -35,6 +35,7 @@ export type ProjectIntakeViewProps = {
   startDownload: (item: QueueItem) => Promise<void>;
   openSource: (item: QueueItem) => void;
   setItemPreset: (id: string, preset: string) => void;
+  setItemQuality: (id: string, preset: string, maxHeight?: number) => void;
   setItemCookieSource: (id: string, source: CookieSource) => void;
   refetch: (item: QueueItem) => Promise<void>;
   removeItem: (id: string) => void;
@@ -61,6 +62,7 @@ export function ProjectIntakeView({
   downloadReady,
   startDownload,
   setItemPreset,
+  setItemQuality,
   refetch,
   removeItem,
   cancelDownload,
@@ -211,6 +213,7 @@ export function ProjectIntakeView({
                     showSelectCheckbox={showCheckboxes}
                     onSelectClick={(event) => handleSelectClick(event, item.localId, index)}
                     setItemPreset={setItemPreset}
+                    setItemQuality={setItemQuality}
                     startDownload={startDownload}
                     removeItem={removeItem}
                     cancelDownload={cancelDownload}

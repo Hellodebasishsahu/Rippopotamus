@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
-import type { CookieSource, DownloadEvent, PresetOption, ProviderId, ProviderOption } from "../types/desktop";
+import type { CookieSource, DownloadEvent, PlaylistResponse, PresetOption, ProviderId, ProviderOption } from "../types/desktop";
 import type { DesktopClient } from "../client/desktopClient";
+import { isPlaylistUrl } from "../urlParser";
 import { QUEUE_STATUS, queueItemCanChangeOutput, type QueueItem } from "./downloadQueueModel";
 import { defaultPresetForProvider } from "./downloadQueuePrefs";
 
@@ -241,12 +242,39 @@ export function useDownloadQueue({
     const provider = providerOverride;
     const initialCookieSource = cookieSource;
 
+    // Expand playlist/channel URLs into their child videos up front, so the rest
+    // of the queue treats every item as an ordinary single URL.
+    const playlistTitleByUrl = new Map<string, string>();
+    const expandedUrls: string[] = [];
+    for (const url of urls) {
+      if (isPlaylistUrl(url) && desktop.expandPlaylist) {
+        try {
+          const res = await desktop.expandPlaylist(url);
+          if (res.ok && (res as PlaylistResponse).type === "playlist") {
+            const pl = res as PlaylistResponse;
+            if (pl.truncated) {
+              // ponytail: engine caps expansion at 150; surface it rather than hide.
+              console.warn(`Playlist "${pl.title ?? url}" is large; queued the first ${pl.entries.length} videos.`);
+            }
+            for (const entry of pl.entries) {
+              expandedUrls.push(entry.url);
+              if (pl.title) playlistTitleByUrl.set(entry.url, pl.title);
+            }
+            continue;
+          }
+        } catch {
+          // Expansion failed -> fall back to treating the URL as a single item.
+        }
+      }
+      expandedUrls.push(url);
+    }
+
     const seen = new Set(items.map((item) => item.url));
     const fresh: QueueItem[] = [];
-    for (const url of urls) {
+    for (const url of expandedUrls) {
       if (seen.has(url)) continue;
       seen.add(url);
-      fresh.push({ localId: crypto.randomUUID().slice(0, 10), url, status: QUEUE_STATUS.queued, preset: "", cookieSource: initialCookieSource, fetchProvider: provider });
+      fresh.push({ localId: crypto.randomUUID().slice(0, 10), url, status: QUEUE_STATUS.queued, preset: "", cookieSource: initialCookieSource, fetchProvider: provider, playlistTitle: playlistTitleByUrl.get(url) });
     }
 
     if (!fresh.length) return;
@@ -321,6 +349,7 @@ export function useDownloadQueue({
         itemId: item.localId,
         title: item.metadata?.title || item.localId,
         cookieSource: item.cookieSource,
+        maxHeight: item.maxHeight,
       });
       const result = response.result as { type?: string; files?: QueueItem["files"]; error?: string; message?: string } | undefined;
       if (result?.type === "success") {
@@ -394,6 +423,11 @@ export function useDownloadQueue({
     setItems((current) => current.map((item) => item.localId === id ? { ...item, preset, presetUserSet: true } : item));
   }
 
+  // A quality pick sets both the preset (mp4 vs audio) and the resolution cap.
+  function setItemQuality(id: string, preset: string, maxHeight?: number) {
+    setItems((current) => current.map((item) => item.localId === id ? { ...item, preset, maxHeight, presetUserSet: true } : item));
+  }
+
   function bulkSetPreset(ids: Iterable<string>, preset: string) {
     const idSet = new Set(ids);
     setItems((current) => current.map((item) => (idSet.has(item.localId) && queueItemCanChangeOutput(item) ? { ...item, preset, presetUserSet: true } : item)));
@@ -420,6 +454,7 @@ export function useDownloadQueue({
     resumeDownload,
     resumeInterrupted,
     setItemPreset,
+    setItemQuality,
     setItemCookieSource,
     bulkSetPreset,
   };

@@ -8,6 +8,7 @@ import type {
   DownloadCancelResponse,
   DownloadEvent,
   DownloadRequest,
+  ExpandResponse,
   DownloadResponse,
   EngineHealth,
   AppUpdateInfo,
@@ -31,6 +32,9 @@ export type DesktopClient = {
   setTransferSettings: RippoBridge["setTransferSettings"];
   fetch: RippoBridge["fetch"];
   fetchFull: RippoBridge["fetchFull"];
+  // Expand a playlist/channel URL into its child videos. Undefined on the
+  // legacy Electron bridge (which never gained the feature).
+  expandPlaylist?: (url: string) => Promise<ExpandResponse>;
   download: (payload: DownloadRequest) => Promise<DownloadResponse>;
   cancelDownload: (jobId: string) => Promise<DownloadCancelResponse>;
   openFolder: (folder: string) => Promise<void>;
@@ -114,6 +118,7 @@ const tauriDesktopClient: DesktopClient = {
     invoke<FetchResponse>("fetch", { url, provider: provider === "auto" ? undefined : provider }),
   fetchFull: (url: string, provider?: ProviderId | "auto", _cookieSource?: CookieSource) =>
     invoke<FetchResponse>("fetch_full", { url, provider: provider === "auto" ? undefined : provider }),
+  expandPlaylist: (url: string) => invoke<ExpandResponse>("fetch", { url, expand: true }),
   download: (payload: DownloadRequest) => invoke<DownloadResponse>("download", { payload }),
   cancelDownload: (jobId: string) => invoke<DownloadCancelResponse>("cancel_download", { jobId }),
   listLibrary: (payload?: LibraryListRequest) =>

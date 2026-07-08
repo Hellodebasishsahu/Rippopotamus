@@ -105,6 +105,37 @@ class DesktopEngineTests(unittest.TestCase):
         self.assertIn("bv*[ext=mp4]+ba[ext=m4a]/b[ext=mp4]/bv*+ba/best", command)
         self.assertEqual(command[-1], "https://www.youtube.com/watch?v=TQd2k1pEXp4")
 
+    def test_max_height_overrides_video_format_but_not_audio(self) -> None:
+        video = desktop_download_command(
+            "https://x/watch?v=1", "mp4-best",
+            output_template="/tmp/out.%(ext)s",
+            context=ProviderContext(yt_dlp_base=("yt-dlp",)), max_height=720,
+        )
+        self.assertEqual(video.count("-f"), 1)
+        self.assertTrue(any("height<=720" in a for a in video))
+        # Audio preset has no video track; max-height must be a no-op there.
+        audio = desktop_download_command(
+            "https://x/watch?v=1", "audio-mp3",
+            output_template="/tmp/out.%(ext)s",
+            context=ProviderContext(yt_dlp_base=("yt-dlp",)), max_height=720,
+        )
+        self.assertFalse(any("height<=" in a for a in audio))
+
+    def test_available_heights_and_playlist_entries(self) -> None:
+        from rippopotamus.providers import available_heights, playlist_entries_from_raw, flat_playlist_command
+        raw = {"formats": [
+            {"vcodec": "avc1", "height": 1080}, {"vcodec": "vp9", "height": 1080},
+            {"vcodec": "avc1", "height": 720}, {"vcodec": "none", "height": None},
+        ]}
+        self.assertEqual(available_heights(raw), [1080, 720])
+        entries = playlist_entries_from_raw({"entries": [
+            {"url": "u1", "title": "A", "duration": 5}, {"id": "z", "url": "u2"}, {"title": "no-url"},
+        ]})
+        self.assertEqual([e["url"] for e in entries], ["u1", "u2"])
+        cmd = flat_playlist_command("https://x/playlist")
+        self.assertIn("--flat-playlist", cmd)
+        self.assertNotIn("--no-playlist", cmd)
+
     def test_fetch_metadata_ignores_formats_and_external_config(self) -> None:
         args = argparse.Namespace(url="https://www.youtube.com/watch?v=TQd2k1pEXp4", provider="yt-dlp")
         with mock.patch("rippopotamus.desktop_engine.preview_metadata", return_value=None):

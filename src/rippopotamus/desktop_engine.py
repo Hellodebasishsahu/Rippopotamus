@@ -15,12 +15,15 @@ from rippopotamus.cli import slugify
 from rippopotamus.providers import (
     DEFAULT_PRESET,
     DEFAULT_PROVIDER,
+    MAX_PLAYLIST_ENTRIES,
     PRESETS,
     PROVIDERS,
     desktop_download_command,
+    flat_playlist_command,
     friendly_error,
     metadata_command,
     parse_metadata_output,
+    playlist_entries_from_raw,
     provider_catalog,
 )
 from rippopotamus.google_drive import download_drive_file, drive_metadata, is_drive_file_url
@@ -198,6 +201,31 @@ def command_fetch(args: argparse.Namespace) -> int:
     provider = args.provider
     cookies_browser = arg_cookies_browser(args)
     full = bool(getattr(args, "full", False))
+    expand = bool(getattr(args, "expand", False))
+
+    # Playlist/channel expansion: one URL -> many queue items. Only attempted on
+    # yt-dlp-eligible URLs and only when the desktop asks (URL looked like a
+    # container), so a plain video paste is never surprise-expanded.
+    if expand and provider in ("auto", "yt-dlp") and not is_torrent_input(args.url) and not is_drive_file_url(args.url):
+        try:
+            raw = json.loads(run_text(flat_playlist_command(args.url, provider_context(cookies_browser))))
+        except SystemExit:
+            raw = None
+        if isinstance(raw, dict) and raw.get("_type") == "playlist":
+            entries = playlist_entries_from_raw(raw)
+            if entries:
+                truncated = len(entries) > MAX_PLAYLIST_ENTRIES
+                emit({
+                    "ok": True,
+                    "url": args.url,
+                    "type": "playlist",
+                    "title": raw.get("title") or raw.get("id"),
+                    "entries": entries[:MAX_PLAYLIST_ENTRIES],
+                    "truncated": truncated,
+                })
+                return 0
+        # Not actually a playlist (or expansion failed) -> fall through to the
+        # normal single-item path below.
     if provider == "auto":
         if is_torrent_input(args.url):
             provider = "torrent"
@@ -372,6 +400,7 @@ def command_download(args: argparse.Namespace) -> int:
         output_template=output_template,
         output_dir=root / spec["folder"],
         context=provider_context(cookies_browser),
+        max_height=getattr(args, "max_height", None),
     )
 
     if spec["provider"] == "gallery-dl":
@@ -469,6 +498,7 @@ def build_parser() -> argparse.ArgumentParser:
     fetch.add_argument("--provider", choices=["auto", *sorted(PROVIDERS)], default="auto")
     fetch.add_argument("--cookies-browser", default="")
     fetch.add_argument("--full", action="store_true")
+    fetch.add_argument("--expand", action="store_true", help="Expand playlist/channel URLs into per-video entries.")
     fetch.set_defaults(func=command_fetch)
 
     download = sub.add_parser("download")
@@ -478,6 +508,7 @@ def build_parser() -> argparse.ArgumentParser:
     download.add_argument("--item-id")
     download.add_argument("--title")
     download.add_argument("--cookies-browser", default="")
+    download.add_argument("--max-height", type=int, help="Cap video resolution (e.g. 1080) for the chosen quality.")
     download.set_defaults(func=command_download)
 
     failures_list = sub.add_parser("failures-list")

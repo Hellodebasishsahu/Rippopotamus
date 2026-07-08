@@ -58,12 +58,16 @@ pub async fn set_transfer_settings(
 pub struct FetchArgs {
     url: String,
     provider: Option<String>,
+    expand: bool,
 }
 
 async fn fetch_impl(app: AppHandle, args: FetchArgs, full: bool) -> Result<Value, String> {
     let mut cli_args = vec!["fetch".to_string()];
     if full {
         cli_args.push("--full".to_string());
+    }
+    if args.expand {
+        cli_args.push("--expand".to_string());
     }
     cli_args.push("--url".to_string());
     cli_args.push(args.url.clone());
@@ -81,13 +85,18 @@ async fn fetch_impl(app: AppHandle, args: FetchArgs, full: bool) -> Result<Value
 }
 
 #[tauri::command]
-pub async fn fetch(app: AppHandle, url: String, provider: Option<String>) -> Result<Value, String> {
-    fetch_impl(app, FetchArgs { url, provider }, false).await
+pub async fn fetch(
+    app: AppHandle,
+    url: String,
+    provider: Option<String>,
+    expand: Option<bool>,
+) -> Result<Value, String> {
+    fetch_impl(app, FetchArgs { url, provider, expand: expand.unwrap_or(false) }, false).await
 }
 
 #[tauri::command]
 pub async fn fetch_full(app: AppHandle, url: String, provider: Option<String>) -> Result<Value, String> {
-    fetch_impl(app, FetchArgs { url, provider }, true).await
+    fetch_impl(app, FetchArgs { url, provider, expand: false }, true).await
 }
 
 #[derive(Deserialize)]
@@ -99,6 +108,8 @@ pub struct DownloadRequest {
     #[serde(rename = "itemId")]
     item_id: Option<String>,
     title: Option<String>,
+    #[serde(rename = "maxHeight")]
+    max_height: Option<i64>,
 }
 
 #[derive(Serialize)]
@@ -159,6 +170,10 @@ pub async fn download(
         "--title".to_string(),
         payload.title.clone().unwrap_or_default(),
     ];
+    if let Some(height) = payload.max_height {
+        args.push("--max-height".to_string());
+        args.push(height.to_string());
+    }
     let browsers = detect_browsers(&app);
     args.extend(cookie_source_args(&default_cookie_source(&app, &browsers)));
 
