@@ -10,6 +10,7 @@
   "scripts": {
     "dev": "node scripts/run-workspace.mjs @rippopotamus/desktop dev",
     "dev:desktop": "node scripts/run-workspace.mjs @rippopotamus/desktop dev",
+    "dev:ui": "node scripts/run-workspace.mjs @rippopotamus/desktop dev:ui",
     "dev:website": "node scripts/run-workspace.mjs @rippopotamus/website dev",
     "build": "node scripts/run-workspace.mjs @rippopotamus/desktop build",
     "build:desktop": "node scripts/run-workspace.mjs @rippopotamus/desktop build",

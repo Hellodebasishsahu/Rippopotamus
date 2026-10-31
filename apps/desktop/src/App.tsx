@@ -11,6 +11,8 @@ import { LibraryView } from "./views/LibraryView";
 import { SettingsCard, SettingsToggle, SettingsView, type SettingsSectionId } from "./views/SettingsView";
 import { consumerErrorMessage, consumerNoticeMessage } from "./app/appFormatters";
 import { extractUrls } from "./urlParser";
+import { handleAppShortcut } from "./app/keyboardShortcuts";
+import { ShortcutHintRail } from "./components/ShortcutHintRail";
 
 const COOKIE_OFF: CookieSource = { mode: "off" };
 const NETWORK_ACCESS_OPTIONS = [
@@ -297,13 +299,6 @@ export function App() {
   useEffect(() => {
     localStorage.setItem("rippo:queue:downloadWorkers", String(downloadWorkerCount));
   }, [downloadWorkerCount]);
-
-  useEffect(() => {
-    if (!settingsOpen) return;
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setSettingsOpen(false); };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [settingsOpen]);
 
   useEffect(() => {
     if (!desktop) return;
@@ -610,6 +605,22 @@ export function App() {
     if (composerAction.id === "fetch") await addAndFetch();
   }
 
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      handleAppShortcut(event, {
+        activeView,
+        settingsOpen,
+        composerDisabled: composerAction.disabled,
+        setActiveView,
+        openSettings: () => setSettingsOpen(true),
+        closeSettings: () => setSettingsOpen(false),
+        runComposerAction: () => { void runComposerAction(); },
+      });
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [activeView, settingsOpen, composerAction.disabled, detectedCount, hasComposerText, desktop]);
+
   function openSource(item: QueueItem) {
     if (desktop) desktop.openExternal(sourceUrl(item)).catch(() => undefined);
     else window.open(sourceUrl(item), "_blank", "noopener,noreferrer");
@@ -628,7 +639,9 @@ export function App() {
 
   return (
     <main className="app">
-      <div className="layout">
+      <div className="layout-with-rail">
+        <ShortcutHintRail />
+        <div className="layout">
         <AppHeader
           activeView={activeView}
           setActiveView={setActiveView}
@@ -708,6 +721,7 @@ export function App() {
           )}
         </section>
 
+        </div>
       </div>
       {health && !health.ok && health.error ? <p className="error-text health-banner">{health.error}</p> : null}
       {settingsOpen ? (

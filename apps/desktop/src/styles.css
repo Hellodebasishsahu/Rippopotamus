@@ -109,6 +109,81 @@ button:disabled {
   min-width: 0;
 }
 
+.layout-with-rail {
+  width: 100%;
+  max-width: calc(var(--layout-max) + 140px);
+  margin: 0 auto;
+  display: flex;
+  flex-direction: row;
+  align-items: stretch;
+  gap: 20px;
+  flex: 1;
+  min-height: 0;
+  padding: 0 var(--space-3);
+}
+
+.app-shortcut-rail {
+  width: 118px;
+  flex-shrink: 0;
+  padding: 18px 0 24px;
+  display: none;
+}
+
+@media (min-width: 680px) {
+  .app-shortcut-rail {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+}
+
+.app-shortcut-rail-title {
+  margin: 0;
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-subtle);
+}
+
+.app-shortcut-rail-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.app-shortcut-rail-list li {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  font-size: 0.62rem;
+  line-height: 1.35;
+  color: var(--text-subtle);
+}
+
+.app-shortcut-rail-list kbd {
+  font: inherit;
+  font-size: 0.6rem;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  color: var(--text-muted);
+}
+
+.app-shortcut-rail-list span {
+  padding-left: 1px;
+}
+
+
+.settings-inline-code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.78em;
+  color: var(--text-muted);
+}
+
+
 .app-header {
   position: sticky;
   top: 0;
@@ -3034,10 +3109,18 @@ html.no-font-smoothing * {
 
 .app-header-top {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 10px;
   min-height: 30px;
+}
+
+.app-header-leading {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  min-width: 0;
 }
 
 .app-nav {

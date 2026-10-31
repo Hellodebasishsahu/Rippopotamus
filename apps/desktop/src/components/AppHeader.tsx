@@ -1,6 +1,7 @@
 import { FolderOpen, Loader2, RefreshCcw, Settings } from "lucide-react";
 import type { RefObject } from "react";
 import type { DesktopClient } from "../client/desktopClient";
+import { modKeyLabel } from "../app/keyboardShortcuts";
 
 export type AppView = "queue" | "library";
 
@@ -53,23 +54,25 @@ export function AppHeader({
     <header className="app-header">
       <div className="app-header-shell">
         <div className="app-header-top">
-          <nav className="app-nav" aria-label="Main">
-            <button
-              type="button"
-              className={`app-nav-btn${activeView === "queue" ? " is-active" : ""}`}
-              onClick={() => setActiveView("queue")}
-            >
-              Queue
-            </button>
-            <button
-              type="button"
-              className={`app-nav-btn${activeView === "library" ? " is-active" : ""}`}
-              onClick={() => setActiveView("library")}
-            >
-              Lib
-            </button>
-          </nav>
-          <button type="button" className="settings-btn" onClick={openSettings} aria-label="Settings" title="Settings">
+          <div className="app-header-leading">
+            <nav className="app-nav" aria-label="Main">
+              <button
+                type="button"
+                className={`app-nav-btn${activeView === "queue" ? " is-active" : ""}`}
+                onClick={() => setActiveView("queue")}
+              >
+                Queue
+              </button>
+              <button
+                type="button"
+                className={`app-nav-btn${activeView === "library" ? " is-active" : ""}`}
+                onClick={() => setActiveView("library")}
+              >
+                Lib
+              </button>
+            </nav>
+          </div>
+          <button type="button" className="settings-btn" onClick={openSettings} aria-label="Settings" title={`Settings (${modKeyLabel()}+,)`}>
             <Settings size={16} strokeWidth={2} aria-hidden />
           </button>
         </div>
