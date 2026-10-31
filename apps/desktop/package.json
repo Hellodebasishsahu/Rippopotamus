@@ -6,6 +6,7 @@
   "type": "commonjs",
   "scripts": {
     "dev": "concurrently -k \"vite --host 127.0.0.1 --port 5174 --strictPort\" \"wait-on http://127.0.0.1:5174 && tauri dev\"",
+    "dev:ui": "vite --host 127.0.0.1 --port 5174 --strictPort",
     "build": "tsc -p tsconfig.json --noEmit && vite build",
     "build:ui": "tsc -p tsconfig.json --noEmit && vite build",
     "package:tauri:mac": "tauri build --bundles app,dmg",
